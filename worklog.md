@@ -908,3 +908,55 @@ Stage Summary:
 - 0 erreur lint, 0 erreur console, rendu VLM 9/10
 - ⚠️ À noter : le bouton Export impayés .xlsx est un placeholder (toast "Fonctionnalité à venir") — logique détaillée au Lot 12
 - ⚠️ La migration 009 (vue vue_clients_enrichis) n'est PAS appliquée en base — l'API utilise un fallback d'agrégation côté serveur (2 requêtes SQL au lieu d'1). Appliquer 009 via éditeur SQL Supabase pour optimiser.
+
+---
+Task ID: 16
+Agent: main
+Task: Développer la page /admin/personnel — gestion de l'équipe du pressing (liste, filtres, compteur limite plan, menu d'actions avec confirmations)
+
+Work Log:
+- Lecture du worklog partagé + vérification du schéma DB `personnel` (migration 002) : 7 rôles (role_personnel), 3 statuts (statut_compte_personnel), 2 méthodes de création (methode_creation_personnel)
+- Vérification de la policy RLS `isolation_pressing` sur `personnel` (USING + WITH CHECK pressing_id = get_pressing_id_utilisateur()) → un manager peut lire/écrire les employés de son pressing
+- Vérification des limites de plan (PRD §16) : starter=3, pro=8, business=illimité (migration 001, plan_abonnement)
+- Étude du pattern existant de la page /admin/clients (Lot précédent) pour cohérence : ClientsPage (client orchestrator) + ClientsFilters + ClientsList + ClientsPagination + NewClientDialog + ExportImpayesButton, API route GET/POST /api/admin/clients
+- Création de l'API route `GET /api/admin/personnel/route.ts` :
+  - Auth + vérification manager actif (défense en profondeur)
+  - Récupère le plan d'abonnement le plus récent → calcule limit (3/8/null)
+  - Compte les employés "sièges" (statut IN actif, invite_en_attente — les désactivés ne comptent pas)
+  - Recherche `q` par nom/téléphone (ILIKE OR), filtre `role` + `statut`, pagination
+  - Renvoie data + total + plan + limit + count + limitAtteinte
+- Création de l'API route `PATCH /api/admin/personnel/[id]/route.ts` :
+  - Action "desactiver" → statut_compte=desactive, actif=false, date_desactivation=NOW()
+  - Action "reactiver" → statut_compte=actif, actif=true, date_desactivation=NULL
+  - Verrou anti-lockout : un manager ne peut pas se désactiver lui-même
+  - Vérifications de cohérence (ne pas désactiver un déjà désactivé, etc.)
+  - POST placeholder (501) pour reset-password et resend-invitation (logique complexe à venir)
+- Création de 6 composants client dans `src/components/ogpressing/admin/personnel/` :
+  - `personnel-helpers.tsx` : types Employe/RolePersonnel/StatutComptePersonnel, ROLE_PERSONNEL_LABELS, ROLE_BADGE_CLASSES (7 couleurs distinctes : primary/secondary/amber/cyan/rose/emerald/violet), StatutBadge (vert/orange/gris), formatDateShort
+  - `personnel-filters.tsx` : recherche + 2 Select (rôle 7 valeurs + "tous", statut 3 valeurs + "tous"), mobile-first grid 2 colonnes
+  - `personnel-actions-menu.tsx` : DropdownMenu 3 points + AlertDialog unique pour toutes les actions. "Modifier" (toast à venir), "Réinitialiser mot de passe" (si creation_directe), "Renvoyer invitation" (si invite_en_attente + lien_invitation), "Désactiver/Réactiver" (selon statut). Chaque action destructrice demande confirmation
+  - `personnel-list.tsx` : tableau desktop (6 colonnes) + cards mobile. Utilise RoleBadge + StatutBadge + PersonnelActionsMenu
+  - `add-employee-button.tsx` : désactivé + tooltip si limite atteinte (toast erreur), sinon toast "à venir" (formulaire au prochain prompt)
+  - `personnel-pagination.tsx` : Précédent/Suivant + "Page X / Y" + count
+  - `personnel-page.tsx` : orchestrator avec header (titre + bouton Ajouter), Card compteur (X / Y + barre de progression colorée + alerte rouge si limite atteinte), filtres, liste, pagination. Debounce 300ms recherche
+- Mise à jour de `src/app/(admin)/admin/personnel/page.tsx` : remplace le placeholder par `<PersonnelPage />`
+- Bug fix : `MailForward` n'existe pas dans lucide-react → remplacé par `Send`
+- Lint OK (0 erreur). Dev server OK sur :3000
+
+Vérification Agent Browser (admin1@ogpressing.ci → Pressing Excellence, plan Pro) :
+- Page /admin/personnel charge en 200, rend le titre "Personnel", le compteur "1 / 8 Plan Pro" + "7 places restantes" + barre de progression verte
+- Tableau desktop : 6 colonnes (Nom, Rôle, Téléphone, Statut, Créé le, Actions), 1 employé Awa Koné (Manager, Actif, 24/07/2026)
+- Cards mobile : nom, email, badge rôle (Manager), badge statut (Actif), date création, bouton actions
+- Menu d'actions 3 points : "Modifier", "Réinitialiser le mot de passe" (visible car creation_directe), "Désactiver le compte" — "Renvoyer l'invitation" correctement masqué (employé actif)
+- AlertDialog de confirmation : "Désactiver ce compte ?" avec Annuler/Désactiver
+- Bouton "Ajouter un employé" → toast "Fonctionnalité à venir"
+- Filtre Rôle : 8 options (Tous + 7 rôles), sélection "Caissier" → empty state "Aucun employé trouvé"
+- Aucune erreur runtime, tous les appels API /api/admin/personnel retournent 200
+
+Stage Summary:
+- Page /admin/personnel complète et fonctionnelle (mobile-first, cohérente avec /admin/clients)
+- Compteur de sièges avec limite de plan (starter=3, pro=8, business=illimité) + alerte si limite atteinte
+- Menu d'actions contextuel par employé avec confirmations (désactiver/réactiver implémentés côté API ; reset-password et resend-invitation en placeholder 501)
+- Anti-lockout : un manager ne peut pas se désactiver lui-même (vérifié côté API)
+- Bouton "+ Ajouter un employé" désactivé si limite atteinte, sinon toast "à venir" (formulaire détaillé au prochain prompt)
+- Lint propre, 0 erreur runtime, vérifié sur desktop + mobile
