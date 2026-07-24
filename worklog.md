@@ -1022,3 +1022,75 @@ Stage Summary:
 - supabase/queries/README.md pose la convention d'organisation des requêtes par module
 - Lint OK (0 erreur)
 - Note : DashboardLayout et StatCard restent dans ogpressing/ (déjà fonctionnels et utilisés par les layouts admin/super-admin) — déplacer vers shared/ serait un refactoring sans valeur ajoutée
+
+---
+Task ID: 19
+Agent: main
+Task: Audit LOT 2 (prompts 2.1 à 2.5 du fichier upload/02-schema-supabase.md) — vérifier ce qui n'a pas été mis et conçu, puis combler les écarts
+
+Work Log:
+- Lecture du fichier spec `/home/z/my-project/upload/02-schema-supabase.md` (5 prompts 2.1 à 2.5)
+- Lecture du worklog partagé (Tasks 0 à 18) pour reprendre le contexte global du projet
+- Lecture de toutes les migrations existantes : 001_enums.sql, 002_tables.sql, 003_constraints.sql, 004_indexes.sql, 005_triggers.sql, 009_vue_clients_enrichis.sql
+- Vérification en base via PostgREST (service_role) de l'existence des fonctions critiques :
+  * `vue_clients_enrichis` ✅ existe et retourne des données
+  * `is_super_admin()` ✅ existe (retourne false avec service_role)
+  * `get_pressing_id_utilisateur()` ✅ existe (retourne null avec service_role)
+  * `calculer_montant_remise(montant_avant, type, valeur)` ❌ MANQUANTE (HTTP 404)
+  * `calculer_statut_commande(commande_id)` ❌ MANQUANTE (existe sous le nom `deriver_statut_commande(p_commande_id)` — paramètre renommé)
+  * `calculer_statut_paiement_commande(commande_id)` ❌ MANQUANTE (seulement le TRIGGER `trigger_recalculer_paiement_commande()` existe, pas de version scalaire callable)
+- Audit systématique colonne par colonne de chaque table du spec vs implémentation réelle :
+  * 21/21 enums ✅ CONFORMES (PROMPT 2.1)
+  * 17/17 tables présentes mais avec écarts : 17 colonnes manquantes réparties sur 9 tables
+  * 1 contrainte CHECK XOR manquante sur paiements (commande_id XOR abonnement_id)
+  * 1 index composite manquant sur produits_stock (alertes stock bas)
+  * 3 fonctions manquantes (cf. ci-dessus)
+  * 1 correction nécessaire sur la vue vue_clients_enrichis (total_depense doit être SUM(paiements) pas SUM(montant_total))
+- Catégorisation des écarts :
+  * ✅ CONFORME : 21 enums + 17 tables (structure de base) + 25 triggers + 2 fonctions RLS + 1 vue + 34 contraintes + ~45 index
+  * 🔄 ÉQUIVALENT (renommage/fusion) : ~25 colonnes (nom_complet vs nom+prenom, code_qr vs barcode, etc.) — non corrigé pour ne pas casser l'app
+  * ⚠️ DIVERGENCE STRUCTURELLE ASSUMÉE : 3 (pressing.admin_user_id couvert par personnel ; articles_vetements repensé ; paiements.created_by cible personnel)
+  * ❌ MANQUANT CRITIQUE (à ajouter) : 17 colonnes + 1 CHECK + 1 index + 3 fonctions + 1 correction de vue
+- Création de `/home/z/my-project/AUDIT_LOT2.md` (rapport d'audit complet ~500 lignes) avec :
+  * Table comparative spec vs implémentation pour chaque table (colonnes, types, contraintes)
+  * Classification des écarts (CONFORME / ÉQUIVALENT / AJOUT NON-BLOQUANT / DIVERGENCE STRUCTURELLE / MANQUANT CRITIQUE)
+  * Synthèse globale avec liste détaillée des manquants critiques
+  * Plan de résolution (migration 010 non-bloquante)
+- Création de `/home/z/my-project/supabase/migrations/010_lot2_gap_fill.sql` (727 lignes) structuré en 9 sections :
+  * SECTION 1 : 17 colonnes manquantes sur 9 tables (ALTER TABLE ADD COLUMN IF NOT EXISTS)
+    - demandes_inscription : nombre_machines, nombre_employes
+    - codes_activation : demande_id (FK demandes_inscription)
+    - pressing : horaires (jsonb)
+    - abonnements : reference_paiement, justificatif_url, enregistre_par (FK super_admins)
+    - clients : preferences_lavage (jsonb NOT NULL DEFAULT)
+    - commandes : montant_total_avant_remise, montant_remise (avec BACKFILL CRITIQUE des lignes existantes)
+    - articles_vetements : assigne_a (FK personnel)
+    - paiements : abonnement_id (FK abonnements), est_acompte, justificatif_url + DROP NOT NULL sur commande_id
+    - produits_stock : fds_url, date_expiration
+    - mouvements_stock : commande_id (FK commandes)
+  * SECTION 2 : CHECK XOR sur paiements (commande_id XOR abonnement_id) — idempotent via DO $$ BEGIN ... EXCEPTION
+  * SECTION 3 : CHECK cohérence remise sur commandes (montant_total = montant_total_avant_remise - montant_remise) — idempotent
+  * SECTION 4 : Index composite alerte stock bas (idx_produits_stock_alerte_basse, partial WHERE quantite_actuelle <= seuil_alerte) + index secondaire
+  * SECTION 5 : Fonction calculer_montant_remise(montant_avant, type, valeur) — 5 types de remise gérés (aucune/pourcentage/montant_fixe/article_gratuit/fidelite), plafonnée au montant_avant, SECURITY DEFINER
+  * SECTION 6 : Fonction calculer_statut_commande(commande_id) — alias spec-conforme de deriver_statut_commande
+  * SECTION 7 : Fonction calculer_statut_paiement_commande(commande_id) — version scalaire callable (le trigger fait la même chose en arrière-plan). ⚠️ FIX : utilisation d'alias de table (c., p.) pour lever l'ambiguïté paramètre vs colonne (sinon `commande_id = commande_id` résoudrait en `param = param` = TRUE → bug)
+  * SECTION 8 : Correction de la vue vue_clients_enrichis — total_depense utilise maintenant une subquery scalaire corrélée sur c.id (SUM(paiements.montant)) au lieu de SUM(commandes.montant_total). ⚠️ FIX : pas de JOIN paiements dans la requête principale pour éviter l'inflation du SUM si une commande a plusieurs paiements
+  * SECTION 9 : Vérifications post-migration (commentées, à exécuter manuellement dans SQL Editor pour confirmer)
+- 2 bugs critiques évités pendant l'écriture :
+  1. Backfill manquant sur commandes.montant_total_avant_remise → aurait fait échouer le CHECK (montant_total = 0 - 0 ≠ montant_total réel). Fix : UPDATE avant ADD CONSTRAINT.
+  2. Ambiguïté PL/pgSQL `WHERE commande_id = commande_id` → aurait renvoyé TOUS les paiements au lieu de ceux de la commande. Fix : alias de table c./p. systématiques.
+- Vérification lint : `bun run lint` → 0 erreur
+- Vérification dev server : OK sur :3000, 0 erreur runtime
+
+Stage Summary:
+- Audit LOT 2 COMPLET : tous les écarts spec vs implémentation identifiés et catégorisés
+- Rapport d'audit `/home/z/my-project/AUDIT_LOT2.md` (~500 lignes) créé — source de vérité pour l'audit
+- Migration `010_lot2_gap_fill.sql` (727 lignes, 9 sections) créée — comble TOUS les écarts critiques de manière NON-BLOQUANTE et IDEMPOTENTE
+- ⚠️ ACTION UTILISATEUR REQUISE : appliquer 010_lot2_gap_fill.sql dans le SQL Editor Supabase (https://supabase.com/dashboard/project/yqaitafigfxlrprrouhr/sql/new)
+  * Soit en copiant le contenu du fichier depuis /home/z/my-project/supabase/migrations/010_lot2_gap_fill.sql
+  * Soit en demandant à l'agent de fournir le SQL complet dans le chat
+- Après application de 010 :
+  * Le schéma OgPressing sera 100% conforme au spec LOT 2 (aux divergences structurelles assumées près, documentées dans AUDIT_LOT2.md)
+  * L'agent mettra à jour database.types.ts pour refléter les nouvelles colonnes (régénération complète car le fichier actuel a aussi des colonnes renommées incorrectes)
+- État global : 001 ✅ · 002 ✅ · 003 ✅ · 004 ✅ · 005 ✅ · 006 ✅ · 007 ✅ · 008 ✅ · 009 ✅ · 010 ⏳ (à appliquer par l'utilisateur)
+- Note : le fichier database.types.ts actuel (créé manuellement en Task 18) a des colonnes renommées incorrectes (e.g., `demandes_inscription.adresse` au lieu de `commune`, `commandes.code` au lieu de `numero_commande`, `articles_vetements.qr_code` au lieu de `code_qr`, etc.). Une régénération complète sera faite après application de 010.
