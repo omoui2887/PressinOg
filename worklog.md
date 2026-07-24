@@ -98,3 +98,45 @@ Stage Summary:
 - Aucune page fonctionnelle développée (conforme à la consigne : "seulement la structure et la configuration de base")
 - Lint OK, dev server OK sur :3000
 - Note : Next.js 16 affiche un warning "middleware file convention is deprecated, use proxy instead" — c'est juste un rename de convention, Next.js 16 continue de supporter middleware.ts et l'auto-mappe en proxy.ts (visible dans les logs : "proxy.ts: 8ms"). On garde middleware.ts car @supabase/ssr le documente ainsi.
+
+---
+Task ID: 2
+Agent: main
+Task: Création du fichier de migration 001_enums.sql avec les 21 types ENUM PostgreSQL + application à la base Supabase
+
+Work Log:
+- Création du dossier `/home/z/my-project/supabase/migrations/` (convention Supabase CLI)
+- Écriture du fichier `001_enums.sql` (368 lignes, 21 instructions CREATE TYPE)
+  - En-tête de documentation : version, date, convention snake_case, warning d'execution unique
+  - Chaque ENUM précédé d'un commentaire explicatif détaillé :
+    * Rôle métier (référence PRD quand applicable : §3.3, §3.5, §5.1, §5.2, §5.3, §6.1, §6.4, §7.6, §14, §16, §18.3, §18.5)
+    * Table(s)/colonne(s) qui l'utilisent
+    * Description de chaque valeur quand pertinent
+  - Accents supprimés pour compatibilité SQL (use, dechire, tache, desactive, elevee, etc.)
+  - Convention : valeurs en minuscules avec underscores exactement comme spécifié dans le prompt
+- Application de la migration via Supabase Management API :
+  - POST https://api.supabase.com/v1/projects/yqaitafigfxlrprrouhr/database/query
+  - Header Authorization: Bearer $SUPABASE_PAT
+  - Body JSON: { "query": "<contenu SQL>" } (12002 caractères)
+  - Réponse HTTP 201 + tableau vide `[]` = succès (CREATE TYPE ne retourne pas de lignes)
+- Vérification post-migration : requête sur pg_type + pg_enum + pg_namespace
+  - 21/21 types ENUM présents dans le schéma public
+  - Toutes les valeurs exactes confirmées :
+    * role_personnel (7) : manager, receptionniste, caissier, laveur, repassage, livreur, comptable
+    * statut_commande (8) : recu, en_traitement, lave, repasse, pret, en_livraison, livre, retire
+    * statut_article (7) : recu, en_traitement, lave, repasse, pret, retire, livre (pas de en_livraison)
+    * methode_paiement (3) : especes, mobile_money, carte_bancaire (PRINCIPE AUCUN PAIEMENT INTÉGRÉ respecté)
+    * type_service (5) : lavage, repassage, nettoyage_sec, detachage, blanchisserie
+    * unite_stock (2) : litre, kg
+    * + 15 autres enums tous validés
+- Vérification qu'aucune table n'existe encore (base prête pour migration 002_tables.sql) : 0 table dans public
+
+Stage Summary:
+- Fichier `/home/z/my-project/supabase/migrations/001_enums.sql` créé (368 lignes, 21 CREATE TYPE)
+- Migration appliquée avec succès sur la base Supabase OgPressing (yqaitafigfxlrprrouhr)
+- 21/21 types ENUM créés et vérifiés via pg_type/pg_enum
+- Base prête pour la migration 002 (tables) — 0 table existe encore dans le schéma public
+- Convention de nommage respectée : snake_case, minuscules, accents supprimés
+- Chaque ENUM documenté inline avec référence PRD et tables destinataires
+- Aucune intégration de paiement (methode_paiement est purement déclaratif conformément au principe fondamental du projet)
+- Prochaine étape : attendre le prompt utilisateur pour la migration 002 (tables)
