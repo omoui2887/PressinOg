@@ -2,9 +2,16 @@
 -- OgPressing — Migration 005 : Triggers & Functions
 -- ============================================================
 -- Fichier    : 005_triggers.sql
--- Version    : 1.1
+-- Version    : 1.2
 -- Date       : 24/07/2026
 -- Fix v1.1   : DROP TRIGGER IF EXISTS avant chaque CREATE TRIGGER → idempotent.
+-- Fix v1.2   : Correction de 2 bugs runtime bloquants :
+--              (a) generer_numero_commande() : syntaxe invalide du calcul de
+--                  clé advisory lock (CAST d'un row à 3 éléments vers BIGINT).
+--                  Remplacé par pg_advisory_xact_lock(annee, hashtext(pressing_id)).
+--              (b) trigger_appliquer_mouvement_stock() : sous-requête scalaire
+--                  invalide `(col FROM tbl WHERE ...)` dans le RAISE EXCEPTION.
+--                  Remplacé par `(SELECT col FROM tbl WHERE ...)`.
 -- Description : Fonctions et triggers PostgreSQL pour automatiser :
 --   1. Mise à jour automatique de updated_at sur toutes les tables
 --   2. Génération automatique du numero_commande (CMD-YYYY-NNNNN)
@@ -73,7 +80,6 @@ DECLARE
     annee_courante    INT;
     compteur          INT;
     numero_genere     TEXT;
-    pressing_id_lock  BIGINT;
 BEGIN
     -- Si l'app a déjà fourni un numero_commande, on le respecte.
     IF NEW.numero_commande IS NOT NULL AND NEW.numero_commande <> '' THEN
@@ -83,15 +89,15 @@ BEGIN
     annee_courante := EXTRACT(YEAR FROM COALESCE(NEW.date_reception, NOW()));
 
     -- Verrou advisory pour éviter 2 INSERT concurrents avec le même numéro.
-    -- On convertit (annee, pressing_id) en BIGINT reproductible.
-    pressing_id_lock := (annee_courante::BIGINT << 32)
-                      | (CAST(
-                            ('x' || LPad(
-                                REPLACE(CAST(NEW.pressing_id AS TEXT), '-', ''),
-                                8, '0'
-                            ), 16, BIGINT)
-                        ) AS BIGINT) % 4294967296;
-    PERFORM pg_advisory_xact_lock(pressing_id_lock);
+    -- Forme à 2 entiers : (annee, hash du pressing_id) → un lock unique par
+    -- couple (pressing, année). Les collisions de hashtext entre pressings
+    -- différents sont rares et sans gravité (au pire, 2 pressings se sérialisent
+    -- brièvement sur la même commande — l'unicité du numero est de toute façon
+    -- garantie par la contrainte UNIQUE de 002).
+    PERFORM pg_advisory_xact_lock(
+        annee_courante,
+        hashtext(CAST(NEW.pressing_id AS TEXT))
+    );
 
     -- Compter les commandes existantes pour ce pressing cette année.
     SELECT COUNT(*) + 1
@@ -108,7 +114,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.generer_numero_commande() IS
-    'Génère NEW.numero_commande au format CMD-AAAA-NNNNN (compteur annuel par pressing). Utilise pg_advisory_xact_lock pour éviter les doublons concurrents.';
+    'Génère NEW.numero_commande au format CMD-AAAA-NNNNN (compteur annuel par pressing). Utilise pg_advisory_xact_lock(annee, hashtext(pressing_id)) pour éviter les doublons concurrents.';
 
 
 -- ============================================================
@@ -418,7 +424,8 @@ BEGIN
         IF nouvelle_quantite < 0 THEN
             RAISE EXCEPTION
                 'Stock insuffisant pour le produit % : tentative de sortir % alors que le stock est de %',
-                produit_id_local, NEW.quantite, (quantite_actuelle FROM public.produits_stock WHERE id = produit_id_local);
+                produit_id_local, NEW.quantite,
+                (SELECT quantite_actuelle FROM public.produits_stock WHERE id = produit_id_local);
         END IF;
 
         UPDATE public.produits_stock

@@ -418,3 +418,31 @@ Stage Summary:
   * Tous idempotents (CREATE INDEX IF NOT EXISTS) + partials WHERE NOT NULL / WHERE actif=TRUE
   * Ne recrée PAS les 6 index auto-générés par les UNIQUE composites de 003
 - Prochaines étapes après "004 OK" : fournir 005_triggers.sql puis 006_rls_policies.sql
+
+---
+Task ID: 9
+Agent: main
+Task: Vérification 004 (index) appliquée + hardening de 005_triggers.sql (2 bugs runtime corrigés) + fourniture du SQL 005 à l'utilisateur
+
+Work Log:
+- Confirmation utilisateur "004 ok" → migration 004 (≈45 index B-tree) appliquée dans le SQL Editor Supabase
+- Tentative de vérification behaviorale via API Management Supabase (pg_indexes) → HTTP 401 "JWT could not be decoded" car SUPABASE_PAT est encore placeholder dans .env.local (non bloquant : les index sont transparents, impossibles à tester behavioralement via REST ; on se fie au retour utilisateur, même pattern qu'en Task 8)
+- Relecture complète de 005_triggers.sql avant fourniture à l'utilisateur → 2 BUGS RUNTIME BLOQUANTS détectés :
+  * Bug A — generer_numero_commande() : calcul de clé advisory lock utilisé `CAST(('x' || LPad(...), 16, BIGINT) AS BIGINT)` qui est du SQL invalide (CAST d'un row à 3 éléments vers BIGINT n'existe pas). Aurait fait planter CHAQUE création de commande.
+    Fix : remplacé par `pg_advisory_xact_lock(annee_courante, hashtext(pressing_id))` (forme 2-int, valide et plus simple). Suppression de la variable locale pressing_id_lock devenue inutile.
+  * Bug B — trigger_appliquer_mouvement_stock() : le RAISE EXCEPTION utilisait `(quantite_actuelle FROM public.produits_stock WHERE id = ...)` qui n'est pas une sous-requête scalaire valide en PostgreSQL.
+    Fix : remplacé par `(SELECT quantite_actuelle FROM public.produits_stock WHERE id = ...)`.
+- Bump version header 005 : v1.1 → v1.2 avec note explicative des 2 fixes
+- Vérification lint : `bun run lint` → OK (0 erreur)
+- dev.log : warning stale "[updateSession] Supabase env vars manquantes" présent (anterieur à la mise à jour des clés en Task 7) — non bloquant, disparaîtra au prochain reload
+- Préparation du message utilisateur avec le SQL complet corrigé de 005_triggers.sql (v1.2)
+
+Stage Summary:
+- Migration 004 CONFIRMÉE appliquée (retour utilisateur)
+- État global : 001 ✅ · 002 ✅ · 003 ✅ · 004 ✅ · 005 ⏳ (fourni maintenant, v1.2 corrigée) · 006 ⏳
+- 005_triggers.sql v1.2 prête à être copiée-collée dans le SQL Editor Supabase :
+  * 7 fonctions plpgsql SECURITY DEFINER (set_updated_at, generer_numero_commande, generer_code_qr_article, deriver_statut_commande, trigger_recalculer_statut_commande, trigger_recalculer_paiement_commande, trigger_appliquer_mouvement_stock)
+  * 25 triggers (16 set_updated_at + 1 numero_commande + 1 code_qr + 3 recalcul statut + 3 recalcul paiement + 1 mouvement stock)
+  * Tous idempotents (DROP TRIGGER IF EXISTS + CREATE OR REPLACE FUNCTION)
+  * 2 bugs runtime critiques corrigés (advisory lock + subquery RAISE)
+- Prochaine étape après "005 ok" : fournir 006_rls_policies.sql (33 policies d'isolation multi-tenant)
