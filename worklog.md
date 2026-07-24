@@ -362,3 +362,33 @@ Stage Summary:
   * SUPABASE_PAT
   Sources : dashboard Supabase → Settings → API (pour anon + service_role), Account → Access Tokens (pour PAT)
 - Tant que les placeholders ne sont pas remplacés, l'auth Supabase reste désactivée (warning en console à chaque requête) — l'app affiche la landing mais les futures pages auth seront non fonctionnelles
+
+---
+Task ID: 7
+Agent: main
+Task: Configuration des clés Supabase dans .env.local + vérification état DB + préparation migration 003
+
+Work Log:
+- Réception des 2 clés Supabase de l'utilisateur (anon + service_role) dans le chat
+- Mise à jour de /home/z/my-project/.env.local via MultiEdit :
+  * NEXT_PUBLIC_SUPABASE_ANON_KEY → clé anon JWT (244 chars)
+  * SUPABASE_SERVICE_ROLE_KEY → clé service_role JWT (246 chars)
+  * SUPABASE_PAT reste placeholder (non fourni dans ce message — non bloquant pour la suite)
+- Vérification de la connexion Supabase via PostgREST avec service_role :
+  * GET /rest/v1/ → HTTP 200 ✅ (connexion OK)
+- Vérification de l'état des 17 tables (migration 002) :
+  * Test individuel de chaque table via GET /rest/v1/<table>?select=id&limit=1
+  * RÉSULTAT : 17/17 tables présentes ✅ (super_admins, demandes_inscription, pressing, codes_activation, abonnements, personnel, clients, services, commandes, commande_lignes, articles_vetements, paiements, produits_stock, mouvements_stock, machines, anomalies, depenses)
+  * Migration 002 (v1.2 corrigée) BIEN appliquée par l'utilisateur dans le SQL Editor Supabase
+- Test migration 003 (contraintes) via INSERT invalide :
+  * Tentative INSERT abonnements avec montant_mensuel=-100 + pressing_id fictif
+  * Refusé sur FK (23503) avant d'atteindre le CHECK → test non concluant pour 003
+  * L'utilisateur doit encore appliquer 003 dans le SQL Editor
+- Préparation du message utilisateur avec SQL complet de 003_constraints.sql à copier-coller
+
+Stage Summary:
+- .env.local maintenant fonctionnel (2/3 clés, PAT restera placeholder — non critique)
+- Auth Supabase réactivée côté Next.js (middleware ne skipperra plus)
+- Migration 002 confirmée en base (17/17 tables ✅)
+- Migration 003 (34 contraintes : 6 UNIQUE + 28 CHECK) prête à être fournie à l'utilisateur
+- Prochaines étapes : 003 → 004 → 005 → 006 (RLS)
