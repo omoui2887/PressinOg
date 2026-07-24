@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,24 +15,32 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Z.ai Code Scaffold - AI-Powered Development",
-  description: "Modern Next.js scaffold optimized for AI-powered development with Z.ai. Built with TypeScript, Tailwind CSS, and shadcn/ui.",
-  keywords: ["Z.ai", "Next.js", "TypeScript", "Tailwind CSS", "shadcn/ui", "AI development", "React"],
-  authors: [{ name: "Z.ai Team" }],
+  title: {
+    default: "OgPressing — Gestion professionnelle de pressings",
+    template: "%s · OgPressing",
+  },
+  description:
+    "SaaS de gestion de pressings pour la Côte d'Ivoire : Point de Vente, suivi de production, CRM, gestion du personnel et des biodétergents.",
+  keywords: [
+    "OgPressing",
+    "pressing",
+    "blanchisserie",
+    "laverie",
+    "Côte d'Ivoire",
+    "FCFA",
+    "SaaS",
+  ],
+  authors: [{ name: "OgPressing" }],
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/favicon.ico",
   },
   openGraph: {
-    title: "Z.ai Code Scaffold",
-    description: "AI-powered development with modern React stack",
-    url: "https://chat.z.ai",
-    siteName: "Z.ai",
+    title: "OgPressing — Gestion professionnelle de pressings",
+    description:
+      "Digitalisez votre pressing en Côte d'Ivoire : POS, suivi de production, CRM, personnel.",
+    siteName: "OgPressing",
     type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Z.ai Code Scaffold",
-    description: "AI-powered development with modern React stack",
+    locale: "fr_FR",
   },
 };
 
@@ -41,12 +50,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="fr" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
         {children}
+        {/* Toasts shadcn/ui (radix-toast based) */}
         <Toaster />
+        {/* Toasts sonner (recommandé pour les feedbacks d'action) */}
+        <SonnerToaster richColors position="top-right" />
       </body>
     </html>
   );
