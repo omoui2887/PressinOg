@@ -1,18 +1,20 @@
 /**
- * OgPressing — /admin/clients (placeholder)
- * -----------------------------------------
- * CRM clients du pressing : fichier clients, historique commandes,
- * fidélité, recherche par téléphone. Module complet à venir.
+ * OgPressing — /admin/clients
+ * ----------------------------
+ * Liste des clients du pressing connecté :
+ *   - Recherche instantanée par nom ou téléphone
+ *   - Filtre "uniquement clients avec impayés"
+ *   - Tableau (desktop) / cards (mobile) avec Nom, Téléphone, Points fidélité,
+ *     Solde impayé (badge rouge si > 0), Total dépensé, Nombre de commandes
+ *   - Bouton "+ Nouveau client" (Dialog avec Nom, Téléphone, Email, Adresse)
+ *   - Bouton "Exporter les impayés en .xlsx" (placeholder — Lot 12)
+ *   - Pagination (20 clients/page)
+ *   - Clic sur un client → /admin/clients/{id}
+ *
+ * Données récupérées via /api/admin/clients (RLS isole par pressing).
  */
-import { Users } from "lucide-react";
-import { AdminPagePlaceholder } from "@/components/ogpressing/admin/admin-page-placeholder";
+import { ClientsPage } from "@/components/ogpressing/admin/clients/clients-page";
 
-export default function ClientsPage() {
-  return (
-    <AdminPagePlaceholder
-      title="Clients"
-      description="Fichier clients et historique"
-      icon={Users}
-    />
-  );
+export default function ClientsAdminPage() {
+  return <ClientsPage />;
 }
