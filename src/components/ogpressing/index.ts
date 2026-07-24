@@ -9,3 +9,8 @@ export { PublicFooter } from "./public-footer";
 export { InscriptionForm } from "./inscription-form";
 export { DashboardPlaceholder } from "./dashboard-placeholder";
 export { Reveal } from "./reveal";
+export { StatCard, type StatAccent } from "./stat-card";
+export {
+  DashboardLayout,
+  type DashboardNavItem,
+} from "./dashboard-layout";

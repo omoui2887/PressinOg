@@ -7,12 +7,14 @@
  *   1. Récupère la session JWT Supabase depuis les cookies
  *   2. La rafraîchit si expirée
  *   3. Réécrit les cookies dans la réponse
- *
- * Ce fichier est volontairement séparé de `server.ts` (Server Components) car
- * le middleware s'exécute dans un runtime différent (Edge par défaut) et
- * manipule les cookies de manière synchrone via NextRequest/NextResponse.
+ *   4. Protège les route groups (super-admin) / (admin) / (personnel)
+ *      en vérifiant le rôle de l'utilisateur authentifié
  *
  * 🔒 SÉCURITÉ : ce client utilise la clé `anon` + JWT utilisateur → soumis RLS.
+ * La vérification de rôle s'appuie sur les policies RLS :
+ *   - Super Admin  : peut lire sa propre ligne dans `super_admins`
+ *                   (policy super_admin_full_access USING is_super_admin())
+ *   - Admin/Personnel : peut lire sa propre ligne dans `personnel`
  *
  * Référence : https://supabase.com/docs/guides/auth/server-side/nextjs
  */
@@ -33,8 +35,6 @@ export function createMiddlewareClient(
 
   // 🔒 Garde-fou : si les variables d'env Supabase ne sont pas configurées,
   // on log une erreur claire côté serveur et on lève une Error explicite.
-  // Cela évite l'erreur opaque "Your project's URL and Key are required"
-  // qui venait de createServerClient quand on lui passait undefined.
   if (!supabaseUrl || !supabaseAnonKey) {
     const missing: string[] = [];
     if (!supabaseUrl) missing.push("NEXT_PUBLIC_SUPABASE_URL");
@@ -48,52 +48,55 @@ export function createMiddlewareClient(
     throw new Error(msg);
   }
 
-  const supabase = createServerClient(
-    supabaseUrl,
-    supabaseAnonKey,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          // On met à jour les cookies de la requête pour que les handlers
-          // suivants voient la nouvelle session, puis on propage dans la
-          // réponse qui sera renvoyée au navigateur.
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
-          response = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          );
-        },
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
       },
-    }
-  );
+      setAll(cookiesToSet) {
+        // On met à jour les cookies de la requête pour que les handlers
+        // suivants voient la nouvelle session, puis on propage dans la
+        // réponse qui sera renvoyée au navigateur.
+        cookiesToSet.forEach(({ name, value }) =>
+          request.cookies.set(name, value)
+        );
+        response = NextResponse.next({ request });
+        cookiesToSet.forEach(({ name, value, options }) =>
+          response.cookies.set(name, value, options)
+        );
+      },
+    },
+  });
 
   return { supabase, response };
 }
 
+/** Préfixes de routes protégées par rôle. */
+const PROTECTED_PREFIXES = ["/super-admin", "/admin", "/personnel"] as const;
+
+/** Construit une réponse de redirection en préservant les cookies de session rafraîchie. */
+function redirectTo(
+  request: NextRequest,
+  response: NextResponse,
+  path: string
+): NextResponse {
+  const url = new URL(path, request.url);
+  const redirect = NextResponse.redirect(url);
+  // Propage les cookies (session rafraîchie) vers la réponse de redirection.
+  response.cookies.getAll().forEach((c) => {
+    redirect.cookies.set(c.name, c.value, c);
+  });
+  return redirect;
+}
+
 /**
- * Met à jour la session Supabase à chaque requête.
- *
- * Pour l'instant (structure initiale), la fonction se contente de rafraîchir
- * la session. Elle sera enrichie dans les prochains prompts avec :
- *   - Redirection des utilisateurs non authentifiés vers /login
- *   - Redirection par rôle (Super Admin / Admin / Personnel)
- *   - Protection des route groups (public) / (super-admin) / (admin) / (personnel)
- *
- * @returns NextResponse à propager depuis le middleware
+ * Met à jour la session Supabase à chaque requête + protège les routes.
  */
 export async function updateSession(
   request: NextRequest
 ): Promise<NextResponse> {
-  // 🔒 Garde-fou : si les vars d'env Supabase ne sont pas configurées
-  // (ex: .env.local supprimé ou placeholders non remplacés), on skippe
-  // l'init Supabase et on laisse passer la requête sans auth.
-  // Cela évite que tout le site crashe sur un middleware mal configuré —
-  // l'utilisateur peut au moins voir la landing page pendant qu'il corrige.
+  // 🔒 Garde-fou : si les vars d'env Supabase ne sont pas configurées,
+  // on laisse passer la requête sans auth (pour ne pas casser tout le site).
   if (
     !process.env.NEXT_PUBLIC_SUPABASE_URL ||
     !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
@@ -110,10 +113,77 @@ export async function updateSession(
 
   // Rafraîchit la session si expirée — IMPORTANT : ne pas retirer cet appel,
   // c'est lui qui met à jour le cookie d'auth dans la réponse.
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  // TODO (prochains prompts) : logique de redirection par rôle / route group.
-  // Pour l'instant, on laisse tout passer librement.
+  const { pathname } = request.nextUrl;
+  const isProtected = PROTECTED_PREFIXES.some((p) =>
+    pathname === p || pathname.startsWith(p + "/")
+  );
+
+  if (!isProtected) {
+    // Route publique : on laisse passer (session rafraîchie dans la réponse).
+    return response;
+  }
+
+  // 1. Non authentifié sur une route protégée → /login?next=...
+  if (!user) {
+    return redirectTo(request, response, `/login?next=${encodeURIComponent(pathname)}`);
+  }
+
+  // 2. Vérification du rôle selon le préfixe.
+  if (pathname === "/super-admin" || pathname.startsWith("/super-admin/")) {
+    // Super Admin : doit avoir une ligne active dans super_admins.
+    // RLS : is_super_admin() = true autorise la lecture de sa propre ligne.
+    const { data: sa } = await supabase
+      .from("super_admins")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("actif", true)
+      .maybeSingle();
+    if (!sa) {
+      return redirectTo(
+        request,
+        response,
+        `/login?next=${encodeURIComponent(pathname)}&error=acces_refuse`
+      );
+    }
+  } else if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+    // Admin pressing : personnel avec rôle 'manager' actif.
+    const { data: pers } = await supabase
+      .from("personnel")
+      .select("id, role, actif, statut_compte")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const ok =
+      pers &&
+      pers.role === "manager" &&
+      pers.actif === true &&
+      pers.statut_compte === "actif";
+    if (!ok) {
+      return redirectTo(
+        request,
+        response,
+        `/login?next=${encodeURIComponent(pathname)}&error=acces_refuse`
+      );
+    }
+  } else if (pathname === "/personnel" || pathname.startsWith("/personnel/")) {
+    // Personnel : n'importe quel employé actif (hors manager → /admin).
+    const { data: pers } = await supabase
+      .from("personnel")
+      .select("id, actif, statut_compte")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const ok = pers && pers.actif === true && pers.statut_compte === "actif";
+    if (!ok) {
+      return redirectTo(
+        request,
+        response,
+        `/login?next=${encodeURIComponent(pathname)}&error=acces_refuse`
+      );
+    }
+  }
 
   return response;
 }
