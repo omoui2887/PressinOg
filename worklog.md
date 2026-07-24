@@ -989,3 +989,36 @@ Stage Summary:
 - `allowedDevOrigins` étendu à *.space-z.ai pour le preview panel iframe
 - Connexion super admin ET admin fonctionnent et naviguent correctement vers leurs dashboards respectifs
 - Pattern recommandé Supabase + Next.js App Router : toujours utiliser `window.location.href` (hard navigation) après signInWithPassword pour éviter les race conditions cookies + les blocages cross-origin RSC
+
+---
+Task ID: 18
+Agent: main
+Task: Audit Lot 1 (prompts 1.1, 1.2, 1.3) — vérifier ce qui n'a pas été mis et conçu, puis combler les écarts
+
+Work Log:
+- Lecture du fichier upload/01-initialisation-projet.md (Lot 1 : 3 prompts)
+- Audit systématique de chaque élément demandé vs. implémenté :
+  * Prompt 1.1 (Init projet) : tout OK SAUF .env.local.example manquant
+  * Prompt 1.2 (Layout) : StatusBadge ✅, DashboardLayout/StatCard déplacés vers ogpressing/ (fonctionnels), MAIS BottomNav générique / Sidebar standalone / EmptyState générique MANQUANTS
+  * Prompt 1.3 (Supabase) : client.ts/server.ts/middleware.ts/middleware.ts OK, MAIS database.types.ts (auto-généré) + supabase/queries/README.md MANQUANTS
+- Tentative de génération auto des types Supabase via CLI (supabase gen types) → échec : SUPABASE_PAT dans .env.local est un placeholder (16 chars), le vrai PAT n'est pas stocké
+- Tentative d'introspection via information_schema via PostgREST → échec : PGRST205 (information_schema non exposé)
+- Création manuelle de database.types.ts à partir des migrations SQL (001_enums + 002_tables) : 17 tables + 1 vue (vue_clients_enrichis) + 22 enums, avec Row/Insert/Update pour chaque table + helpers Tables/TablesInsert/TablesUpdate/Views
+
+Écarts comblés (6 fichiers créés) :
+1. `.env.local.example` — template des 4 variables Supabase (URL, anon, service_role, PAT) avec instructions
+2. `src/components/shared/empty-state.tsx` — composant générique (icon, title, description, action optionnelle, mode compact), accessible (role=status, aria-live)
+3. `src/components/shared/bottom-nav.tsx` — BottomNav générique avec prop `items` (label, icon, href, highlight?), mobile-only (md:hidden), zones tactiles 44px, safe area iOS, support FAB central surélevé via highlight=true
+4. `src/components/shared/sidebar.tsx` — Sidebar standalone réutilisable (brand, items, user, onLogout), desktop-only, usePathname pour lien actif, support items désactivés ("Bientôt")
+5. `src/lib/types/database.types.ts` — 17 tables typées (Row/Insert/Update) + 22 enums + vue_clients_enrichis + helpers Supabase v2 (Tables, TablesInsert, TablesUpdate, Views)
+6. `src/lib/supabase/queries/README.md` — convention d'organisation des requêtes par module (clients, commandes, personnel, stock, abonnements, stats)
+- Mise à jour `src/components/shared/index.ts` (barrel) : ajout exports EmptyState, BottomNav, Sidebar (+ types)
+
+Stage Summary:
+- Audit Lot 1 complet : 5 écarts réels identifiés et comblés
+- Composants shared/ désormais conformes au spec (BottomNav/Sidebar/EmptyState génériques + réutilisables)
+- database.types.ts fournit le typage strict Supabase v2 pour les 17 tables + vue enrichie + 22 enums (utilisable par les futures queries/)
+- .env.local.example documente les 4 variables nécessaires pour un nouveau déploiement
+- supabase/queries/README.md pose la convention d'organisation des requêtes par module
+- Lint OK (0 erreur)
+- Note : DashboardLayout et StatCard restent dans ogpressing/ (déjà fonctionnels et utilisés par les layouts admin/super-admin) — déplacer vers shared/ serait un refactoring sans valeur ajoutée
