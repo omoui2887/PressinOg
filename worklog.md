@@ -140,3 +140,45 @@ Stage Summary:
 - Chaque ENUM documenté inline avec référence PRD et tables destinataires
 - Aucune intégration de paiement (methode_paiement est purement déclaratif conformément au principe fondamental du projet)
 - Prochaine étape : attendre le prompt utilisateur pour la migration 002 (tables)
+
+---
+Task ID: 3
+Agent: main
+Task: Création du fichier de migration 006_rls_policies.sql — activation RLS + 33 policies d'isolation multi-tenant sur les 17 tables
+
+Work Log:
+- Lecture du worklog (Task 0, 1, 2) pour reprendre le contexte : migration 001 (21 enums) appliquée, structure projet OK
+- Vérification de l'état réel de la base Supabase via Management API (POST /database/query) :
+  - SELECT tablename FROM pg_tables WHERE schemaname='public' → [] (ZÉRO table)
+  - SELECT typname FROM pg_type ... → 21 enums présents (confirmé migration 001)
+  - ⚠️ CONSTAT CRITIQUE : les migrations 002-005 (création des 17 tables) n'ont JAMAIS été créées ni appliquées — seules les existent en base
+- Écriture du fichier `/home/z/my-project/supabase/migrations/006_rls_policies.sql` (612 lignes, 26 065 caractères) structuré en 10 sections :
+  - Section 0 : 2 fonctions SECURITY DEFINER (is_super_admin, get_pressing_id_utilisateur) avec CREATE OR REPLACE (idempotent), search_path=public, COMMENT ON FUNCTION
+  - Section 1 : ALTER TABLE ... ENABLE ROW LEVEL SECURITY sur les 17 tables
+  - Section 2 : super_admins → 1 policy (super_admin_full_access FOR ALL)
+  - Section 3 : demandes_inscription (2 policies : super_admin_full_access + demande_insert_public FOR INSERT TO anon) + codes_activation (2 policies : super_admin_full_access + code_read_public FOR SELECT TO anon + REVOKE/GRANT column-level sur code, utilise)
+  - Section 4 : pressing → 2 policies (isolation sur id = get_pressing_id_utilisateur(), pas de pressing_id direct)
+  - Section 5 : abonnements, personnel, clients, services → 2 policies chacun (pressing_id direct)
+  - Section 6 : commandes → 2 policies (pressing_id direct)
+  - Section 7 : produits_stock → 2 policies (pressing_id direct)
+  - Section 8 : machines, anomalies, depenses → 2 policies chacun (pressing_id direct)
+  - Section 9 : commande_lignes, articles_vetements, paiements → 2 policies chacun (isolation via sous-requête EXISTS JOIN commandes)
+  - Section 10 : mouvements_stock → 2 policies (isolation via sous-requête EXISTS JOIN produits_stock)
+  - Chaque policy préfixée par DROP POLICY IF EXISTS (idempotent)
+  - Commentaires détaillés par bloc (rôle métier, subtilités INSERT, principe aucun paiement, double sécurité via EXISTS)
+  - Récapitulatif final : 2 fonctions + 17 tables RLS + 33 policies + requêtes de vérification post-déploiement
+- Tentative d'application via Management API → HTTP 403 "error code: 1010" (Cloudflare WAF) sur TOUTES les requêtes (même SELECT qui fonctionnait minutes avant). Blocage infrastructure indépendant du SQL.
+- Confirmation double que l'application est impossible : (1) 0 table en base → ALTER TABLE échouerait, (2) API Management bloquée 403
+
+Stage Summary:
+- Livrable `006_rls_policies.sql` créé et COMPLET (prêt à exécuter dans Supabase une fois les 17 tables existantes)
+- ⚠️ BLOCAGE REMONTÉ : la base OgPressing ne contient AUCUNE table — seuls les 21 enums de la migration 001 existent. Les migrations 002 (tables), 003 (contraintes FK), 004 (index), 005 (triggers) n'existent pas dans `/supabase/migrations/` ni en base.
+- Le préambule utilisateur "Maintenant que le schéma est en place" ne correspond PAS à l'état réel de la base.
+- API Management Supabase actuellement bloquée (403 Cloudflare 1010) — réessayer plus tard ou utiliser le SQL Editor du dashboard Supabase.
+- Structure du fichier 006 :
+    * 2 fonctions helpers SECURITY DEFINER (bypass RLS interne)
+    * 17 × ENABLE ROW LEVEL SECURITY
+    * 33 policies : 1 (super_admins) + 2 (demandes) + 2 (codes) + 2 (pressing) + 13×2 (autres tables)
+    * 1 REVOKE + 1 GRANT column-level (codes_activation.code, codes_activation.utilise → anon)
+- Idempotent : DROP POLICY IF EXISTS + CREATE OR REPLACE FUNCTION (peut être ré-exécuté sans erreur)
+- PROCHAINTE ÉTAPE NÉCESSAIRE : créer et appliquer les migrations 002-005 (17 tables + FK + index) AVANT de pouvoir appliquer 006. Le fichier 006 attendra que les tables existent.
