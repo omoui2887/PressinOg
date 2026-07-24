@@ -8,3 +8,4 @@ export { PublicHeader } from "./public-header";
 export { PublicFooter } from "./public-footer";
 export { InscriptionForm } from "./inscription-form";
 export { DashboardPlaceholder } from "./dashboard-placeholder";
+export { Reveal } from "./reveal";

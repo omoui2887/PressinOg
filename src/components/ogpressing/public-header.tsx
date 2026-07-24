@@ -16,10 +16,10 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetClose } from "@/com
 import { cn } from "@/lib/utils";
 
 const NAV_LINKS = [
+  { href: "#probleme-solution", label: "Avant / Après" },
   { href: "#fonctionnalites", label: "Fonctionnalités" },
-  { href: "#etapes", label: "Comment ça marche" },
   { href: "#tarifs", label: "Tarifs" },
-  { href: "#faq", label: "FAQ" },
+  { href: "#temoignages", label: "Témoignages" },
 ];
 
 export function PublicHeader() {

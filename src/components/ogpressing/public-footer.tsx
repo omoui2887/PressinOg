@@ -1,11 +1,23 @@
 /**
  * OgPressing — Footer public
  * --------------------------
- * Footer avec liens, contact, mention "aucun paiement en ligne".
+ * Footer avec logo, liens de navigation internes, contact réel
+ * (email + WhatsApp cliquable), et mentions légales simples.
+ *
  * Server component (pas d'interactivité).
  */
 import Link from "next/link";
-import { ShoppingBag, Mail, Phone, MapPin, ShieldCheck } from "lucide-react";
+import {
+  ShoppingBag,
+  Mail,
+  MessageCircle,
+  MapPin,
+  ShieldCheck,
+} from "lucide-react";
+
+const WHATSAPP_URL = "https://wa.me/2250576103277";
+const CONTACT_EMAIL = "ogouromain@gmail.com";
+const WHATSAPP_DISPLAY = "+225 05 76 10 32 77";
 
 const FOOTER_LINKS = [
   {
@@ -13,24 +25,16 @@ const FOOTER_LINKS = [
     links: [
       { href: "#fonctionnalites", label: "Fonctionnalités" },
       { href: "#tarifs", label: "Tarifs" },
-      { href: "#etapes", label: "Comment ça marche" },
-      { href: "#inscription", label: "S'inscrire" },
+      { href: "#probleme-solution", label: "Avant / Après" },
+      { href: "#temoignages", label: "Témoignages" },
     ],
   },
   {
     title: "Compte",
     links: [
       { href: "/login", label: "Se connecter" },
+      { href: "#inscription", label: "S'inscrire" },
       { href: "/activation", label: "Activer un code" },
-      { href: "#faq", label: "FAQ" },
-    ],
-  },
-  {
-    title: "Contact",
-    links: [
-      { href: "mailto:contact@ogpressing.ci", label: "Email" },
-      { href: "tel:+2250700000000", label: "Téléphone" },
-      { href: "#", label: "WhatsApp" },
     ],
   },
 ];
@@ -51,10 +55,11 @@ export function PublicFooter() {
               </span>
             </Link>
             <p className="mt-3 max-w-xs text-sm text-muted-foreground">
-              SaaS de gestion professionnelle de pressings pour la Côte d&apos;Ivoire.
-              Point de vente, suivi de production, CRM et personnel — tout au même endroit.
+              SaaS de gestion professionnelle de pressings pour la Côte
+              d&apos;Ivoire. Point de vente, suivi de production, CRM et personnel
+              — tout au même endroit.
             </p>
-            <div className="mt-4 flex items-center gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
+            <div className="mt-4 flex items-center gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-foreground">
               <ShieldCheck className="size-4 shrink-0 text-warning" />
               <span>Aucun paiement en ligne. Règlement physique hors application.</span>
             </div>
@@ -78,22 +83,51 @@ export function PublicFooter() {
               </ul>
             </div>
           ))}
+
+          {/* Contact column */}
+          <div className="col-span-2 md:col-span-2 lg:col-span-1">
+            <h3 className="text-sm font-semibold text-foreground">Contact</h3>
+            <ul className="mt-3 space-y-2.5">
+              <li>
+                <a
+                  href={`mailto:${CONTACT_EMAIL}`}
+                  className="flex items-start gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <Mail className="mt-0.5 size-4 shrink-0" />
+                  <span className="break-all">{CONTACT_EMAIL}</span>
+                </a>
+              </li>
+              <li>
+                <a
+                  href={WHATSAPP_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-start gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <MessageCircle className="mt-0.5 size-4 shrink-0" />
+                  <span>{WHATSAPP_DISPLAY}</span>
+                </a>
+              </li>
+              <li className="flex items-start gap-2 text-sm text-muted-foreground">
+                <MapPin className="mt-0.5 size-4 shrink-0" />
+                <span>Abidjan, Côte d&apos;Ivoire</span>
+              </li>
+            </ul>
+          </div>
         </div>
 
-        {/* Contact bar */}
-        <div className="mt-10 flex flex-col gap-3 border-t pt-6 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-4">
-            <span className="flex items-center gap-1.5">
-              <Mail className="size-4" /> contact@ogpressing.ci
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Phone className="size-4" /> +225 07 00 00 00 00
-            </span>
-            <span className="flex items-center gap-1.5">
-              <MapPin className="size-4" /> Abidjan, Côte d&apos;Ivoire
-            </span>
+        {/* Legal bar */}
+        <div className="mt-10 flex flex-col gap-3 border-t pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <p>
+            © {new Date().getFullYear()} OgPressing — Tous droits réservés.
+          </p>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span>Mentions légales</span>
+            <span aria-hidden>·</span>
+            <span>Confidentialité</span>
+            <span aria-hidden>·</span>
+            <span>CGU</span>
           </div>
-          <p>© {new Date().getFullYear()} OgPressing — Tous droits réservés.</p>
         </div>
       </div>
     </footer>
