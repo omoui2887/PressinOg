@@ -484,3 +484,36 @@ Stage Summary:
   * Isolation multi-tenant stricte : employé ne voit QUE son pressing ; Super Admin voit tout ; anon peut INSERT demandes + SELECT limité codes
 - Une fois 006 appliquée → SCHÉMA OGPRESSING COMPLET (21 enums + 17 tables + 34 contraintes + 45 index + 7 fonctions/25 triggers + 33 policies RLS)
 - Prochaine étape après "006 ok" : le schéma sera 100% prêt pour le développement des fonctionnalités (prompts P0→P11 du PRD)
+
+---
+Task ID: 11
+Agent: main
+Task: Vérification comportementale de 006 (RLS) + détection & correctif d'un bug sur l'INSERT public demandes_inscription (migration 007)
+
+Work Log:
+- Confirmation utilisateur "006 ok" → migration 006 (RLS, 33 policies) appliquée
+- TEST COMPORTEMENTAL RLS via PostgREST (anon key vs service_role key) :
+  * service_role voit 3 pressings (bypass RLS) ✅
+  * anon SELECT pressing → tableau vide (RLS bloque, deny by default) ✅
+  * anon SELECT commandes → tableau vide (RLS bloque) ✅
+  * anon SELECT codes_activation (code, utilise) → HTTP 200 ✅ (policy code_read_public + GRANT column-level fonctionnels)
+  * anon SELECT codes_activation.pressing_id_cible → HTTP 42501 "permission denied for table" ✅ (REVOKE + GRANT column-level enforced)
+  * ⚠️ anon INSERT demandes_inscription → HTTP 401 / code 42501 "new row violates row-level security policy" ❌ BUG
+- Diagnostic du bug :
+  * L'erreur "violates row-level security policy" (et non "permission denied for table") prouve que anon PASS le GRANT check mais échoue au RLS check
+  * → la policy demande_insert_public (FOR INSERT TO anon WITH CHECK true) n'a probablement PAS été créée lors du run 006 (mode autocommit du SQL Editor → exécution partielle possible sur un batch long)
+  * Les autres policies (isolation_pressing sur 13 tables, super_admin_full_access partout, code_read_public) fonctionnent → 006 a partiellement réussi
+- Nettoyage des données de test orphelines (3 pressings + 4 demandes) via service_role → HTTP 204
+- Création du patch /home/z/my-project/supabase/migrations/007_grants_public.sql :
+  * SECTION 1 : GRANT INSERT ON demandes_inscription TO anon + recréation idempotente de la policy demande_insert_public
+  * SECTION 2 : REVOKE/GRANT SELECT (code, utilise) sur codes_activation TO anon + recréation idempotente de la policy code_read_public
+  * Idempotent (DROP POLICY IF EXISTS + CREATE POLICY + GRANT no-op si déjà)
+- Lint OK, dev server OK sur :3000
+
+Stage Summary:
+- Migration 006 CONFIRMÉE appliquée et FONCTIONNELLE pour l'isolation multi-tenant (le cœur de la sécurité SaaS)
+- ⚠️ 1 bug résiduel détecté : l'INSERT public sur demandes_inscription (formulaire landing page) ne fonctionne pas — la policy demande_insert_public n'a pas été créée lors du run 006
+- Patch 007_grants_public.sql créé (62 lignes) — recrée la policy manquante + ajoute les GRANT table-level explicites
+- État global : 001 ✅ · 002 ✅ · 003 ✅ · 004 ✅ · 005 ✅ · 006 ✅ (partiel) · 007 ⏳ (patch à appliquer)
+- Une fois 007 appliqué → le funnel d'acquisition public sera opérationnel (landing page form + page d'activation)
+- Le schéma OgPressing sera alors 100% complet et sécurisé pour le développement des fonctionnalités
