@@ -601,3 +601,49 @@ Stage Summary:
 - Patch 008_correctif_policy_demande.sql prêt (à appliquer pour l'INSERT anon direct, non bloquant car l'API route utilise service_role)
 - État global : 001 ✅ · 002 ✅ · 003 ✅ · 004 ✅ · 005 ✅ · 006 ✅ · 007 ✅(partiel) · 008 ⏳(optionnel)
 - Prochaine étape : dashboards fonctionnels (Super Admin : demandes + codes + abonnements ; Admin : POS + personnel + CRM ; Personnel : par rôle)
+
+---
+Task ID: 12
+Agent: main
+Task: Développer la Landing Page complète à la racine / (groupe public) — Hero, Problème/Solution, 8 Fonctionnalités, 3 Plans Tarifs (avec pré-sélection), Témoignages, Formulaire placeholder (#inscription), Footer avec vrai contact. Header sticky + animations fade-in au scroll + mobile-first.
+
+Work Log:
+- Lecture du contexte : worklog.md (Tasks 0-11), PROJECT_CONTEXT.md, globals.css (design system primary #2563EB / secondary #10B981), page.tsx existante, header/footer existants
+- Création du store Zustand `src/lib/stores/inscription-store.ts` : état `selectedPlan` (starter|pro|business) + `selectPlan()` qui mémorise le plan et déclenche `scrollIntoView` vers #inscription
+- Création du composant `src/components/ogpressing/reveal.tsx` : wrapper client fade-in au scroll via IntersectionObserver (threshold 0.12, rootMargin -40px), variantes `motion-reduce:*` pour l'accessibilité, play-once
+- Création de 6 sections dans `src/components/ogpressing/landing/` :
+  - `hero.tsx` — H1 "La gestion de votre pressing, simplifiée", CTA "Essayer gratuitement" → #inscription, 3 badges de confiance (🇨🇮 / FCFA & Mobile Money / Essai 7 jours gratuit), mockup dashboard décoratif (KPIs + file de production + raccourcis + alerte stock) en lucide-react + Tailwind
+  - `problem-solution.tsx` — 2 colonnes "Avant ❌" (danger) vs "Après ✅" (secondary), 4 points chacune
+  - `features.tsx` — grille de 8 cards (Point de Vente, Suivi par Article, Tickets QR Code, Gestion du Personnel, CRM Client, Stock Biodétergents, Rapports & Statistiques, Exports Excel) avec icônes lucide + hover lift
+  - `pricing.tsx` — 3 cards (Starter 9 900 / Pro 24 900 badge "Populaire" / Business 49 900), boutons "Choisir ce plan" branchés sur le store Zustand + affichage "Plan présélectionné ✓"
+  - `testimonials.tsx` — 3 cards (Awa Koné/Pressing Excellence Cocody, Mamadou Traoré/Laveries du Plate, Fatou Bamba/Blanchisserie Yopougon) avec citations, 5 étoiles, avatars initiales
+  - `inscription-placeholder.tsx` — titre "Demandez votre accès", ancre #inscription, affichage du plan présélectionné, emplacement réservé (border dashed) pour le formulaire détaillé à venir, fallback contact WhatsApp + email
+- Composition de `src/app/(public)/page.tsx` : les 6 sections dans l'ordre demandé
+- Mise à jour du header (`public-header.tsx`) : nav anchors → Avant/Après, Fonctionnalités, Tarifs, Témoignages (déjà avait "Se connecter" → /login + "S'inscrire" → #inscription + menu mobile Sheet)
+- Mise à jour du footer (`public-footer.tsx`) : vrai contact ogouromain@gmail.com (mailto) + WhatsApp +225 05 76 10 32 77 (wa.me/2250576103277), colonnes Produit/Compte/Contact, mentions légales simples
+- Export `Reveal` ajouté au barrel `src/components/ogpressing/index.ts`
+- Lint : 1 erreur initiale (setState synchrone dans effect pour prefers-reduced-motion) → corrigée en supprimant la branche (les variantes `motion-reduce:*` CSS gèrent le cas). `bun run lint` → 0 erreur.
+- Vérification Agent Browser (end-to-end) :
+  - Page compile en HTTP 200, titre "OgPressing — Gestion professionnelle de pressings"
+  - Aucune erreur console / runtime / hydration
+  - Clic "Choisir Pro" → "Plan présélectionné : Pro" s'affiche dans #inscription + scroll fluide (scrollY 4300)
+  - Clic "Essayer gratuitement" → hash #inscription + scroll (scrollY 4300)
+  - Clic "Se connecter" → /login (navigation OK)
+  - Menu mobile (Sheet) s'ouvre avec les 4 liens + Se connecter + S'inscrire
+  - Sticky footer : pattern `min-h-screen flex flex-col` + `main flex-1` + `footer mt-auto` (footer poussé naturellement sur page longue, collé en bas sur page courte)
+- Vérification visuelle VLM (z-ai vision) :
+  - Desktop full-page (après scroll) : 9/10 — "Design moderne, propre et professionnel. Excellente hiérarchie visuelle." Toutes les sections visibles.
+  - Mobile 390px full-page : 8/10 — "Layout une colonne, hamburger présent, sections empilées correctement, aucun débordement horizontal ni texte coupé."
+  - Note : une 1ère capture full-page sans scroll montrait un grand espace vide (artefact du pattern fade-in IntersectionObserver : les sections sous le pli restent opacity-0 tant qu'elles ne sont pas scrollées). Après scroll déclenchant les observers, tout est visible. Comportement normal pour animations au scroll.
+
+Stage Summary:
+- Landing Page complète livrée à `/` (groupe `(public)`) avec les 6 sections dans l'ordre exact demandé
+- Architecture : 1 store Zustand + 1 composant Reveal + 6 sections composables + page server composant
+- Header sticky avec nav anchors + Se connecter (/login) + S'inscrire (#inscription) + menu mobile
+- Footer avec vrai contact (ogouromain@gmail.com, WhatsApp wa.me/2250576103277) + mentions légales
+- Pré-sélection de plan opérationnelle (store Zustand partagé entre PricingSection et InscriptionSection)
+- Formulaire d'inscription : placeholder en place (titre "Demandez votre accès" + ancre #inscription), contenu détaillé à venir au prompt suivant
+- Animations fade-in au scroll (IntersectionObserver + motion-reduce pour accessibilité)
+- Mobile-first responsive vérifié (390px et 1440px)
+- Lint 0 erreur, 0 erreur console, rendu VLM 9/10 desktop + 8/10 mobile
+- Captures : `screenshots/landing-desktop-v3.png`, `screenshots/landing-mobile-v3.png`, `screenshots/login-sticky-footer.png`
