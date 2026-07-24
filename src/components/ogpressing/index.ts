@@ -14,3 +14,7 @@ export {
   DashboardLayout,
   type DashboardNavItem,
 } from "./dashboard-layout";
+export { AdminShell } from "./admin/admin-shell";
+export { AdminBottomNav } from "./admin/admin-bottom-nav";
+export { SubscriptionBanner } from "./admin/subscription-banner";
+export { AdminPagePlaceholder } from "./admin/admin-page-placeholder";
