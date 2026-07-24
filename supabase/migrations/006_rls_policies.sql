@@ -2,8 +2,14 @@
 -- OgPressing — Migration 006 : Row Level Security (RLS)
 -- ============================================================
 -- Fichier    : 006_rls_policies.sql
--- Version    : 1.0
+-- Version    : 1.1
 -- Date       : 24/07/2026
+-- Fix v1.1   : Vérification croisée des colonnes référencées vs 002_tables.sql
+--              v1.2 — TOUTES les colonnes utilisées dans les policies existent
+--              (super_admins.user_id, personnel.user_id/pressing_id,
+--              commandes.pressing_id, *_commande_id, *_produit_id,
+--              codes_activation.code/utilise). Aucune correction nécessaire,
+--              la v1.0 était déjà alignée.
 -- Description : Activation de RLS + policies d'isolation multi-tenant
 --               sur les 17 tables du schéma OgPressing (PRD §18.4).
 --

@@ -446,3 +446,41 @@ Stage Summary:
   * Tous idempotents (DROP TRIGGER IF EXISTS + CREATE OR REPLACE FUNCTION)
   * 2 bugs runtime critiques corrigés (advisory lock + subquery RAISE)
 - Prochaine étape après "005 ok" : fournir 006_rls_policies.sql (33 policies d'isolation multi-tenant)
+
+---
+Task ID: 10
+Agent: main
+Task: Vérification comportementale de 005 (triggers) + préparation/fourniture de 006 (RLS — migration finale du schéma)
+
+Work Log:
+- Confirmation utilisateur "005 ok" → migration 005 (v1.2 corrigée, 7 fonctions + 25 triggers) appliquée
+- TEST COMPORTEMENTAL END-TO-END des triggers 005 via PostgREST (service_role) :
+  * Création pressing + client de test
+  * INSERT commande SANS numero_commande → trigger generer_numero_commande génère "CMD-2026-00001" ✅
+  * INSERT 2e commande → génère "CMD-2026-00002" (compteur séquentiel OK, advisory lock v1.2 fonctionne) ✅
+  * INSERT article SANS code_qr → trigger generer_code_qr_article génère "ART-405SP5PB" ✅
+  * Vérif trigger_recalculer_statut_commande : 1 article 'recu' → commande reste 'recu' ✅
+  * INSERT paiement 3000 sur commande montant_total=5000 → trigger_recalculer_paiement_commande met statut_paiement='partiel', montant_paye=3000 ✅
+  * Nettoyage DELETE pressing (cascade) → HTTP 204 ✅
+  * → Les 2 corrections v1.2 (advisory lock + RAISE subquery) SONT VALIDÉES par ces résultats fonctionnels
+- Relecture + vérification croisée de 006_rls_policies.sql vs 002_tables.sql (v1.2) :
+  * TOUTES les colonnes référencées dans les 33 policies existent dans le schéma réel :
+    - super_admins.user_id ✅, personnel.user_id/pressing_id ✅
+    - commandes.pressing_id ✅, commande_lignes/articles_vetements/paiements.commande_id ✅
+    - produits_stock.pressing_id ✅, mouvements_stock.produit_id ✅
+    - machines/anomalies/depenses.pressing_id ✅, codes_activation.code/utilise ✅
+  * Aucune correction nécessaire — la v1.0 était déjà alignée. Bump version → v1.1 (note de vérification)
+- Préparation du message utilisateur avec le SQL complet de 006 (609 lignes, 2 fonctions + 17 RLS + 33 policies + 1 REVOKE + 1 GRANT column-level)
+
+Stage Summary:
+- Migration 005 CONFIRMÉE appliquée ET FONCTIONNELLE (tests comportementaux end-to-end validés)
+- État global : 001 ✅ · 002 ✅ · 003 ✅ · 004 ✅ · 005 ✅ · 006 ⏳ (fourni maintenant, v1.1 vérifiée)
+- 006_rls_policies.sql v1.1 prête — c'est la DERNIÈRE migration du schéma :
+  * 2 fonctions SECURITY DEFINER (is_super_admin, get_pressing_id_utilisateur) qui bypass RLS interne
+  * 17 × ENABLE ROW LEVEL SECURITY
+  * 33 policies : 1 (super_admins) + 2 (demandes) + 2 (codes) + 2 (pressing) + 13×2 (autres tables)
+  * 1 REVOKE + 1 GRANT column-level (codes_activation.code, .utilise → anon)
+  * Idempotent (DROP POLICY IF EXISTS + CREATE OR REPLACE FUNCTION)
+  * Isolation multi-tenant stricte : employé ne voit QUE son pressing ; Super Admin voit tout ; anon peut INSERT demandes + SELECT limité codes
+- Une fois 006 appliquée → SCHÉMA OGPRESSING COMPLET (21 enums + 17 tables + 34 contraintes + 45 index + 7 fonctions/25 triggers + 33 policies RLS)
+- Prochaine étape après "006 ok" : le schéma sera 100% prêt pour le développement des fonctionnalités (prompts P0→P11 du PRD)
