@@ -2,8 +2,9 @@
 -- OgPressing — Migration 005 : Triggers & Functions
 -- ============================================================
 -- Fichier    : 005_triggers.sql
--- Version    : 1.0
+-- Version    : 1.1
 -- Date       : 24/07/2026
+-- Fix v1.1   : DROP TRIGGER IF EXISTS avant chaque CREATE TRIGGER → idempotent.
 -- Description : Fonctions et triggers PostgreSQL pour automatiser :
 --   1. Mise à jour automatique de updated_at sur toutes les tables
 --   2. Génération automatique du numero_commande (CMD-YYYY-NNNNN)
@@ -447,66 +448,82 @@ COMMENT ON FUNCTION public.trigger_appliquer_mouvement_stock() IS
 
 -- 7.1. Triggers BEFORE UPDATE (set_updated_at)
 --     Une instruction par table (BEFORE UPDATE sur la colonne updated_at).
+DROP TRIGGER IF EXISTS trg_set_updated_at_super_admins ON public.super_admins;
 CREATE TRIGGER trg_set_updated_at_super_admins
     BEFORE UPDATE ON public.super_admins
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_set_updated_at_demandes_inscription ON public.demandes_inscription;
 CREATE TRIGGER trg_set_updated_at_demandes_inscription
     BEFORE UPDATE ON public.demandes_inscription
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_set_updated_at_codes_activation ON public.codes_activation;
 CREATE TRIGGER trg_set_updated_at_codes_activation
     BEFORE UPDATE ON public.codes_activation
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_set_updated_at_pressing ON public.pressing;
 CREATE TRIGGER trg_set_updated_at_pressing
     BEFORE UPDATE ON public.pressing
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_set_updated_at_abonnements ON public.abonnements;
 CREATE TRIGGER trg_set_updated_at_abonnements
     BEFORE UPDATE ON public.abonnements
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_set_updated_at_personnel ON public.personnel;
 CREATE TRIGGER trg_set_updated_at_personnel
     BEFORE UPDATE ON public.personnel
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_set_updated_at_clients ON public.clients;
 CREATE TRIGGER trg_set_updated_at_clients
     BEFORE UPDATE ON public.clients
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_set_updated_at_services ON public.services;
 CREATE TRIGGER trg_set_updated_at_services
     BEFORE UPDATE ON public.services
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_set_updated_at_commandes ON public.commandes;
 CREATE TRIGGER trg_set_updated_at_commandes
     BEFORE UPDATE ON public.commandes
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_set_updated_at_commande_lignes ON public.commande_lignes;
 CREATE TRIGGER trg_set_updated_at_commande_lignes
     BEFORE UPDATE ON public.commande_lignes
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_set_updated_at_articles_vetements ON public.articles_vetements;
 CREATE TRIGGER trg_set_updated_at_articles_vetements
     BEFORE UPDATE ON public.articles_vetements
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_set_updated_at_paiements ON public.paiements;
 CREATE TRIGGER trg_set_updated_at_paiements
     BEFORE UPDATE ON public.paiements
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_set_updated_at_produits_stock ON public.produits_stock;
 CREATE TRIGGER trg_set_updated_at_produits_stock
     BEFORE UPDATE ON public.produits_stock
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_set_updated_at_machines ON public.machines;
 CREATE TRIGGER trg_set_updated_at_machines
     BEFORE UPDATE ON public.machines
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_set_updated_at_anomalies ON public.anomalies;
 CREATE TRIGGER trg_set_updated_at_anomalies
     BEFORE UPDATE ON public.anomalies
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_set_updated_at_depenses ON public.depenses;
 CREATE TRIGGER trg_set_updated_at_depenses
     BEFORE UPDATE ON public.depenses
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
@@ -516,12 +533,14 @@ CREATE TRIGGER trg_set_updated_at_depenses
 
 
 -- 7.2. Trigger BEFORE INSERT sur commandes (numéro auto)
+DROP TRIGGER IF EXISTS trg_commandes_numero_auto ON public.commandes;
 CREATE TRIGGER trg_commandes_numero_auto
     BEFORE INSERT ON public.commandes
     FOR EACH ROW EXECUTE FUNCTION public.generer_numero_commande();
 
 
 -- 7.3. Trigger BEFORE INSERT sur articles_vetements (code_qr auto)
+DROP TRIGGER IF EXISTS trg_articles_vetements_code_qr_auto ON public.articles_vetements;
 CREATE TRIGGER trg_articles_vetements_code_qr_auto
     BEFORE INSERT ON public.articles_vetements
     FOR EACH ROW EXECUTE FUNCTION public.generer_code_qr_article();
@@ -529,10 +548,12 @@ CREATE TRIGGER trg_articles_vetements_code_qr_auto
 
 -- 7.4. Triggers AFTER INSERT/UPDATE/DELETE sur articles_vetements
 --      → recalcule commandes.statut
+DROP TRIGGER IF EXISTS trg_commandes_statut_apres_article_insert ON public.articles_vetements;
 CREATE TRIGGER trg_commandes_statut_apres_article_insert
     AFTER INSERT ON public.articles_vetements
     FOR EACH ROW EXECUTE FUNCTION public.trigger_recalculer_statut_commande();
 
+DROP TRIGGER IF EXISTS trg_commandes_statut_apres_article_update ON public.articles_vetements;
 CREATE TRIGGER trg_commandes_statut_apres_article_update
     AFTER UPDATE OF statut, commande_id ON public.articles_vetements
     FOR EACH ROW
@@ -540,6 +561,7 @@ CREATE TRIGGER trg_commandes_statut_apres_article_update
           OR OLD.commande_id IS DISTINCT FROM NEW.commande_id)
     EXECUTE FUNCTION public.trigger_recalculer_statut_commande();
 
+DROP TRIGGER IF EXISTS trg_commandes_statut_apres_article_delete ON public.articles_vetements;
 CREATE TRIGGER trg_commandes_statut_apres_article_delete
     AFTER DELETE ON public.articles_vetements
     FOR EACH ROW EXECUTE FUNCTION public.trigger_recalculer_statut_commande();
@@ -547,10 +569,12 @@ CREATE TRIGGER trg_commandes_statut_apres_article_delete
 
 -- 7.5. Triggers AFTER INSERT/UPDATE/DELETE sur paiements
 --      → recalcule commandes.statut_paiement + montant_paye
+DROP TRIGGER IF EXISTS trg_commandes_paiement_apres_paiement_insert ON public.paiements;
 CREATE TRIGGER trg_commandes_paiement_apres_paiement_insert
     AFTER INSERT ON public.paiements
     FOR EACH ROW EXECUTE FUNCTION public.trigger_recalculer_paiement_commande();
 
+DROP TRIGGER IF EXISTS trg_commandes_paiement_apres_paiement_update ON public.paiements;
 CREATE TRIGGER trg_commandes_paiement_apres_paiement_update
     AFTER UPDATE OF montant, commande_id ON public.paiements
     FOR EACH ROW
@@ -558,12 +582,14 @@ CREATE TRIGGER trg_commandes_paiement_apres_paiement_update
           OR OLD.commande_id IS DISTINCT FROM NEW.commande_id)
     EXECUTE FUNCTION public.trigger_recalculer_paiement_commande();
 
+DROP TRIGGER IF EXISTS trg_commandes_paiement_apres_paiement_delete ON public.paiements;
 CREATE TRIGGER trg_commandes_paiement_apres_paiement_delete
     AFTER DELETE ON public.paiements
     FOR EACH ROW EXECUTE FUNCTION public.trigger_recalculer_paiement_commande();
 
 
 -- 7.6. Trigger AFTER INSERT sur mouvements_stock → met à jour le stock
+DROP TRIGGER IF EXISTS trg_mouvements_stock_appliquer ON public.mouvements_stock;
 CREATE TRIGGER trg_mouvements_stock_appliquer
     AFTER INSERT ON public.mouvements_stock
     FOR EACH ROW EXECUTE FUNCTION public.trigger_appliquer_mouvement_stock();
@@ -572,8 +598,11 @@ CREATE TRIGGER trg_mouvements_stock_appliquer
 -- ============================================================
 -- Fin de la migration 005_triggers.sql
 -- Total :
---   - 6 fonctions plpgsql (SECURITY DEFINER)
---   - 22 triggers :
+--   - 7 fonctions plpgsql (SECURITY DEFINER) :
+--       * set_updated_at, generer_numero_commande, generer_code_qr_article,
+--         deriver_statut_commande, trigger_recalculer_statut_commande,
+--         trigger_recalculer_paiement_commande, trigger_appliquer_mouvement_stock
+--   - 25 triggers (tous idempotents via DROP TRIGGER IF EXISTS) :
 --       * 16 × set_updated_at (BEFORE UPDATE)
 --       * 1  × numero_commande auto (BEFORE INSERT commandes)
 --       * 1  × code_qr auto (BEFORE INSERT articles_vetements)

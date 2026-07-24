@@ -268,3 +268,50 @@ Stage Summary:
 - ⚠️ BLOCAGE : API Management Supabase 403 (Cloudflare 1010). L'utilisateur doit appliquer les migrations via le SQL Editor du dashboard Supabase (https://supabase.com/dashboard/project/yqaitafigfxlrprrouhr/sql/new) dans l'ordre : 001 ✅ → 002 → 003 → 004 → 005 → 006 (RLS déjà écrit en Task 3).
 - Ordre d'exécution OBLIGATOIRE : 001 → 002 → 003 → 004 → 005 → 006 (les CHECK de 003 référencent les tables de 002, les triggers de 005 aussi, les policies de 006 référencent les tables + fonctions helpers).
 - Une fois les 6 migrations appliquées, le schéma OgPressing sera COMPLET et la 006 (RLS) pourra activer l'isolation multi-tenant.
+
+---
+Task ID: 5
+Agent: main
+Task: Résolution de l'erreur 42P01 "relation public.pressing does not exist" sur migration 002 + hardening idempotence 002 & 005
+
+Work Log:
+- Réception d'une capture d'écran utilisateur (/home/z/my-project/upload/pasted_image_1784898583356.png) montrant une erreur dans le SQL Editor Supabase
+- Analyse VLM de l'image (z-ai vision) — transcription exacte de l'erreur :
+  > ERROR: 42P01: relation "public.pressing" does not exist
+  URL : supabase.com/dashboard/project/yqaitafigfxlrprrouhr/sql/...
+  Visible : lignes 405-420 du fichier (table depenses, section 17)
+- Diagnostic root cause :
+  - La table codes_activation (section 3, ligne 93) avait une FK `pressing_id_cible REFERENCES public.pressing(id)`
+  - Mais pressing était créée en section 4 (ligne 115) → FORWARD REFERENCE FK
+  - PostgreSQL n'autorise pas les forward references dans les FK au moment du CREATE TABLE
+  - L'erreur s'est produite à l'instruction CREATE TABLE codes_activation (section 3), pas à depenses (section 17) — l'éditeur était juste scrollé sur depenses au moment de la capture
+  - Conséquence : tables super_admins + demandes_inscription créées (avant l'erreur), 15 autres tables NON créées
+- Fix v1.1 sur 002_tables.sql :
+  - Swap des sections 3 et 4 : pressing passe en §3, codes_activation passe en §4
+  - Toutes les FK sont maintenant résolvables au moment du CREATE TABLE
+  - Vérification systématique des 17 tables + 30 FK : 0 forward reference restante
+  - Mise à jour du header (liste ordre tables + note explicative FIX v1.1)
+- Fix v1.2 sur 002_tables.sql :
+  - Conversion des 17 `CREATE TABLE` en `CREATE TABLE IF NOT EXISTS`
+  - Raison : le SQL Editor Supabase fonctionne en autocommit → chaque instruction est commitée individuellement → en cas d'échec partiel, les tables précédentes sont déjà créées
+  - Sans IF NOT EXISTS, la re-exécution de 002 aurait échoué sur "relation super_admins already exists"
+  - Avec IF NOT EXISTS : les 2 tables déjà créées sont skippées, les 15 autres sont créées → re-exécution sûre
+- Hardening 005_triggers.sql (v1.1) :
+  - Ajout de `DROP TRIGGER IF EXISTS <name> ON <table>;` avant chacun des 25 CREATE TRIGGER
+  - Raison : `CREATE TRIGGER` n'est PAS idempotent en PostgreSQL (n'accepte pas IF NOT EXISTS)
+  - Sans ce fix, une re-exécution de 005 après échec partiel aurait planté sur "trigger already exists"
+  - Mise à jour du résumé final : 7 fonctions (au lieu de 6) + 25 triggers (au lieu de 22)
+- Vérifications finales :
+  - 002_tables.sql : 17 × `CREATE TABLE IF NOT EXISTS`, ordre parent→enfant respecté, 0 forward reference
+  - 005_triggers.sql : 25 × `DROP TRIGGER IF EXISTS` + 25 × `CREATE TRIGGER`, 7 × `CREATE OR REPLACE FUNCTION`
+  - 003_constraints.sql : déjà idempotent (DROP CONSTRAINT IF EXISTS + ADD CONSTRAINT)
+  - 004_indexes.sql : déjà idempotent (CREATE INDEX IF NOT EXISTS)
+  - 006_rls_policies.sql : déjà idempotent (DROP POLICY IF EXISTS + CREATE POLICY)
+
+Stage Summary:
+- Root cause identifié et corrigé : forward reference FK codes_activation → pressing dans 002_tables.sql
+- Deux fixes appliqués sur 002 : réordonnancement (v1.1) + IF NOT EXISTS (v1.2)
+- Un fix préventif appliqué sur 005 : DROP TRIGGER IF EXISTS (v1.1)
+- Toutes les migrations 002-006 sont maintenant idempotentes et peuvent être re-exécutées sans erreur en cas d'échec partiel
+- L'utilisateur doit re-exécuter 002 (corrigé) dans le SQL Editor Supabase — il skipperra les 2 tables déjà créées et créera les 15 autres
+- Puis enchaîner 003 → 004 → 005 → 006
