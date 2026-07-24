@@ -82,7 +82,8 @@ export default function LoginPage() {
           return;
         }
         // Le manager = accès admin pressing ; les autres rôles = dashboard personnel
-        const target = personnel.role === "manager" ? "/admin" : "/personnel";
+        const target =
+          personnel.role === "manager" ? "/admin/dashboard" : "/personnel";
         toast.success("Connexion réussie !");
         router.push(target);
         return;

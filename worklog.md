@@ -698,3 +698,76 @@ Stage Summary:
 - Fix config next.config.ts allowedDevOrigins (stabilise le rendu navigateur en dev)
 - 0 erreur lint, 0 erreur console, rendu VLM 8/10
 - ⚠️ À noter pour l'utilisateur : le mot de passe Super Admin est temporaire (OgPressing2026!) — à changer. Les pages /super-admin/demandes, /codes, /abonnements, /pressings sont des placeholders "Bientôt" (nav désactivée).
+
+---
+Task ID: 14
+Agent: main
+Task: Développer le layout du groupe de routes (admin) pour /admin/* — DashboardLayout + nav spécifique Admin (9 items), BottomNav mobile (5 items principaux + bouton "Plus" central surélevé "Nouvelle commande" + Sheet pour les 4 items secondaires), récupération côté serveur du pressing connecté (nom, logo) + dernier abonnement → bannière d'avertissement non bloquante si expiré/suspendu.
+
+Work Log:
+- Lecture du contexte : worklog (Tasks 0-13), DashboardLayout créé au Task 13 (Sidebar + Sheet mobile), middleware déjà configuré pour protection /admin/* (vérifie personnel.role=manager + actif + statut_compte=actif), schema pressing (nom, logo_url, statut) + abonnements (statut, date_fin), 3 clients Supabase (browser/server/admin)
+- Constat : le DashboardLayout existant a un pattern "Sheet burger" mobile. Pour l'Admin, l'utilisateur veut un pattern différent : BottomNav fixe en bas avec bouton central surélevé. Solution : étendre DashboardLayout avec 2 nouveaux props optionnels (`brand` + `bottomNav`) plutôt que créer un nouveau shell — réutilisation maximale.
+- MODIFICATION `src/components/ogpressing/dashboard-layout.tsx` :
+  * Ajout prop `brand?: { name: string; logoUrl?: string | null }` — surcharge le logo OgPressing par défaut dans sidebar header + topbar mobile (affiche le nom du pressing connecté + son logo via next/image)
+  * Ajout prop `bottomNav?: React.ReactNode` — quand fourni : (1) masque le burger Sheet sur mobile, (2) ajoute `pb-28 md:pb-8` au main pour ne pas masquer le contenu, (3) rend `<div className="fixed inset-x-0 bottom-0 z-40 md:hidden">{bottomNav}</div>`
+  * Composant `BrandLogo` factorisé (image si logo_url sinon ShoppingBag), `BrandLabel` factorisé (nom du pressing si brand sinon "OgPressing")
+- CRÉATION `src/components/ogpressing/admin/subscription-banner.tsx` (server-renderable, pas de "use client") :
+  * Bannière warning (border-warning/40 + bg-warning/10 + icône AlertTriangle)
+  * 2 variantes : "expire" / "suspendu" avec messages différents
+  * Texte : "⚠️ Votre abonnement a expiré/suspendu, contactez le Super Admin au +225 05 76 10 32 77 pour le renouveler."
+  * Bouton "Appeler" (tel:+2250576103277) visible sur sm+
+  * Non bloquante — affichée en haut de toutes les pages /admin/* si déclenchée
+- CRÉATION `src/components/ogpressing/admin/admin-bottom-nav.tsx` (client) :
+  * 5 items principaux : Accueil (Home), Commandes (List), Nouvelle (PlusCircle, slot central surélevé), Clients (Users), Rapports (BarChart3)
+  * 1 bouton "Plus d'options" (MoreHorizontal) → Sheet bottom avec les 4 items secondaires (Personnel/UserCog, Stock/Package, Services/Tag, Mon pressing/Settings) en grille 2×2
+  * Bouton central surélevé : size-14 (vs size-5 pour les autres), -mt-6 (lift), rounded-full, border-4 border-card (effet "découpe" dans la barre), bg-primary, hover -translate-y-1 + scale-105
+  * État actif via usePathname, gestion spéciale /admin/commandes (actif sur /admin/commandes/* SAUF /admin/commandes/nouvelle qui a son propre état actif)
+  * Safe-area iOS respectée : pb-[max(0.5rem,env(safe-area-inset-bottom))]
+- CRÉATION `src/components/ogpressing/admin/admin-shell.tsx` (client) :
+  * Wrapper similaire à SuperAdminShell — détient NAV_ITEMS (9 items avec icônes lucide-react) car le layout serveur ne peut pas passer d'icônes (non-sériables)
+  * NAV_ITEMS (9) : Tableau de bord/LayoutDashboard, Nouvelle commande/PlusCircle, Commandes/List, Clients/Users, Personnel/UserCog, Stock/Package, Services/Tag, Rapports/BarChart3, Mon pressing/Settings
+  * Rend DashboardLayout avec `brand` (nom+logo du pressing) + `bottomNav={<AdminBottomNav />}`
+- CRÉATION `src/components/ogpressing/admin/admin-page-placeholder.tsx` (server-renderable) :
+  * Placeholder simple pour les 9 routes /admin/* (icône + titre + description + card "Bientôt disponible")
+  * Réutilisé par toutes les page.tsx en attendant le dev des modules métier
+- RÉÉCRITURE `src/app/(admin)/layout.tsx` (Server Component) :
+  * Récupère user → personnel (vérification role=manager + actif + statut_compte=actif en défense en profondeur) → pressing (id, nom, logo_url, statut) → dernier abonnement (order date_debut desc limit 1, select statut + date_fin)
+  * Calcul abonnementWarning : "suspendu" si statut='suspendu', "expire" si statut='expire' OU date_fin < now
+  * Rend AdminShell avec user (email + nom_complet du personnel) + brand (nom + logo_url du pressing)
+  * Si abonnementWarning ≠ null : rend SubscriptionBanner en haut du children (avant le contenu de la page)
+- CRÉATION des 9 pages placeholder + 1 redirect :
+  * /admin → redirect /admin/dashboard
+  * /admin/dashboard, /admin/commandes/nouvelle, /admin/commandes, /admin/clients, /admin/personnel, /admin/stock, /admin/services, /admin/rapports, /admin/pressing — toutes avec AdminPagePlaceholder + icône + titre + description métier
+- MODIFICATION `src/app/(public)/login/page.tsx` : redirect manager /admin → /admin/dashboard (évite un redirect supplémentaire)
+- MODIFICATION `src/components/ogpressing/index.ts` : ajout exports AdminShell, AdminBottomNav, SubscriptionBanner, AdminPagePlaceholder
+- Lint : `bun run lint` → 0 erreur
+- Bootstrap de 2 comptes admin de test (via service_role) :
+  * admin1@ogpressing.ci / ***REDACTED-PWD*** → Pressing Excellence (abonnement pro actif, pas de bannière)
+  * admin2@ogpressing.ci / ***REDACTED-PWD*** → Laveries du Plate (abonnement starter statut=suspendu ajouté, bannière affichée)
+- Vérification Agent Browser (end-to-end) :
+  * TEST 1 (unauth) : GET /admin/dashboard → 307 → /login?next=%2Fadmin%2Fdashboard ✅ (middleware bloque)
+  * TEST 2 (login admin1) : formulaire rempli + submit → redirect /admin/dashboard ✅
+  * TEST 3 (rendu admin1) : snapshot montre 9 items nav sidebar + "Pressing Excellence" comme brand + heading "Tableau de bord" + bouton "Se déconnecter" ✅
+  * TEST 4 (login admin2) : submit → /admin/dashboard ✅
+  * TEST 5 (bannière suspendu) : body.innerText contient "abonnement est suspendu" + "+225 05 76 10 32 77" ✅
+  * TEST 6 (mobile 390x844) : BottomNav rendue avec 5 items (Accueil, Commandes, Nouvelle, Clients, Rapports) + bouton "Plus d'options" ✅
+  * TEST 7 (Plus sheet) : snapshot après clic montre "Plus d'options" h2 + 4 liens (Personnel, Stock, Services, Mon pressing) ✅
+  * TEST 8 (9 routes admin) : toutes retournent 200 avec leur H1 attendu (Tableau de bord, Nouvelle commande, Commandes, Clients, Personnel, Stock, Services, Rapports, Mon pressing) ✅
+  * dev.log : 0 erreur, 0 warning (juste l'info "middleware deprecated → use proxy" qui est cosmétique Next 16)
+- Vérification visuelle VLM (z-ai vision) :
+  * admin1-desktop.png (8/10) : sidebar 9 items ✅, "Pressing Excellence" dans header ✅, "Tableau de bord" titre ✅, design propre et professionnel. Note: badge "Compiling..." Next.js dev indicator en bas (artefact dev, pas un bug production)
+  * admin2-suspended-banner.png (7.5/10) : bannière warning orange en haut ✅, "+225 05 76 10 32 77" présent ✅, bouton "Appeler" visible ✅, layout cohérent
+  * admin1-mobile.png (7/10) : BottomNav avec 5 items + Plus ✅, bouton "Nouvelle" central surélevé (FAB bleu) ✅, titre "Tableau de bord" visible ✅
+  * admin1-mobile-plus-sheet.png (8/10) : Sheet ouvert avec 4 items (Personnel, Stock, Services, Mon pressing) ✅, titre "Plus d'options" ✅, bouton X en haut à droite ✅, fond grisé derrière
+- Captures : screenshots/admin1-dashboard-desktop.png, screenshots/admin2-dashboard-suspended-banner.png, screenshots/admin1-dashboard-mobile.png, screenshots/admin1-mobile-plus-sheet.png
+
+Stage Summary:
+- Layout du groupe (admin) livré et 100% vérifié (Server Component + AdminShell client + DashboardLayout étendu)
+- DashboardLayout étendu avec 2 nouveaux props optionnels (`brand` + `bottomNav`) — rétrocompatible avec SuperAdminShell (n'utilise pas ces props)
+- Navigation Admin : 9 items sidebar desktop + BottomNav mobile (5 items principaux + bouton "Plus" central surélevé "Nouvelle commande" + Sheet pour 4 items secondaires)
+- Pressing connecté (nom + logo) récupéré côté serveur et affiché dans sidebar + topbar mobile
+- Bannière d'avertissement abonnement non bloquante : affichée en haut de toutes les pages /admin/* si dernier abonnement est suspendu OU expiré (statut enum OU date_fin < now), avec bouton "Appeler" tel:+2250576103277
+- 9 pages placeholder créées avec AdminPagePlaceholder réutilisable + 1 redirect /admin → /admin/dashboard
+- 2 comptes admin de test bootstrappés (admin1 sans bannière, admin2 avec bannière suspendu) pour vérification
+- 0 erreur lint, 0 erreur console, rendu VLM 7-8/10 sur les 4 captures
+- ⚠️ À noter : les comptes admin1/admin2 ont des mots de passe temporaires (***REDACTED-PWD***) — à changer. Les 9 pages /admin/* sont des placeholders "Bientôt disponible" en attendant le dev des modules métier (POS, commandes, clients, personnel, stock, services, rapports, config pressing).
