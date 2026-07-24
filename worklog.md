@@ -392,3 +392,29 @@ Stage Summary:
 - Migration 002 confirmée en base (17/17 tables ✅)
 - Migration 003 (34 contraintes : 6 UNIQUE + 28 CHECK) prête à être fournie à l'utilisateur
 - Prochaines étapes : 003 → 004 → 005 → 006 (RLS)
+
+---
+Task ID: 8
+Agent: main
+Task: Vérification de l'application de la migration 003 (contraintes) + préparation de la migration 004 (index)
+
+Work Log:
+- Lecture du worklog (Task 0→7) pour reprendre le contexte : 001 enums ✅, 002 tables (17/17) ✅, 003 contraintes prêt à être fourni
+- Confirmation utilisateur "003 OK" → migration 003 appliquée dans le SQL Editor Supabase
+- Vérification de l'état DB via PostgREST (service_role, HTTP 200) :
+  * Test comportemental CHECK 003 : INSERT abonnements (plan='starter', montant_mensuel=-100)
+    → REJETÉ code 23514 "violates check constraint abonnements_montant_mensuel_check"
+    → PREUVE DIRECTE que les CHECK de 003 sont actifs en base ✅
+  * (Test UNIQUE composite services abandonné : mauvais noms de colonnes — prix_unitaire n'existe pas dans services, le test n'était pas pertinent)
+- Vérification du fichier .env.local : clés anon + service_role réelles présentes (JWT 244/246 chars), PAT reste placeholder (non bloquant)
+- Note : dev.log contient encore un warning stale "[updateSession] Supabase env vars manquantes" — c'est un log antérieur à la mise à jour des clés (Task 7) ; le middleware check `=== "REPLACE_WITH_ANON_KEY"` passe désormais avec la vraie clé. Un simple rechargement de page confirmera la disparition du warning.
+- Préparation du message utilisateur avec le SQL complet de 004_indexes.sql (377 lignes, ~45 index B-tree, tous CREATE INDEX IF NOT EXISTS → idempotent)
+
+Stage Summary:
+- Migration 003 CONFIRMÉE en base (preuve comportementale : CHECK abonnements_montant_mensuel_check actif)
+- État global : 001 ✅ · 002 ✅ · 003 ✅ · 004 ⏳ (fourni maintenant) · 005 ⏳ · 006 ⏳
+- Migration 004_indexes.sql prête à être copiée-collée dans le SQL Editor Supabase
+  * 7 sections : pressing_id (4) + FK (23) + statuts (10) + dates (9) + composites (9) + created_at (2) + numero_commande (1)
+  * Tous idempotents (CREATE INDEX IF NOT EXISTS) + partials WHERE NOT NULL / WHERE actif=TRUE
+  * Ne recrée PAS les 6 index auto-générés par les UNIQUE composites de 003
+- Prochaines étapes après "004 OK" : fournir 005_triggers.sql puis 006_rls_policies.sql
