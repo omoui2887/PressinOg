@@ -315,3 +315,50 @@ Stage Summary:
 - Toutes les migrations 002-006 sont maintenant idempotentes et peuvent être re-exécutées sans erreur en cas d'échec partiel
 - L'utilisateur doit re-exécuter 002 (corrigé) dans le SQL Editor Supabase — il skipperra les 2 tables déjà créées et créera les 15 autres
 - Puis enchaîner 003 → 004 → 005 → 006
+
+---
+Task ID: 6
+Agent: main
+Task: Résolution de l'erreur runtime "Your project's URL and Key are required to create a Supabase client" — .env.local disparu
+
+Work Log:
+- Réception d'une erreur runtime utilisateur dans le middleware Next.js :
+  > Error: Your project's URL and Key are required to create a Supabase client!
+  >     at createMiddlewareClient (src/lib/supabase/middleware.ts:31:38)
+- Diagnostic :
+  - Lecture de src/lib/supabase/middleware.ts → le code appelait createServerClient avec process.env.NEXT_PUBLIC_SUPABASE_URL! + ANON_KEY! (non-null assertion)
+  - Vérification filesystem : ls .env.local → "No such file or directory" — LE FICHIER .env.local A DISPARU
+  - Vérification .env → existe mais ne contient que DATABASE_URL="file:.../custom.db" (résidu Prisma, inutile pour Supabase)
+  - .env.local.example a également disparu
+  - Cause probable : une réinitialisation du projet ou une action extérieure a écrasé .env.local (les clés Supabase JWT ne sont JAMAIS stockées dans le worklog par sécurité)
+- Fix 1 : recréation de /home/z/my-project/.env.local avec placeholders explicites :
+  - NEXT_PUBLIC_SUPABASE_URL=https://yqaitafigfxlrprrouhr.supabase.co (URL connue, non secrète)
+  - NEXT_PUBLIC_SUPABASE_ANON_KEY=REPLACE_WITH_ANON_KEY (placeholder)
+  - SUPABASE_SERVICE_ROLE_KEY=REPLACE_WITH_SERVICE_ROLE_KEY (placeholder)
+  - SUPABASE_PAT=REPLACE_WITH_PAT (placeholder)
+  - Header de documentation avec lien vers le dashboard Supabase
+- Fix 2 : garde-fou dans createMiddlewareClient() :
+  - Vérification process.env.NEXT_PUBLIC_SUPABASE_URL et ANON_KEY avant l'appel à createServerClient
+  - Si manquantes → console.error explicite + throw Error avec message clair (au lieu de l'erreur opaque de @supabase/ssr)
+- Fix 3 : garde-fou dans updateSession() (fonction appelée à chaque requête par middleware.ts) :
+  - Si env vars manquantes OU placeholders non remplacés (=== "REPLACE_WITH_ANON_KEY") → console.warn + return NextResponse.next() (skip Supabase, laisse passer la requête sans auth)
+  - Cela permet à l'app de démarrer et à la landing page de s'afficher pendant que l'utilisateur configure les clés
+- Vérification dev.log : 
+  - "Reload env: .env.local" ← Next.js a détecté le fichier recréé
+  - "✓ Compiled in 768ms"
+  - "GET / 200 in 634ms" ← l'app répond 200 OK, plus d'erreur Supabase
+- Vérification Agent Browser :
+  - open http://localhost:3000 → page se charge
+  - Titre confirmé : "OgPressing — Gestion professionnelle de pressings"
+  - Aucune erreur runtime, aucun crash
+
+Stage Summary:
+- .env.local recréé (avec placeholders) — Next.js le recharge automatiquement
+- middleware.ts hardened : ne crashe plus si env vars manquantes, l'app démarre en mode "auth désactivée"
+- App de nouveau fonctionnelle sur http://localhost:3000 (HTTP 200, page OgPressing visible)
+- ⚠️ ACTION UTILISATEUR REQUISE : remplacer les 3 placeholders dans .env.local par les vraies clés Supabase :
+  * NEXT_PUBLIC_SUPABASE_ANON_KEY
+  * SUPABASE_SERVICE_ROLE_KEY
+  * SUPABASE_PAT
+  Sources : dashboard Supabase → Settings → API (pour anon + service_role), Account → Access Tokens (pour PAT)
+- Tant que les placeholders ne sont pas remplacés, l'auth Supabase reste désactivée (warning en console à chaque requête) — l'app affiche la landing mais les futures pages auth seront non fonctionnelles
