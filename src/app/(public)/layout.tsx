@@ -4,13 +4,20 @@
  * Route group `(public)` → landing, login, activation.
  * Aucune authentification requise.
  *
- * Ce layout est volontairement minimal pour l'instant (placeholder) — il sera
- * enrichi dans les prochains prompts (header/footer de la landing page, etc.).
+ * Header sticky en haut, footer collé en bas (sticky footer pattern).
  */
+import { PublicHeader, PublicFooter } from "@/components/ogpressing";
+
 export default function PublicLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <div className="min-h-screen flex flex-col">{children}</div>;
+  return (
+    <div className="min-h-screen flex flex-col bg-background">
+      <PublicHeader />
+      <main className="flex-1">{children}</main>
+      <PublicFooter />
+    </div>
+  );
 }
