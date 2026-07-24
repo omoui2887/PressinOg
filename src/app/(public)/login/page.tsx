@@ -70,7 +70,7 @@ export default function LoginPage() {
 
       if (superAdmin) {
         toast.success("Bienvenue, Super Admin !");
-        router.push("/super-admin");
+        router.push("/super-admin/dashboard");
         return;
       }
 

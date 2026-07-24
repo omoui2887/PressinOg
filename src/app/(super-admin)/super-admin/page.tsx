@@ -1,20 +1,11 @@
 /**
- * OgPressing — Dashboard Super Admin (placeholder)
- * -----------------------------------------------
- * Route : /super-admin
- *
- * Accès : Super Admin uniquement (1 compte unique, propriétaire plateforme).
- * Dashboard complet à venir : demandes inscription, codes activation, abonnements.
+ * OgPressing — Redirection /super-admin → /super-admin/dashboard
+ * -------------------------------------------------------------
+ * L'ancien placeholder est remplacé par une redirection vers le vrai
+ * dashboard. Route : /super-admin
  */
-import { DashboardPlaceholder } from "@/components/ogpressing";
+import { redirect } from "next/navigation";
 
 export default function SuperAdminPage() {
-  return (
-    <DashboardPlaceholder
-      title="Espace Super Admin"
-      roleLabel="Super Admin"
-      description="Gérez les demandes d'inscription, générez les codes d'activation et suivez les abonnements de tous les pressings OgPressing."
-      accent="text-primary"
-    />
-  );
+  redirect("/super-admin/dashboard");
 }
