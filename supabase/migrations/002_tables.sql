@@ -2,8 +2,15 @@
 -- OgPressing — Migration 002 : Création des 17 tables
 -- ============================================================
 -- Fichier    : 002_tables.sql
--- Version    : 1.0
+-- Version    : 1.2
 -- Date       : 24/07/2026
+-- Fix v1.1   : Réordonnancement pressing (§3) AVANT codes_activation (§4)
+--              pour résoudre l'erreur 42P01 "relation public.pressing
+--              does not exist" causée par une forward reference FK.
+-- Fix v1.2   : CREATE TABLE IF NOT EXISTS partout → migration idempotente.
+--              Permet de re-exécuter 002 sans erreur si des tables ont été
+--              créées partiellement lors d'une exécution précédente qui a
+--              échoué (cas SQL Editor Supabase en mode autocommit).
 -- Description : Création des 17 tables du schéma OgPressing
 --               (PRD V1.2 §18.3).
 --
@@ -20,9 +27,9 @@
 --
 -- Ordre de création : parents avant enfants (FK inline).
 --   1. super_admins          (aucune FK métier)
---   2. demandes_inscription  (aucune FK métier)
---   3. codes_activation      (aucune FK métier)
---   4. pressing              (aucune FK métier)
+--   2. demandes_inscription  → super_admins
+--   3. pressing              (aucune FK métier)
+--   4. codes_activation      → pressing, super_admins
 --   5. abonnements           → pressing
 --   6. personnel             → pressing, auth.users
 --   7. clients               → pressing
@@ -37,6 +44,11 @@
 --  16. anomalies             → pressing, commandes, articles_vetements
 --  17. depenses              → pressing
 --
+-- ⚠️  FIX v1.1 (24/07/2026) : pressing est créée AVANT codes_activation
+--      car codes_activation.pressing_id_cible référence pressing(id).
+--      PostgreSQL n'autorise pas les forward references dans les FK
+--      au moment du CREATE TABLE → ERREUR 42P01 si l'ordre est inversé.
+--
 -- ⚠️  À exécuter APRÈS 001_enums.sql et AVANT 003/004/005/006.
 -- ============================================================
 
@@ -46,7 +58,7 @@
 --    Comptes Super Admin OgPressing (gestion SaaS multi-tenant).
 --    Liés 1-1 à auth.users (Supabase Auth). RLS réservée au Super Admin.
 -- ============================================================
-CREATE TABLE public.super_admins (
+CREATE TABLE IF NOT EXISTS public.super_admins (
     id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         UUID        NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
     nom_complet     TEXT        NOT NULL,
@@ -65,7 +77,7 @@ CREATE TABLE public.super_admins (
 --    génère un code_activation si le prospect a payé hors application.
 --    ⚠️  INSERT publique (anon) via RLS — aucune auth requise.
 -- ============================================================
-CREATE TABLE public.demandes_inscription (
+CREATE TABLE IF NOT EXISTS public.demandes_inscription (
     id                  UUID             PRIMARY KEY DEFAULT gen_random_uuid(),
     nom_gerant          TEXT             NOT NULL,
     nom_pressing        TEXT             NOT NULL,
@@ -84,35 +96,16 @@ CREATE TABLE public.demandes_inscription (
 
 
 -- ============================================================
--- 3. codes_activation
---    Codes à usage unique générés par le Super Admin après qu'un
---    prospect a payé hors SaaS. Permettent l'activation du compte
---    pressing (création pressing + 1er compte admin).
---    ⚠️  Lecture publique LIMITÉE aux colonnes code + utilise (RLS + GRANT).
--- ============================================================
-CREATE TABLE public.codes_activation (
-    id                  UUID             PRIMARY KEY DEFAULT gen_random_uuid(),
-    code                TEXT             NOT NULL UNIQUE,
-    pressing_id_cible   UUID             REFERENCES public.pressing(id) ON DELETE SET NULL,
-    utilise             BOOLEAN          NOT NULL DEFAULT FALSE,
-    date_generation     TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
-    date_expiration     TIMESTAMPTZ,
-    date_utilisation    TIMESTAMPTZ,
-    cree_par            UUID             NOT NULL REFERENCES public.super_admins(id) ON DELETE RESTRICT,
-    plan_initial        plan_abonnement  NOT NULL DEFAULT 'starter',
-    created_at          TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ      NOT NULL DEFAULT NOW()
-);
-
-
--- ============================================================
--- 4. pressing
+-- 3. pressing
 --    Un pressing = un tenant. Pas de colonne pressing_id : c'est le
 --    pressing qui EST référencé par les autres tables. L'isolation RLS
 --    se fait donc sur id = get_pressing_id_utilisateur().
 --    Statut : essai (7 jours) → actif → suspendu (non-paiement).
+--
+--    ⚠️  DOIT être créée AVANT codes_activation (qui la référence
+--        via pressing_id_cible) — fix v1.1.
 -- ============================================================
-CREATE TABLE public.pressing (
+CREATE TABLE IF NOT EXISTS public.pressing (
     id                  UUID             PRIMARY KEY DEFAULT gen_random_uuid(),
     nom                 TEXT             NOT NULL,
     slug                TEXT             UNIQUE,
@@ -132,12 +125,34 @@ CREATE TABLE public.pressing (
 
 
 -- ============================================================
+-- 4. codes_activation
+--    Codes à usage unique générés par le Super Admin après qu'un
+--    prospect a payé hors SaaS. Permettent l'activation du compte
+--    pressing (création pressing + 1er compte admin).
+--    ⚠️  Lecture publique LIMITÉE aux colonnes code + utilise (RLS + GRANT).
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.codes_activation (
+    id                  UUID             PRIMARY KEY DEFAULT gen_random_uuid(),
+    code                TEXT             NOT NULL UNIQUE,
+    pressing_id_cible   UUID             REFERENCES public.pressing(id) ON DELETE SET NULL,
+    utilise             BOOLEAN          NOT NULL DEFAULT FALSE,
+    date_generation     TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
+    date_expiration     TIMESTAMPTZ,
+    date_utilisation    TIMESTAMPTZ,
+    cree_par            UUID             NOT NULL REFERENCES public.super_admins(id) ON DELETE RESTRICT,
+    plan_initial        plan_abonnement  NOT NULL DEFAULT 'starter',
+    created_at          TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ      NOT NULL DEFAULT NOW()
+);
+
+
+-- ============================================================
 -- 5. abonnements
 --    Échéances d'abonnement SaaS d'un pressing. Une ligne par période
 --    (mensuelle). Le Super Admin génère une nouvelle échéance après
 --    règlement hors SaaS. ⚠️ Aucune intégration de paiement.
 -- ============================================================
-CREATE TABLE public.abonnements (
+CREATE TABLE IF NOT EXISTS public.abonnements (
     id                              UUID                 PRIMARY KEY DEFAULT gen_random_uuid(),
     pressing_id                     UUID                 NOT NULL REFERENCES public.pressing(id) ON DELETE CASCADE,
     plan                            plan_abonnement      NOT NULL DEFAULT 'starter',
@@ -158,7 +173,7 @@ CREATE TABLE public.abonnements (
 --    directe sans email — auquel cas user_id peut être NULL jusqu'à
 --    activation). 7 rôles (PRD §3.3) avec permissions différenciées.
 -- ============================================================
-CREATE TABLE public.personnel (
+CREATE TABLE IF NOT EXISTS public.personnel (
     id                       UUID                        PRIMARY KEY DEFAULT gen_random_uuid(),
     pressing_id              UUID                        NOT NULL REFERENCES public.pressing(id) ON DELETE CASCADE,
     user_id                  UUID                        REFERENCES auth.users(id) ON DELETE SET NULL,
@@ -185,7 +200,7 @@ CREATE TABLE public.personnel (
 --    Fichier clients d'un pressing. Identifiés par téléphone (unique
 --    par pressing). Points de fidélité optionnels.
 -- ============================================================
-CREATE TABLE public.clients (
+CREATE TABLE IF NOT EXISTS public.clients (
     id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     pressing_id     UUID         NOT NULL REFERENCES public.pressing(id) ON DELETE CASCADE,
     nom_complet     TEXT         NOT NULL,
@@ -205,7 +220,7 @@ CREATE TABLE public.clients (
 --    5 types (PRD §5.1) : lavage, repassage, nettoyage_sec, detachage, blanchisserie.
 --    Prix en FCFA par article.
 -- ============================================================
-CREATE TABLE public.services (
+CREATE TABLE IF NOT EXISTS public.services (
     id              UUID           PRIMARY KEY DEFAULT gen_random_uuid(),
     pressing_id     UUID           NOT NULL REFERENCES public.pressing(id) ON DELETE CASCADE,
     type            type_service   NOT NULL,
@@ -225,7 +240,7 @@ CREATE TABLE public.services (
 --    Statut_paiement dérivé des paiements enregistrés (trigger 005).
 --    Montants en FCFA (INTEGER).
 -- ============================================================
-CREATE TABLE public.commandes (
+CREATE TABLE IF NOT EXISTS public.commandes (
     id                  UUID                     PRIMARY KEY DEFAULT gen_random_uuid(),
     pressing_id         UUID                     NOT NULL REFERENCES public.pressing(id) ON DELETE CASCADE,
     client_id           UUID                     NOT NULL REFERENCES public.clients(id) ON DELETE RESTRICT,
@@ -257,7 +272,7 @@ CREATE TABLE public.commandes (
 --     Ex: "Lavage chemise × 3 × 500 FCFA = 1500 FCFA".
 --     Pas de pressing_id direct → isolation via JOIN commandes (RLS 006).
 -- ============================================================
-CREATE TABLE public.commande_lignes (
+CREATE TABLE IF NOT EXISTS public.commande_lignes (
     id              UUID           PRIMARY KEY DEFAULT gen_random_uuid(),
     commande_id     UUID           NOT NULL REFERENCES public.commandes(id) ON DELETE CASCADE,
     service_id      UUID           REFERENCES public.services(id) ON DELETE SET NULL,
@@ -277,7 +292,7 @@ CREATE TABLE public.commande_lignes (
 --     Le statut de l'article évolue indépendamment (recu → ... → retire/livre).
 --     Le statut de la commande globale est dérivé de celui des articles (trigger 005).
 -- ============================================================
-CREATE TABLE public.articles_vetements (
+CREATE TABLE IF NOT EXISTS public.articles_vetements (
     id                  UUID             PRIMARY KEY DEFAULT gen_random_uuid(),
     commande_id         UUID             NOT NULL REFERENCES public.commandes(id) ON DELETE CASCADE,
     ligne_id            UUID             REFERENCES public.commande_lignes(id) ON DELETE SET NULL,
@@ -301,7 +316,7 @@ CREATE TABLE public.articles_vetements (
 --     reçu HORS application (espèces, mobile money, carte) en indiquant
 --     le mode, le montant et une référence libre.
 -- ============================================================
-CREATE TABLE public.paiements (
+CREATE TABLE IF NOT EXISTS public.paiements (
     id              UUID             PRIMARY KEY DEFAULT gen_random_uuid(),
     commande_id     UUID             NOT NULL REFERENCES public.commandes(id) ON DELETE CASCADE,
     montant         INTEGER          NOT NULL,  -- FCFA
@@ -320,7 +335,7 @@ CREATE TABLE public.paiements (
 --     Catalogue des biodétergents suivis en stock par un pressing.
 --     Quantité actuelle + seuil d'alerte. Unité : litre ou kg.
 -- ============================================================
-CREATE TABLE public.produits_stock (
+CREATE TABLE IF NOT EXISTS public.produits_stock (
     id                      UUID                       PRIMARY KEY DEFAULT gen_random_uuid(),
     pressing_id             UUID                       NOT NULL REFERENCES public.pressing(id) ON DELETE CASCADE,
     nom                     TEXT                       NOT NULL,
@@ -341,7 +356,7 @@ CREATE TABLE public.produits_stock (
 --     Pas de pressing_id direct → isolation via JOIN produits_stock (RLS 006).
 --     Trigger 005 met à jour produits_stock.quantite_actuelle.
 -- ============================================================
-CREATE TABLE public.mouvements_stock (
+CREATE TABLE IF NOT EXISTS public.mouvements_stock (
     id                  UUID           PRIMARY KEY DEFAULT gen_random_uuid(),
     produit_id          UUID           NOT NULL REFERENCES public.produits_stock(id) ON DELETE CASCADE,
     type_mouvement      TEXT           NOT NULL CHECK (type_mouvement IN ('entree','sortie','ajustement')),
@@ -358,7 +373,7 @@ CREATE TABLE public.mouvements_stock (
 --     Laveuses, calandres, etc. du pressing. Suivi du statut
 --     (operationnelle / en panne / maintenance).
 -- ============================================================
-CREATE TABLE public.machines (
+CREATE TABLE IF NOT EXISTS public.machines (
     id                          UUID           PRIMARY KEY DEFAULT gen_random_uuid(),
     pressing_id                 UUID           NOT NULL REFERENCES public.pressing(id) ON DELETE CASCADE,
     nom                         TEXT           NOT NULL,
@@ -381,7 +396,7 @@ CREATE TABLE public.machines (
 --     (vêtement endommagé, perdu, erreur de facturation, retard...).
 --     5 types × 3 sévérités (PRD §12.3).
 -- ============================================================
-CREATE TABLE public.anomalies (
+CREATE TABLE IF NOT EXISTS public.anomalies (
     id                  UUID               PRIMARY KEY DEFAULT gen_random_uuid(),
     pressing_id         UUID               NOT NULL REFERENCES public.pressing(id) ON DELETE CASCADE,
     commande_id         UUID               REFERENCES public.commandes(id) ON DELETE SET NULL,
@@ -407,7 +422,7 @@ CREATE TABLE public.anomalies (
 --     Dépenses d'exploitation d'un pressing : loyer, eau, électricité,
 --     salaires, maintenance, fournitures, autre.
 -- ============================================================
-CREATE TABLE public.depenses (
+CREATE TABLE IF NOT EXISTS public.depenses (
     id              UUID                 PRIMARY KEY DEFAULT gen_random_uuid(),
     pressing_id     UUID                 NOT NULL REFERENCES public.pressing(id) ON DELETE CASCADE,
     montant         INTEGER              NOT NULL,  -- FCFA
