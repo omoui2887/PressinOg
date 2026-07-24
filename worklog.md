@@ -771,3 +771,81 @@ Stage Summary:
 - 2 comptes admin de test bootstrappés (admin1 sans bannière, admin2 avec bannière suspendu) pour vérification
 - 0 erreur lint, 0 erreur console, rendu VLM 7-8/10 sur les 4 captures
 - ⚠️ À noter : les comptes admin1/admin2 ont des mots de passe temporaires (***REDACTED-PWD***) — à changer. Les 9 pages /admin/* sont des placeholders "Bientôt disponible" en attendant le dev des modules métier (POS, commandes, clients, personnel, stock, services, rapports, config pressing).
+
+---
+Task ID: 15
+Agent: main
+Task: Développer la page /admin/commandes/nouvelle sous forme de wizard 4 étapes avec stepper visuel, gestion d'état partagé (useReducer), navigation Précédent/Suivant, bouton Suivant désactivé tant que l'étape n'est pas valide, design mobile-first. Contenu détaillé de chaque étape en placeholders (mock interactions pour validation).
+
+Work Log:
+- Lecture du contexte : worklog (Tasks 0-14), layout admin (AdminShell + DashboardLayout avec bottomNav), schema (clients, commandes, articles_commande), 9 routes admin déjà créées en placeholder
+- Architecture choisie : useReducer (état partagé complexe across 4 étapes) + composants step séparés + stepper réutilisable
+- CRÉATION `src/components/ogpressing/admin/commande-wizard/state.ts` :
+  * Types : WizardStep (1-4), ClientInfo, ArticleInfo, Remise, WizardState, WizardAction, WizardDispatch, StepProps
+  * WIZARD_STEPS : 4 étapes avec label court (Client/Articles/Paiement/Confirmation) + titre long + description
+  * initialState : step=1, maxReachedStep=1, client=null, articles=[], remise=null, acompte=null, commandeId=null
+  * isStepValid : étape 1 → client≠null ; étape 2 → articles.length>0 ; étapes 3-4 → toujours valide
+  * wizardReducer : GO_TO_STEP (≤ maxReachedStep only), NEXT_STEP (valide + avance + met à jour maxReachedStep + génère commandeId au passage à l'étape 4), PREV_STEP, SET_CLIENT, CLEAR_CLIENT, ADD_ARTICLE, REMOVE_ARTICLE, SET_REMISE, SET_ACOMPTE, RESET
+  * Sélecteurs utilitaires : computeSousTotal, computeMontantRemise, computeTotal
+- CRÉATION `src/components/ogpressing/admin/commande-wizard/stepper.tsx` (client) :
+  * Stepper visuel réutilisable : 4 cercles numérotés reliés par lignes
+  * États : current (primary, scale-105), completed (secondary + Check icon), future (muted)
+  * Cliquable sur étapes ≤ maxReachedStep (retour arrière), non-cliquable sur étapes futures
+  * Mobile-first : size-9 sans libellés sur mobile, size-10 avec libellés courts sur sm+
+  * ARIA : aria-current="step", aria-label descriptif par étape
+- CRÉATION `src/components/ogpressing/admin/commande-wizard/step-client.tsx` (placeholder) :
+  * Titre "Sélection du client" + description
+  * Empty state dashed avec icône UserX + bouton mock "Sélectionner un client (mock)" → SET_CLIENT
+  * Si client sélectionné : card avec UserCheck + nom + téléphone + bouton "Changer" (CLEAR_CLIENT)
+- CRÉATION `src/components/ogpressing/admin/commande-wizard/step-articles.tsx` (placeholder) :
+  * Titre "Enregistrement des articles" + description
+  * Empty state dashed avec icône Package
+  * Bouton mock "Ajouter un article (mock)" → ADD_ARTICLE (4 templates cycliques : chemise/pantalon/robe/completo)
+  * Liste articles avec désignation + service + prix×quantité + bouton suppression (Trash2, REMOVE_ARTICLE)
+- CRÉATION `src/components/ogpressing/admin/commande-wizard/step-recap.tsx` (placeholder) :
+  * Titre "Récapitulatif, remise et acompte" + description
+  * Card récap : Client, Articles count, Sous-total, Remise (si applicable), Total, Acompte versé + Reste à payer (si acompte)
+  * Boutons mock remise : 10% / 1000 FCFA / Retirer (SET_REMISE / null)
+  * Boutons mock acompte : 50% / Total / Retirer (SET_ACOMPTE / null)
+- CRÉATION `src/components/ogpressing/admin/commande-wizard/step-confirmation.tsx` (placeholder) :
+  * Icône succès CheckCircle2 (secondary) + "Commande enregistrée" + référence commandeId (font-mono)
+  * Card récap compact : Client, Articles, Acompte, Total
+  * Emplacement QR Code dashed avec icône QrCode + bouton "Imprimer (à venir)" disabled
+- CRÉATION `src/components/ogpressing/admin/commande-wizard/commande-wizard.tsx` (client, orchestrateur) :
+  * useReducer(wizardReducer, initialState)
+  * Layout flex column min-h-[calc(100dvh-12rem)] md:min-h-[calc(100dvh-7rem)] → wizard remplit viewport, nav buttons poussés en bas
+  * Header : bouton retour (ArrowLeft → /admin/commandes) + H1 "Nouvelle commande" + sous-titre "Étape X sur 4 — {titre}"
+  * Card Stepper (cliquable sur étapes atteintes via GO_TO_STEP)
+  * Card contenu flex-1 : rend l'étape courante (StepClient/StepArticles/StepRecap/StepConfirmation)
+  * Barre nav bas (mt-auto) : message "Complétez cette étape" si invalide + [Précédent (disabled si step 1)] ... [Suivant (disabled si invalide) | Nouvelle commande (RESET si step 4)]
+- MODIFICATION `src/app/(admin)/admin/commandes/nouvelle/page.tsx` : Server Component minimal qui rend <CommandeWizard />
+- Lint : `bun run lint` → 0 erreur
+- Vérification Agent Browser (end-to-end, 12 tests) :
+  * TEST 1-2 : login admin1 → /admin/commandes/nouvelle rendu HTTP 200 ✅
+  * TEST 3 : Step 1 rendu, H1 "Nouvelle commande", H2 "Sélection du client", bouton Suivant disabled=true ✅
+  * TEST 4 : clic "Sélectionner un client (mock)" → "Awa Koné" affiché, Suivant disabled=false ✅
+  * TEST 5 : clic Suivant → Step 2 "Enregistrement des articles", Suivant disabled=true (no articles) ✅
+  * TEST 6 : 2 clics "Ajouter un article" → 2 articles affichés ✅
+  * TEST 7 : clic Suivant → Step 3 "Récapitulatif, remise et acompte", "Total" affiché ✅
+  * TEST 8 : clic "10 %" + "50 %" → "Reste à payer" affiché ✅
+  * TEST 9 : clic Suivant → Step 4 "Commande enregistrée", commandeId "CMD-..." généré, bouton "Nouvelle commande" présent ✅
+  * TEST 10 : clic "Nouvelle commande" → RESET → retour Step 1 "Sélection du client" ✅
+  * TEST 11 : navigation stepper — avance step 1→2→3, clic étape 1 dans stepper → retour Step 1 ✅ (navigation arrière sur étapes validées)
+  * TEST 12 : mobile 390x844 — wizard rendu + boutons Précédent/Suivant visibles + admin BottomNav (Accueil/Plus) présent en bas ✅
+  * dev.log : 0 erreur, 0 warning
+- Vérification visuelle VLM (z-ai vision) :
+  * wizard-step1-desktop.png (8/10) : stepper 4 cercles (step 1 blue active) ✅, titre "Nouvelle commande" ✅, heading "Sélection du client" ✅, empty state dashed + bouton mock ✅, Précédent/Suivant disabled visuellement ✅, pas de bug
+  * wizard-step3-recap.png (9/10) : heading ✅, card récap (Client/Articles/Sous-total/Remise/Total/Acompte/Reste à payer) ✅, boutons mock remise (10%/1000 FCFA) + acompte (50%/Total) ✅, stepper step 3 active ✅
+  * wizard-step4-confirmation.png (9/10) : checkmark vert ✅, "Commande enregistrée" ✅, CMD-MRZGK9AM ✅, récap (Awa Koné/2 articles/1 125 FCFA acompte/2 250 FCFA total) ✅, placeholder QR Code ✅, stepper step 4 active ✅
+  * wizard-mobile-step1.png (7/10) : titre ✅, stepper compact 4 cercles avec labels ✅, contenu étape ✅, admin BottomNav visible en bas ✅. Note VLM : FAB du BottomNav overlap légèrement (comportement attendu — bouton central surélevé par design)
+- Captures : screenshots/wizard-step1-desktop.png, wizard-step2-articles.png, wizard-step3-recap.png, wizard-step4-confirmation.png, wizard-mobile-step1.png
+
+Stage Summary:
+- Wizard 4 étapes /admin/commandes/nouvelle livré et 100% vérifié (structure seule, contenu détaillé à venir)
+- Architecture : useReducer (état partagé) + Stepper réutilisable + 4 step components + orchestrateur
+- Navigation : Précédent/Suivant avec validation (Suivant disabled si étape invalide), stepper cliquable sur étapes atteintes (retour arrière)
+- État partagé : client, articles[], remise, acompte, commandeId (généré au passage à l'étape 4)
+- 4 étapes placeholders avec mock interactions (sélection client mock, ajout articles mock, remise/acompte mock) → wizard entièrement navigable pour test
+- Design mobile-first : une étape à la fois, nav buttons en bas (au-dessus admin BottomNav), stepper compact sur mobile
+- 0 erreur lint, 0 erreur console, rendu VLM 7-9/10
+- Prochaine étape : contenu détaillé de chaque étape (prompt suivant) — StepClient (recherche clients + nouveau client), StepArticles (sélection service + quantité + prix), StepRecap (champs remise/acompte + mode paiement), StepConfirmation (vrai QR Code + impression étiquettes)
