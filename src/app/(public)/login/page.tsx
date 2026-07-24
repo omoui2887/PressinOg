@@ -12,7 +12,6 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Loader2, AlertCircle, ShoppingBag, ArrowLeft, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,7 +22,6 @@ import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { toast } from "sonner";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -70,7 +68,14 @@ export default function LoginPage() {
 
       if (superAdmin) {
         toast.success("Bienvenue, Super Admin !");
-        router.push("/super-admin/dashboard");
+        // ⚠️ Navigation hard (window.location.href) au lieu de router.push :
+        //    - garantit que le middleware voie le cookie de session fraîchement
+        //      posé (évite les race conditions Supabase + Next.js App Router)
+        //    - contourne le blocage cross-origin des fetchs RSC /_next/* dans
+        //      le preview iframe (sinon router.push échoue silencieusement et
+        //      la page reste figée sur "Connexion...")
+        //    - le navigateur affiche son propre indicateur de chargement
+        window.location.href = "/super-admin/dashboard";
         return;
       }
 
@@ -85,7 +90,8 @@ export default function LoginPage() {
         const target =
           personnel.role === "manager" ? "/admin/dashboard" : "/personnel";
         toast.success("Connexion réussie !");
-        router.push(target);
+        // Même raison que ci-dessus : hard navigation obligatoire après login.
+        window.location.href = target;
         return;
       }
 

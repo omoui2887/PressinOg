@@ -960,3 +960,32 @@ Stage Summary:
 - Anti-lockout : un manager ne peut pas se désactiver lui-même (vérifié côté API)
 - Bouton "+ Ajouter un employé" désactivé si limite atteinte, sinon toast "à venir" (formulaire détaillé au prochain prompt)
 - Lint propre, 0 erreur runtime, vérifié sur desktop + mobile
+
+---
+Task ID: 17
+Agent: main
+Task: Fix bug login figé — quand on se connecte (notamment super admin), la page reste sur "Connexion..." sans naviguer
+
+Work Log:
+- Reproduction du bug via Agent Browser : login super admin (ogouromain@gmail.com) → page figée sur "Connexion..." pendant 8s+ avant navigation (ou jamais selon l'environnement)
+- Analyse du dev.log : 2 causes identifiées :
+  1. Blocage cross-origin : `⚠ Blocked cross-origin request from preview-chat-{id}.space-z.ai to /_next/* resource` — le preview panel tourne dans un iframe depuis *.space-z.ai, et Next.js 16 bloque les fetchs RSC cross-origin non listés dans allowedDevOrigins → router.push() (navigation client-side) échoue silencieusement
+  2. Coût de compilation first-time : /super-admin/dashboard prend 8.2s à compiler au premier accès (Turbopack), pendant lesquelles le bouton "Connexion..." reste figé sans feedback
+- Fix 1 (PRIMAIRE) — `src/app/(public)/login/page.tsx` :
+  - Remplacement de `router.push(target)` par `window.location.href = target` après signInWithPassword
+  - Raisons : (a) navigation hard = top-level navigation, non soumise au blocage cross-origin des fetchs RSC ; (b) garantit que le middleware voie le cookie de session fraîchement posé (évite les race conditions Supabase + Next.js App Router) ; (c) le navigateur affiche son propre indicateur de chargement
+  - Suppression de l'import `useRouter` (n'est plus utilisé)
+- Fix 2 (SECONDAIRE) — `next.config.ts` :
+  - Ajout de `space-z.ai` et `*.space-z.ai` à `allowedDevOrigins` (en plus de 127.0.0.1, localhost, 21.0.12.22)
+  - Permet aussi les navigations client-side (liens sidebar, etc.) dans le preview iframe
+- Vérification Agent Browser (tout en une commande pour éviter que le dev server meure entre appels) :
+  - Super Admin (ogouromain@gmail.com / OgPressing2026!) → /super-admin/dashboard en 5s ✅
+  - Admin1 (admin1@ogpressing.ci / ***REDACTED-PWD***) → /admin/dashboard en 2s ✅
+  - 0 warning cross-origin dans dev.log ✅
+  - Lint OK ✅
+
+Stage Summary:
+- Bug de login figé résolu : `window.location.href` au lieu de `router.push` après auth Supabase
+- `allowedDevOrigins` étendu à *.space-z.ai pour le preview panel iframe
+- Connexion super admin ET admin fonctionnent et naviguent correctement vers leurs dashboards respectifs
+- Pattern recommandé Supabase + Next.js App Router : toujours utiliser `window.location.href` (hard navigation) après signInWithPassword pour éviter les race conditions cookies + les blocages cross-origin RSC
