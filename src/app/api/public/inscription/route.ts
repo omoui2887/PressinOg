@@ -1,90 +1,189 @@
 /**
- * OgPressing — API publique : Inscription prospect
- * ------------------------------------------------
+ * OgPressing — API publique : Inscription prospect (LOT 4 — formulaire landing)
+ * --------------------------------------------------------------------------
  * POST /api/public/inscription
  *
  * Crée une demande d'inscription dans la table `demandes_inscription`.
  * Utilise le client admin (service_role) pour bypasser RLS — pattern
- * production : validation serveur, pas de structure DB exposée au
- * navigateur, et robuste face aux éventuels soucis de cache RLS.
+ * production : validation serveur, anti-spam, pas de structure DB exposée
+ * au navigateur, et robuste face aux éventuels soucis de cache RLS.
  *
- * Body (JSON) :
- *   - nom_gerant    (requis, 2-100 chars)
- *   - nom_pressing  (requis, 2-100 chars)
- *   - telephone     (requis, 8-20 chars)
- *   - email         (optionnel, format email)
- *   - ville         (optionnel, max 100)
- *   - commune       (optionnel, max 100)
- *   - message       (optionnel, max 1000)
+ * Champs supportés (spec LOT 4 prompt 4.2 — 11 champs) :
+ *   - nom           (requis, 2-50)        → concaténé avec prenom dans nom_gerant
+ *   - prenom        (requis, 2-50)        → concaténé avec nom dans nom_gerant
+ *   - telephone     (requis, format ivoirien : 0XXXXXXXX ou +225XXXXXXXX)
+ *   - email         (requis, format email valide)
+ *   - nom_pressing  (requis, 2-100)
+ *   - ville         (requis, enum 11 villes CI + "Autre")
+ *   - adresse       (requis, min 5)        → stocké dans commune (équivalent spec)
+ *   - nombre_machines  (requis, integer >= 1)
+ *   - nombre_employes  (optionnel, integer >= 0)
+ *   - plan_souhaite (requis, enum : starter | pro | business | indecis)
+ *   - message       (optionnel, max 500)
  *
  * Réponse :
  *   200 { success: true, data: { id } }
- *   400 { success: false, error: "..." }
- *   500 { success: false, error: "..." }
+ *   400 { success: false, error: "..." }  (validation)
+ *   409 { success: false, error: "..." }  (doublon 24h)
+ *   500 { success: false, error: "..." }  (erreur serveur)
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import type { ApiResponse } from "@/lib/types";
 
+/* ----------------------- Constantes ----------------------- */
+
+const VILLES_CI = [
+  "Abidjan",
+  "Bouaké",
+  "Daloa",
+  "Yamoussoukro",
+  "San-Pédro",
+  "Korhogo",
+  "Man",
+  "Divo",
+  "Gagnoa",
+  "Anyama",
+  "Autre",
+] as const;
+
+const PLANS_VALIDES = ["starter", "pro", "business", "indecis"] as const;
+
 /* ----------------------- Validation ----------------------- */
 
 interface InscriptionInput {
-  nom_gerant?: unknown;
-  nom_pressing?: unknown;
+  nom?: unknown;
+  prenom?: unknown;
   telephone?: unknown;
   email?: unknown;
+  nom_pressing?: unknown;
   ville?: unknown;
-  commune?: unknown;
+  adresse?: unknown;
+  nombre_machines?: unknown;
+  nombre_employes?: unknown;
+  plan_souhaite?: unknown;
   message?: unknown;
 }
 
 function validate(input: InscriptionInput): {
   ok: boolean;
   error?: string;
-  data?: Record<string, string>;
+  data?: Record<string, string | number | null>;
 } {
   const errors: string[] = [];
 
-  const nom_gerant = String(input.nom_gerant ?? "").trim();
-  const nom_pressing = String(input.nom_pressing ?? "").trim();
+  const nom = String(input.nom ?? "").trim();
+  const prenom = String(input.prenom ?? "").trim();
   const telephone = String(input.telephone ?? "").trim();
-  const email = String(input.email ?? "").trim();
+  const email = String(input.email ?? "").trim().toLowerCase();
+  const nom_pressing = String(input.nom_pressing ?? "").trim();
   const ville = String(input.ville ?? "").trim();
-  const commune = String(input.commune ?? "").trim();
+  const adresse = String(input.adresse ?? "").trim();
   const message = String(input.message ?? "").trim();
 
-  if (nom_gerant.length < 2 || nom_gerant.length > 100) {
-    errors.push("Le nom du gérant doit comporter entre 2 et 100 caractères.");
+  // Nom : 2-50 caractères
+  if (nom.length < 2 || nom.length > 50) {
+    errors.push("Le nom doit comporter entre 2 et 50 caractères.");
   }
+
+  // Prénom : 2-50 caractères
+  if (prenom.length < 2 || prenom.length > 50) {
+    errors.push("Le prénom doit comporter entre 2 et 50 caractères.");
+  }
+
+  // Téléphone ivoirien : 0 + 10 chiffres OU +225 + 10 chiffres
+  // (après nettoyage espaces/-/parenthèses)
+  const telClean = telephone.replace(/[\s\-().]/g, "");
+  const telIvoirien = /^(\+225)?0?\d{8,10}$/.test(telClean);
+  if (!telIvoirien) {
+    errors.push(
+      "Le téléphone doit être un numéro ivoirien valide (ex : 07 00 00 00 00 ou +225 07 00 00 00 00)."
+    );
+  }
+
+  // Email obligatoire et valide
+  if (!email) {
+    errors.push("L'email est obligatoire.");
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errors.push("L'email n'est pas valide.");
+  }
+
+  // Nom du pressing : 2-100 caractères
   if (nom_pressing.length < 2 || nom_pressing.length > 100) {
     errors.push("Le nom du pressing doit comporter entre 2 et 100 caractères.");
   }
-  // Téléphone : chiffres, espaces, +, -, parenthèses — 8 à 20 chars après nettoyage
-  const telClean = telephone.replace(/[\s\-().]/g, "");
-  if (!/^\+?\d{8,20}$/.test(telClean)) {
-    errors.push("Le téléphone doit contenir entre 8 et 20 chiffres.");
+
+  // Ville : enum 11 villes CI
+  if (!ville) {
+    errors.push("La ville est obligatoire.");
+  } else if (!VILLES_CI.includes(ville as (typeof VILLES_CI)[number])) {
+    errors.push("La ville sélectionnée n'est pas valide.");
   }
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    errors.push("L'email n'est pas valide.");
+
+  // Adresse : min 5 caractères
+  if (adresse.length < 5) {
+    errors.push("L'adresse doit comporter au moins 5 caractères.");
   }
-  if (ville.length > 100) errors.push("La ville est trop longue (max 100).");
-  if (commune.length > 100) errors.push("La commune est trop longue (max 100).");
-  if (message.length > 1000) errors.push("Le message est trop long (max 1000).");
+
+  // Nombre de machines : entier >= 1
+  const machines = Number(input.nombre_machines);
+  if (
+    input.nombre_machines === undefined ||
+    input.nombre_machines === null ||
+    input.nombre_machines === ""
+  ) {
+    errors.push("Le nombre de machines est obligatoire.");
+  } else if (!Number.isInteger(machines) || machines < 1) {
+    errors.push("Le nombre de machines doit être un entier supérieur ou égal à 1.");
+  }
+
+  // Nombre d'employés : optionnel, mais si fourni doit être entier >= 0
+  let employes: number | null = null;
+  if (
+    input.nombre_employes !== undefined &&
+    input.nombre_employes !== null &&
+    input.nombre_employes !== ""
+  ) {
+    employes = Number(input.nombre_employes);
+    if (!Number.isInteger(employes) || employes < 0) {
+      errors.push("Le nombre d'employés doit être un entier supérieur ou égal à 0.");
+    }
+  }
+
+  // Plan souhaité : enum
+  const plan = String(input.plan_souhaite ?? "").trim().toLowerCase();
+  if (!plan) {
+    errors.push("Le plan souhaité est obligatoire.");
+  } else if (!PLANS_VALIDES.includes(plan as (typeof PLANS_VALIDES)[number])) {
+    errors.push("Le plan souhaité n'est pas valide.");
+  }
+
+  // Message : optionnel, max 500 caractères
+  if (message.length > 500) {
+    errors.push("Le message est trop long (max 500 caractères).");
+  }
 
   if (errors.length > 0) {
     return { ok: false, error: errors.join(" ") };
   }
 
+  // Construire le payload pour la DB
+  // - nom_gerant = "Prenom Nom" (concaténation spec 4.2 → schema DB 1 champ)
+  // - commune = adresse (équivalent spec)
+  // - nombre_machines / nombre_employes / plan_souhaite (nouvelles colonnes)
   return {
     ok: true,
     data: {
-      nom_gerant,
+      nom_gerant: `${prenom} ${nom}`.trim(),
       nom_pressing,
-      telephone,
-      email: email || undefined as unknown as string,
-      ville: ville || undefined as unknown as string,
-      commune: commune || undefined as unknown as string,
-      message: message || undefined as unknown as string,
+      telephone: telClean,
+      email,
+      ville,
+      commune: adresse,
+      nombre_machines: machines,
+      nombre_employes: employes,
+      plan_souhaite: plan,
+      message: message || null,
     },
   };
 }
@@ -128,8 +227,8 @@ export async function POST(req: NextRequest) {
     const { data: existing } = await supabase
       .from("demandes_inscription")
       .select("id, created_at")
-      .eq("telephone", validation.data.telephone)
-      .eq("nom_pressing", validation.data.nom_pressing)
+      .eq("telephone", validation.data.telephone as string)
+      .eq("nom_pressing", validation.data.nom_pressing as string)
       .gte("created_at", il_y_a_24h)
       .limit(1)
       .maybeSingle();
@@ -148,15 +247,7 @@ export async function POST(req: NextRequest) {
     // INSERT
     const { data, error } = await supabase
       .from("demandes_inscription")
-      .insert({
-        nom_gerant: validation.data.nom_gerant,
-        nom_pressing: validation.data.nom_pressing,
-        telephone: validation.data.telephone,
-        email: validation.data.email ?? null,
-        ville: validation.data.ville ?? null,
-        commune: validation.data.commune ?? null,
-        message: validation.data.message ?? null,
-      })
+      .insert(validation.data)
       .select("id")
       .single();
 
