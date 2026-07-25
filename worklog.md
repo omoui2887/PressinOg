@@ -1468,3 +1468,55 @@ Stage Summary:
 - Rapport AUDIT_GLOBAL.md créé — source de vérité pour l'état global du projet
 - Lint OK (0 erreur, 0 warning), dev server OK sur :3000, middleware actif avec vraies clés
 - Le projet OgPressing est prêt pour la suite (LOT 5+ : modules métiers P0)
+
+---
+Task ID: 23
+Agent: main
+Task: Fix erreur console "Failed to fetch" sur navigation cross-page (<Link>) dans l'espace public
+
+Work Log:
+- L'utilisateur a reporté une erreur console TypeError "Failed to fetch" avec stack trace pointant vers :
+  createFetch → fetchServerResponse → navigateDynamicallyWithNoPrefetch → navigate → linkClicked
+- Diagnostic : c'est le même type de bug qu'en Task 17 (router.push échouait en cross-origin iframe),
+  mais cette fois ça affecte les composants <Link> de next/link. Quand on clique sur un <Link href="/login">,
+  Next.js App Router fait un fetch pour récupérer le payload RSC (fetchServerResponse). Ce fetch est bloqué
+  en cross-origin dans le preview iframe → "Failed to fetch".
+- Solution : remplacer les <Link> cross-page par des <a> (hard navigation, pas de fetch RSC) dans tout
+  l'espace public. Les liens ancres (#inscription, #fonctionnalites) restent en <Link> (same-page, pas de fetch).
+- Fichiers modifiés (4) :
+  1. src/components/ogpressing/public-header.tsx :
+     - Logo <Link href="/"> → <a href="/">
+     - "Se connecter" desktop <Link href="/login"> → <a href="/login">
+     - "Se connecter" mobile (Sheet) <Link href="/login"> → <a href="/login">
+     - Liens ancres NAV_LINKS (#probleme-solution etc.) et "S'inscrire" (#inscription) : conservés en <Link>
+     - Import Link conservé (toujours utilisé pour les ancres)
+  2. src/components/ogpressing/public-footer.tsx (server component) :
+     - Logo <Link href="/"> → <a href="/">
+     - Tous les liens footer <Link href={link.href}> → <a href={link.href}> (mix ancres + routes, tout en <a>)
+     - Import Link supprimé (plus utilisé)
+  3. src/app/(public)/login/page.tsx :
+     - "Retour à l'accueil" <Link href="/"> → <a href="/">
+     - "Mot de passe oublié ?" <Link href="#" onClick={preventDefault + toast}> → <button type="button" onClick={toast}>
+       (c'était une action déguisée en lien, sémantiquement incorrect — maintenant c'est un vrai <button>)
+     - "Activer mon compte" <Link href="/activation"> → <a href="/activation">
+     - Import Link supprimé (plus utilisé)
+  4. src/app/(public)/activation/page.tsx :
+     - "Retour à l'accueil" <Link href="/"> → <a href="/">
+     - Import Link supprimé (plus utilisé)
+- Vérification lint : bun run lint → 0 erreur, 0 warning ✅
+- Vérification Agent Browser (navigation cross-page, 0 erreur attendue) :
+  * / → clic "Se connecter" (header) → /login ✅ (0 erreur console, 0 "Failed to fetch")
+  * /login → clic "Activer mon compte" → /activation ✅ (0 erreur)
+  * /activation → clic "Retour à l'accueil" → / ✅ (0 erreur)
+  * / → scroll footer → clic "Activer un code" → /activation ✅ (0 erreur)
+  * "Mot de passe oublié ?" est maintenant un <button> (confirmé via snapshot role=button) ✅
+  * Bilan session : agent-browser console | grep -iE "failed|TypeError|fetch" → VIDE (0 erreur) ✅
+
+Stage Summary:
+- Erreur "Failed to fetch" sur navigation <Link> cross-page : RÉSOLUE ✅
+- 4 fichiers modifiés, 6 conversions <Link> → <a> + 1 <Link> → <button>
+- Pattern cohérent avec Task 17 (window.location.assign au lieu de router.push) : hard navigation partout
+  dans l'espace public pour éviter les fetchs RSC bloqués en cross-origin iframe
+- Les liens ancres (#inscription, #fonctionnalites, etc.) restent en <Link> (same-page, pas de fetch RSC)
+- Lint OK (0 erreur, 0 warning), dev server OK sur :3000
+- Toutes les navigations cross-page testées via Agent Browser : 0 erreur console

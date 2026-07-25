@@ -31,7 +31,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -233,12 +232,13 @@ export default function LoginPage() {
 
       <div className="w-full max-w-md">
         <div className="mb-6 text-center">
-          <Link
+          {/* <a> (hard nav) — évite le fetch RSC bloqué en cross-origin (Task 22). */}
+          <a
             href="/"
             className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="size-4" /> Retour à l&apos;accueil
-          </Link>
+          </a>
         </div>
 
         <Card className="shadow-lg">
@@ -290,18 +290,18 @@ export default function LoginPage() {
                     <FormItem>
                       <div className="flex items-center justify-between">
                         <FormLabel htmlFor="password">Mot de passe</FormLabel>
-                        <Link
-                          href="#"
+                        {/* <button> (pas <Link>) : c'est une action (toast), pas une navigation. */}
+                        <button
+                          type="button"
                           className="text-xs text-muted-foreground hover:text-primary"
-                          onClick={(e) => {
-                            e.preventDefault();
+                          onClick={() => {
                             toast.info(
                               "Contactez votre administrateur pour réinitialiser votre mot de passe."
                             );
                           }}
                         >
                           Mot de passe oublié ?
-                        </Link>
+                        </button>
                       </div>
                       <div className="relative">
                         <FormControl>
@@ -371,12 +371,13 @@ export default function LoginPage() {
             <div className="mt-6 rounded-md border border-primary/20 bg-primary/5 p-3 text-center text-sm">
               <p className="text-muted-foreground">
                 Pas encore de compte ?{" "}
-                <Link
+                {/* <a> (hard nav) — évite le fetch RSC bloqué en cross-origin (Task 22). */}
+                <a
                   href="/activation"
                   className="font-medium text-primary hover:underline"
                 >
                   Activer mon compte
-                </Link>
+                </a>
               </p>
             </div>
           </CardContent>
