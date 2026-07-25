@@ -1,0 +1,217 @@
+/**
+ * OgPressing — PressingsTable
+ * -----------------------------
+ * Affiche la liste des pressings (Super Admin) sous forme de :
+ *   - Tableau sur desktop (md+) : Nom, Ville, Plan actuel, Statut,
+ *     Date de création, Employés actifs, Actions
+ *   - Cards empilées sur mobile
+ *
+ * Chaque ligne/card comporte un bouton "Voir détails" qui ouvre la Sheet
+ * (gérée par le parent via `onSelect`).
+ *
+ * Couleurs des statuts et plans gérées par pressings-helpers pour assurer
+ * la cohérence visuelle.
+ */
+"use client";
+
+import {
+  Building2,
+  MapPin,
+  CalendarDays,
+  Users,
+  ArrowRight,
+  Package,
+} from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import {
+  PlanBadge,
+  StatutPressingBadge,
+  type PressingListItem,
+} from "./pressings-helpers";
+
+interface PressingsTableProps {
+  pressings: PressingListItem[];
+  loading?: boolean;
+  onSelect: (pressing: PressingListItem) => void;
+}
+
+function formatDateShort(iso: string | null): string {
+  if (!iso) return "—";
+  try {
+    return new Intl.DateTimeFormat("fr-FR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }).format(new Date(iso));
+  } catch {
+    return "—";
+  }
+}
+
+export function PressingsTable({ pressings, loading, onSelect }: PressingsTableProps) {
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-16 w-full rounded-lg" />
+        ))}
+      </div>
+    );
+  }
+
+  if (pressings.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
+        <span className="flex size-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          <Building2 className="size-7" />
+        </span>
+        <p className="mt-3 font-medium text-foreground">Aucun pressing trouvé</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Modifiez votre recherche pour afficher d&apos;autres pressings.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {/* Desktop : tableau */}
+      <div className="hidden overflow-hidden rounded-lg border md:block">
+        <table className="w-full text-sm">
+          <thead className="border-b bg-muted/50">
+            <tr className="text-left">
+              <th className="px-4 py-3 font-semibold text-foreground">
+                Nom du pressing
+              </th>
+              <th className="px-4 py-3 font-semibold text-foreground">Ville</th>
+              <th className="px-4 py-3 font-semibold text-foreground">
+                Plan actuel
+              </th>
+              <th className="px-4 py-3 font-semibold text-foreground">Statut</th>
+              <th className="px-4 py-3 font-semibold text-foreground">
+                Date de création
+              </th>
+              <th className="px-4 py-3 text-center font-semibold text-foreground">
+                Employés actifs
+              </th>
+              <th className="px-4 py-3 text-right font-semibold text-foreground">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {pressings.map((pressing) => (
+              <tr
+                key={pressing.id}
+                className="group transition-colors hover:bg-accent/50"
+              >
+                <td className="px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => onSelect(pressing)}
+                    className="flex flex-col text-left"
+                  >
+                    <span className="font-medium text-foreground group-hover:text-primary">
+                      {pressing.nom}
+                    </span>
+                    {pressing.email && (
+                      <span className="text-xs text-muted-foreground">
+                        {pressing.email}
+                      </span>
+                    )}
+                  </button>
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  {pressing.ville ? (
+                    <span className="flex items-center gap-1">
+                      <MapPin className="size-3.5" />
+                      {pressing.ville}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  <PlanBadge plan={pressing.plan_actuel} />
+                </td>
+                <td className="px-4 py-3">
+                  <StatutPressingBadge statut={pressing.statut} />
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <CalendarDays className="size-3.5" />
+                    {formatDateShort(pressing.created_at)}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <span className="inline-flex items-center gap-1 text-muted-foreground">
+                    <Users className="size-3.5" />
+                    {pressing.employes_actifs}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onSelect(pressing)}
+                    className="gap-1 text-primary hover:text-primary"
+                  >
+                    Voir détails
+                    <ArrowRight className="size-3.5" />
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile : cards */}
+      <ul className="space-y-3 md:hidden">
+        {pressings.map((pressing) => (
+          <li key={pressing.id}>
+            <button
+              type="button"
+              onClick={() => onSelect(pressing)}
+              className="block w-full rounded-lg border bg-card p-4 text-left transition-colors hover:bg-accent/50 active:bg-accent"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold text-foreground">
+                    {pressing.nom}
+                  </p>
+                  {pressing.ville && (
+                    <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                      <MapPin className="size-3" />
+                      {pressing.ville}
+                    </p>
+                  )}
+                </div>
+                <StatutPressingBadge statut={pressing.statut} />
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <PlanBadge plan={pressing.plan_actuel} />
+                <span className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground">
+                  <Users className="size-3" />
+                  {pressing.employes_actifs} employé
+                  {pressing.employes_actifs > 1 ? "s" : ""}
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground">
+                  <Package className="size-3" />
+                  {pressing.total_commandes} cmd
+                </span>
+                <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+                  <CalendarDays className="size-3" />
+                  {formatDateShort(pressing.created_at)}
+                </span>
+              </div>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}

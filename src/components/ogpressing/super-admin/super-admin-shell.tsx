@@ -16,7 +16,6 @@
 import {
   LayoutDashboard,
   Inbox,
-  KeyRound,
   CreditCard,
   Building2,
 } from "lucide-react";
@@ -25,6 +24,11 @@ import {
   type DashboardNavItem,
 } from "@/components/ogpressing/dashboard-layout";
 
+// Navigation latérale Super Admin — conforme au spec LOT 5 (4 pages).
+// L'ancien item "Codes d'activation" (/super-admin/codes) a été retiré :
+// la génération de codes se fait directement depuis la page Demandes
+// (prompt 5.2 — bouton "Valider et générer un code d'activation"),
+// aucune page dédiée n'est prévue par le spec.
 const NAV_ITEMS: DashboardNavItem[] = [
   {
     href: "/super-admin/dashboard",
@@ -33,31 +37,18 @@ const NAV_ITEMS: DashboardNavItem[] = [
   },
   {
     href: "/super-admin/demandes",
-    label: "Demandes d'inscription",
+    label: "Demandes",
     icon: Inbox,
-    badge: "Bientôt",
-    disabled: true,
-  },
-  {
-    href: "/super-admin/codes",
-    label: "Codes d'activation",
-    icon: KeyRound,
-    badge: "Bientôt",
-    disabled: true,
-  },
-  {
-    href: "/super-admin/abonnements",
-    label: "Abonnements",
-    icon: CreditCard,
-    badge: "Bientôt",
-    disabled: true,
   },
   {
     href: "/super-admin/pressings",
     label: "Pressings",
     icon: Building2,
-    badge: "Bientôt",
-    disabled: true,
+  },
+  {
+    href: "/super-admin/abonnements",
+    label: "Abonnements",
+    icon: CreditCard,
   },
 ];
 

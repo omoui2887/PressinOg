@@ -30,7 +30,7 @@
  */
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -112,6 +112,33 @@ export default function LoginPage() {
   });
 
   const loading = form.formState.isSubmitting;
+
+  // Affiche les erreurs transmises par le middleware via ?error=...
+  // (ex : compte désactivé, pressing suspendu, accès refusé). One-shot :
+  // on ne le réaffiche pas si l'utilisateur re-soumet le formulaire.
+  // On lit window.location.search (et non useSearchParams) pour éviter
+  // l'exigence de Suspense boundary qui forcerait un CSR bail-out.
+  /* eslint-disable react-hooks/set-state-in-effect -- Lecture de window.location (client-only) : doit se faire dans un effet pour éviter une mismatch d'hydratation (window n'existe pas au SSR). */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("error");
+    if (!code) return;
+    const MESSAGES: Record<string, string> = {
+      compte_desactive:
+        "Votre compte a été désactivé, contactez votre administrateur.",
+      compte_non_actif:
+        "Votre compte n'est pas encore activé. Contactez le manager de votre pressing.",
+      compte_non_reconnu:
+        "Compte non reconnu, contactez votre administrateur.",
+      acces_refuse:
+        "Accès non autorisé à cet espace. Vous avez été redirigé vers votre tableau de bord.",
+      pressing_suspendu:
+        "Votre pressing est suspendu. Contactez le support OgPressing pour réactiver votre abonnement.",
+    };
+    setGlobalError(MESSAGES[code] ?? "Une erreur est survenue. Veuillez réessayer.");
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   /**
    * Construit l'URL du dashboard selon le rôle du personnel.

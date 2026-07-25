@@ -75,6 +75,11 @@ interface RoleInfo {
   mot_de_passe_temporaire: boolean;
   actif: boolean;
   statut_compte: string;
+  /** Statut du pressing rattaché ('actif' | 'essai' | 'suspendu' | …).
+   *  null pour les super admins (pas de pressing) ou si introuvable.
+   *  Utilisé pour bloquer les utilisateurs d'un pressing suspendu
+   *  (LOT 5.3 — un pressing suspendu ne peut plus se connecter). */
+  pressing_statut: string | null;
 }
 
 /** Payload signé stocké dans le cookie `ogp_role_cache`.
@@ -93,6 +98,11 @@ interface RoleCachePayload {
   role: RoleCacheRole;
   pressing_id: string | null;
   mot_de_passe_temporaire: boolean;
+  /** Statut du pressing rattaché au moment de la mise en cache.
+   *  On ne met en cache QUE les pressings non suspendus (cf.
+   *  `setRoleCacheCookie` appel conditionnel) → si ce champ vaut
+   *  'suspendu' ou est absent, on retombe sur la DB. */
+  pressing_statut?: string | null;
   /** Expiration en ms epoch. */
   exp: number;
 }
@@ -252,6 +262,7 @@ async function setRoleCacheCookie(
     role: info.role,
     pressing_id: info.pressing_id,
     mot_de_passe_temporaire: info.mot_de_passe_temporaire,
+    pressing_statut: info.pressing_statut,
     exp: Date.now() + ROLE_CACHE_TTL_MS,
   };
   const signed = await signRoleCache(payload, secret);
@@ -314,18 +325,26 @@ async function fetchRoleFromDB(
       mot_de_passe_temporaire: false,
       actif: true,
       statut_compte: "actif",
+      pressing_statut: null,
     };
   }
 
   // 2. Personnel ? (manager inclus — role='manager')
+  //    On récupère en même temps le statut du pressing rattaché via un
+  //    select imbriqué (FK personnel.pressing_id → pressing.id) afin de
+  //    pouvoir bloquer les utilisateurs d'un pressing suspendu (LOT 5.3).
   const { data: pers } = await supabase
     .from("personnel")
     .select(
-      "role, pressing_id, actif, statut_compte, mot_de_passe_temporaire"
+      "role, pressing_id, actif, statut_compte, mot_de_passe_temporaire, pressing(statut)"
     )
     .eq("user_id", userId)
     .maybeSingle();
   if (!pers) return null;
+
+  // `pressing` est un objet { statut } ou null (si pressing_id absent ou
+  // ligne supprimée). On normalise en string | null.
+  const pressingRow = pers.pressing as { statut?: string } | null;
 
   return {
     user_id: userId,
@@ -334,6 +353,7 @@ async function fetchRoleFromDB(
     mot_de_passe_temporaire: !!pers.mot_de_passe_temporaire,
     actif: !!pers.actif,
     statut_compte: (pers.statut_compte as string) ?? "invite_en_attente",
+    pressing_statut: pressingRow?.statut ?? null,
   };
 }
 
@@ -589,6 +609,11 @@ export async function updateSession(
         mot_de_passe_temporaire: payload.mot_de_passe_temporaire,
         actif: true,
         statut_compte: "actif",
+        // On ne met en cache QUE les pressings non suspendus → si le
+        // cache est valide, le pressing était actif/essai au moment du
+        // cache. Le TTL court (5 min) garantit qu'une suspension soit
+        // répercutée en max 5 min (au prochain cache miss → DB query).
+        pressing_statut: payload.pressing_statut ?? null,
       };
     }
   }
@@ -598,10 +623,16 @@ export async function updateSession(
   if (!roleInfo) {
     roleInfo = await fetchRoleFromDB(supabase, user.id);
     // On ne met en cache QUE si le compte est actif (actif=true ET
-    // statut_compte='actif'). Pour les comptes désactivés ou en attente
-    // d'activation, on ne cache pas → DB query à chaque requête → détection
-    // immédiate d'une désactivation (pas de stale cache désactivé).
-    if (roleInfo && roleInfo.actif && roleInfo.statut_compte === "actif") {
+    // statut_compte='actif') ET le pressing n'est pas suspendu. Pour les
+    // comptes désactivés, en attente d'activation, ou d'un pressing
+    // suspendu, on ne cache pas → DB query à chaque requête → détection
+    // immédiate d'un changement (pas de stale cache désactivé/suspendu).
+    if (
+      roleInfo &&
+      roleInfo.actif &&
+      roleInfo.statut_compte === "actif" &&
+      roleInfo.pressing_statut !== "suspendu"
+    ) {
       await setRoleCacheCookie(responseRef.current, roleInfo, cacheSecret);
     }
   }
@@ -651,6 +682,23 @@ export async function updateSession(
       request,
       responseRef.current,
       "/login?error=compte_non_actif"
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // 5.5. Pressing suspendu (LOT 5.3 — "un pressing suspendu ne peut plus
+  //      se connecter"). Si l'utilisateur appartient à un pressing dont
+  //      le statut est 'suspendu', on signOut + redirect /login avec un
+  //      message d'erreur. Ne s'applique pas aux super admins (pas de
+  //      pressing rattaché → pressing_statut = null).
+  // ---------------------------------------------------------------------
+  if (roleInfo.pressing_statut === "suspendu") {
+    await supabase.auth.signOut();
+    clearRoleCacheCookie(responseRef.current);
+    return redirectTo(
+      request,
+      responseRef.current,
+      "/login?error=pressing_suspendu"
     );
   }
 
