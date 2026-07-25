@@ -1310,3 +1310,104 @@ Stage Summary:
 - État global : 001 ✅ · 002 ✅ · 003 ✅ · 004 ✅ · 005 ✅ · 006 ✅ · 007 ✅ · 008 ✅ · 009 ✅ · 010 ⏳ · 011 ⏳ (à appliquer par l'utilisateur)
 - Lint OK (0 erreur, 0 warning), dev server OK sur :3000, 4 routes auth testées (login, activation, changer-mot-de-passe, redirect middleware)
 - Note : le code livré est fonctionnel MAIS le login ne redirigera pas correctement tant que 011 n'est pas appliquée (select mot_de_passe_temporaire déclenche 42703). Toutes les autres pages (activation, middleware redirect, change-password form) fonctionnent déjà.
+
+---
+Task ID: 21
+Agent: main
+Task: Audit LOT 4 (prompts 4.1 et 4.2 du fichier upload/04-landing-page.md) — vérifier ce qui n'a pas été mis et conçu, puis combler les écarts
+
+Work Log:
+- Lecture du fichier spec `/home/z/my-project/upload/04-landing-page.md` (2 prompts 4.1 + 4.2)
+- Lecture du worklog partagé (Tasks 0 à 20) pour reprendre le contexte global du projet
+- Lecture des fichiers existants :
+  * `src/app/(public)/page.tsx` — landing page assemblant 6 sections ✅
+  * `src/app/(public)/layout.tsx` — layout avec header sticky + footer sticky ✅
+  * `src/components/ogpressing/landing/hero.tsx` (278 lignes) — hero + mockup dashboard décoratif ✅
+  * `src/components/ogpressing/landing/problem-solution.tsx` (105 lignes) — 2 colonnes Avant/Après ✅
+  * `src/components/ogpressing/landing/features.tsx` (115 lignes) — 8 cards fonctionnalités ✅
+  * `src/components/ogpressing/landing/pricing.tsx` (170 lignes) — 3 plans avec Zustand store ✅
+  * `src/components/ogpressing/landing/testimonials.tsx` (112 lignes) — 3 témoignages fictifs CI ✅
+  * `src/components/ogpressing/landing/inscription-placeholder.tsx` (106 lignes) — placeholder avec titre "Demandez votre accès" mais PAS de vrai formulaire ❌
+  * `src/components/ogpressing/public-header.tsx` (138 lignes) — sticky header + nav ancres + CTA ✅
+  * `src/components/ogpressing/public-footer.tsx` (136 lignes) — footer complet avec contact ✅
+  * `src/lib/stores/inscription-store.ts` (45 lignes) — Zustand store pour plan présélectionné ✅
+  * `src/app/api/public/inscription/route.ts` (186 lignes) — API route existante mais ne supporte que 7 champs (pas nombre_machines/nombre_employes/plan_souhaite)
+- Vérification de la DB :
+  * Migration 010 (SECTION 1) ajoute `nombre_machines` et `nombre_employes` à demandes_inscription — mais 010 n'a peut-être pas encore été appliquée par l'utilisateur (worklog Task 19 : "010 ⏳")
+  * Colonne `plan_souhaite` n'existe dans AUCUNE migration → doit être créée
+- ⚠️ Constat infrastructure : `.env.local` a encore disparu (comme en Task 6) — le dev server affiche "Supabase env vars manquantes". Recréé avec placeholders pour que le dev server démarre. L'utilisateur devra remettre les vraies clés.
+- Rédaction du rapport d'audit `/home/z/my-project/AUDIT_LOT4.md` (~12 392 octets) avec :
+  * Table comparative spec vs implémentation pour les 2 prompts (22 points audités)
+  * 11 conformes (PROMPT 4.1 entièrement conforme) / 11 écarts à combler (PROMPT 4.2 entièrement à développer)
+  * Plan de résolution détaillé (migration 012 + étendre API + créer composant formulaire + réécrire inscription-placeholder)
+- Création de la migration `/home/z/my-project/supabase/migrations/012_lot4_gap_fill.sql` (4 808 octets, 2 sections) :
+  * SECTION 1 : Ajout colonne `plan_souhaite TEXT` à demandes_inscription (valeurs : starter|pro|business|indecis) + index partiel
+  * SECTION 2 : Vérification idempotente des colonnes `nombre_machines` et `nombre_employes` (au cas où 010 n'aurait pas été appliquée)
+- Étension de l'API route `/api/public/inscription/route.ts` (186 → 261 lignes) :
+  * Ajout des 3 nouveaux champs : `nombre_machines`, `nombre_employes`, `plan_souhaite`
+  * Validation téléphone ivoirien strict : regex `^(\+225)?0?\d{8,10}$` après nettoyage (vs ancien `^\+?\d{8,20}$` trop permissif)
+  * Validation email obligatoire (le spec 4.2 dit "obligatoire", l'ancienne API le mettait optionnel)
+  * Validation nombre_machines entier >= 1
+  * Validation nombre_employes optionnel entier >= 0
+  * Validation plan_souhaite ∈ {starter, pro, business, indecis}
+  * Validation message max 500 caractères (vs ancien 1000)
+  * Validation ville ∈ enum 11 villes CI
+  * Concaténation `${prenom} ${nom}` → `nom_gerant` (spec exige 2 champs mais table a 1 seul champ)
+  * Mapping `adresse` → `commune` (équivalent spec)
+  * Dédoublonnage 24h conservé
+- Création du composant `src/components/ogpressing/landing/inscription-form.tsx` (18 181 octets, ~440 lignes) :
+  * react-hook-form + zodResolver avec schéma zod complet (11 champs, messages FR)
+  * Layout 2 colonnes desktop pour champs courts (Nom/Prénom, Téléphone/Email, Ville/Adresse, Machines/Employés)
+  * Dropdown Ville (11 villes CI) avec composant Select shadcn
+  * Dropdown Plan (4 options : Starter/Pro/Business/Indécis) pré-rempli depuis useInscriptionStore.selectedPlan
+  * Textarea Message avec compteur de caractères 0/500
+  * États : idle / submitting / success / error
+  * Message succès spec exact "✅ Merci ! Notre équipe vous contactera très bientôt par WhatsApp ou téléphone."
+  * Bouton "Envoyer une autre demande" après succès (reset formulaire)
+  * Message erreur API avec retry (Alert rouge avec AlertCircle)
+  * Spinner Loader2 + bouton disabled pendant envoi
+  * Feedback visuel erreurs : FormMessage shadcn (bordure rouge + message sous le champ)
+- Réécriture de `src/components/ogpressing/landing/inscription-placeholder.tsx` (106 → 75 lignes) :
+  * Conservation du titre "Demandez votre accès" + badge Sparkles
+  * Conservation de l'encart plan présélectionné (si clic depuis section Tarifs)
+  * Remplacement du placeholder dashed par le nouveau `<InscriptionForm />`
+- Vérification post-livraison :
+  * `bun run lint` → 0 erreur, 0 warning ✅
+  * Dev server OK sur :3000 (relancé car .env.local a été recréé)
+  * GET / → 200 ✅, GET /login → 200 ✅, GET /activation → 200 ✅
+- Test Agent Browser sur la landing page :
+  * Les 6 sections s'affichent correctement (Hero, Problème/Solution, Fonctionnalités, Tarifs, Témoignages, Inscription)
+  * Le formulaire d'inscription affiche les 11 champs spec :
+    - Nom*, Prénom* (2 colonnes desktop)
+    - Téléphone*, Email* (2 colonnes desktop)
+    - Nom du pressing*
+    - Ville* (dropdown avec 11 villes CI : Abidjan, Bouaké, Daloa, Yamoussoukro, San-Pédro, Korhogo, Man, Divo, Gagnoa, Anyama, Autre)
+    - Adresse*
+    - Nombre de machines* (spinbutton, default 1)
+    - Nombre d'employés (optionnel)
+    - Plan souhaité* (dropdown 4 options)
+    - Message (optionnel, textarea avec compteur 0/500)
+  * Bouton "Envoyer ma demande" avec icône Send
+  * Validation zod testée en soumettant formulaire vide : 7 erreurs affichées sous les champs (Nom, Prénom, Email, Pressing, Ville, Adresse, Plan)
+  * Validation API testée via curl :
+    - Téléphone invalide ("12345") → 400 "Le téléphone doit être un numéro ivoirien valide"
+    - Ville invalide ("Paris") → 400 "La ville sélectionnée n'est pas valide"
+    - Cas valide → 500 (car .env.local a que des placeholders, Supabase retourne "Invalid API key" — le code est correct mais ne peut pas tester l'INSERT sans vraies clés)
+
+Stage Summary:
+- Audit LOT 4 COMPLET : tous les écarts spec vs implémentation identifiés et catégorisés (22 points audités, 11 conformes, 11 à combler)
+- Rapport d'audit `/home/z/my-project/AUDIT_LOT4.md` créé — source de vérité pour l'audit LOT 4
+- Migration `012_lot4_gap_fill.sql` (4 808 octets, 2 sections) créée — comble 1 écart SQL (colonne plan_souhaite) + vérification idempotente des colonnes 010
+- API route `/api/public/inscription/route.ts` étendue (186 → 261 lignes) — supporte maintenant les 11 champs spec avec validation ivoirienne téléphone + enum villes CI + enum plans
+- Composant `inscription-form.tsx` créé (18 181 octets) — vrai formulaire react-hook-form + zod avec 11 champs, layout responsive, états succès/erreur/loading
+- Section `inscription-placeholder.tsx` réécrite (106 → 75 lignes) — intègre le nouveau formulaire à la place du placeholder dashed
+- ⚠️ ACTIONS UTILISATEUR REQUISES :
+  1. Recréer .env.local avec les VRAIES clés Supabase (NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_PAT) — le fichier a encore disparu (comme en Task 6/7)
+  2. Appliquer les migrations 010 + 011 + 012 dans le SQL Editor Supabase (https://supabase.com/dashboard/project/yqaitafigfxlrprrouhr/sql/new) dans cet ordre :
+     - 010_lot2_gap_fill.sql (17 colonnes + 1 CHECK + 1 index + 3 fonctions + correction vue) — worklog Task 19
+     - 011_lot3_gap_fill.sql (policy RLS demande_insert_public + colonne mot_de_passe_temporaire) — worklog Task 20
+     - 012_lot4_gap_fill.sql (colonne plan_souhaite + vérif idempotente colonnes 010) — ce task
+- État global : 001 ✅ · 002 ✅ · 003 ✅ · 004 ✅ · 005 ✅ · 006 ✅ · 007 ✅ · 008 ✅ · 009 ✅ · 010 ⏳ · 011 ⏳ · 012 ⏳ (à appliquer par l'utilisateur)
+- Lint OK (0 erreur, 0 warning), dev server OK sur :3000
+- Forme de la landing page après audit LOT 4 : 100% conforme au spec LOT 4 (PROMPT 4.1 + PROMPT 4.2). Toutes les 6 sections + header sticky + footer sticky + vrai formulaire d'inscription avec 11 champs + validation zod + états succès/erreur/loading
+- Note : le formulaire d'inscription testé via curl retourne 500 car .env.local n'a que des placeholders. Dès que l'utilisateur remettra les vraies clés Supabase + appliquera 010/011/012, le INSERT fonctionnera (testé logic side, validation à 100%).
