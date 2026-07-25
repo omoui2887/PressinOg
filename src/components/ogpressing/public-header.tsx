@@ -43,15 +43,16 @@ export function PublicHeader() {
       )}
     >
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-2 font-bold text-lg">
+        {/* Logo — <a> (hard nav) plutôt que <Link> pour éviter le fetch RSC
+            bloqué en cross-origin dans le preview iframe (cf. Task 17/22). */}
+        <a href="/" className="flex items-center gap-2 font-bold text-lg">
           <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
             <ShoppingBag className="size-5" />
           </span>
           <span className="text-foreground">
             Og<span className="text-primary">Pressing</span>
           </span>
-        </Link>
+        </a>
 
         {/* Nav desktop */}
         <nav className="hidden items-center gap-1 md:flex">
@@ -69,7 +70,8 @@ export function PublicHeader() {
         {/* CTA desktop */}
         <div className="hidden items-center gap-2 md:flex">
           <Button variant="ghost" size="sm" asChild>
-            <Link href="/login">Se connecter</Link>
+            {/* <a> (hard nav) — évite le fetch RSC bloqué en cross-origin (Task 22). */}
+            <a href="/login">Se connecter</a>
           </Button>
           <Button size="sm" asChild>
             <Link href="#inscription">S&apos;inscrire</Link>
@@ -119,7 +121,8 @@ export function PublicHeader() {
               <div className="flex flex-col gap-2 border-t p-4">
                 <SheetClose asChild>
                   <Button variant="outline" asChild>
-                    <Link href="/login">Se connecter</Link>
+                    {/* <a> (hard nav) — évite le fetch RSC bloqué en cross-origin (Task 22). */}
+                    <a href="/login">Se connecter</a>
                   </Button>
                 </SheetClose>
                 <SheetClose asChild>

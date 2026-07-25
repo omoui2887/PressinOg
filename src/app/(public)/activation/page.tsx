@@ -27,7 +27,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -436,12 +435,13 @@ export default function ActivationPage() {
       <div className="mx-auto w-full max-w-2xl">
         {/* Lien retour accueil */}
         <div className="mb-6">
-          <Link
+          {/* <a> (hard nav) — évite le fetch RSC bloqué en cross-origin (Task 22). */}
+          <a
             href="/"
             className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
             <ArrowLeft className="size-4" /> Retour à l&apos;accueil
-          </Link>
+          </a>
         </div>
 
         {/* En-tête */}

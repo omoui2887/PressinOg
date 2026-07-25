@@ -6,7 +6,6 @@
  *
  * Server component (pas d'interactivité).
  */
-import Link from "next/link";
 import {
   ShoppingBag,
   Mail,
@@ -46,14 +45,16 @@ export function PublicFooter() {
         <div className="grid grid-cols-2 gap-8 md:grid-cols-4 lg:grid-cols-5">
           {/* Brand */}
           <div className="col-span-2 lg:col-span-2">
-            <Link href="/" className="flex items-center gap-2 font-bold text-lg">
+            {/* <a> (hard nav) plutôt que <Link> — évite le fetch RSC bloqué en
+                cross-origin dans le preview iframe (cf. Task 17/22). */}
+            <a href="/" className="flex items-center gap-2 font-bold text-lg">
               <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                 <ShoppingBag className="size-5" />
               </span>
               <span>
                 Og<span className="text-primary">Pressing</span>
               </span>
-            </Link>
+            </a>
             <p className="mt-3 max-w-xs text-sm text-muted-foreground">
               SaaS de gestion professionnelle de pressings pour la Côte
               d&apos;Ivoire. Point de vente, suivi de production, CRM et personnel
@@ -72,12 +73,15 @@ export function PublicFooter() {
               <ul className="mt-3 space-y-2">
                 {col.links.map((link) => (
                   <li key={link.label}>
-                    <Link
+                    {/* <a> pour tous les liens (ancres #... + routes /...).
+                        Hard nav pour les routes, hash natif pour les ancres —
+                        évite le fetch RSC bloqué en cross-origin (Task 22). */}
+                    <a
                       href={link.href}
                       className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                     >
                       {link.label}
-                    </Link>
+                    </a>
                   </li>
                 ))}
               </ul>
