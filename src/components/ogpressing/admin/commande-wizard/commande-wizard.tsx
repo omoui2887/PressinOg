@@ -18,15 +18,18 @@
  *     en bas (au-dessus de l'admin BottomNav)
  *   - Sur desktop, même logique avec plus d'espacement
  *
- * ⚠️ Pour l'instant, seuls les SQUELETTES des étapes sont implémentés
- * (placeholders avec mock interactions). Le contenu détaillé de chaque
- * étape arrivera dans les prompts suivants.
+ * ⚠️ Pré-sélection client : si l'URL contient `?client_id=<id>` (ex : lien
+ * « Nouvelle commande pour ce client » depuis la fiche client LOT 8.2),
+ * le wizard fetch le détail du client au montage et dispatch SET_CLIENT
+ * automatiquement. Utilise `window.location.search` (pas `useSearchParams`)
+ * pour éviter l'exigence d'un <Suspense> boundary.
  */
 "use client";
 
-import { useReducer } from "react";
+import { useCallback, useEffect, useReducer, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, RotateCcw } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, RotateCcw } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -34,6 +37,8 @@ import {
   isStepValid,
   wizardReducer,
   WIZARD_STEPS,
+  type ClientInfo,
+  type PreferencesLavage,
   type WizardStep,
 } from "./state";
 import { Stepper } from "./stepper";
@@ -42,8 +47,91 @@ import { StepArticles } from "./step-articles";
 import { StepRecap } from "./step-recap";
 import { StepConfirmation } from "./step-confirmation";
 
+// ----------------------------------------------------------------
+// Pré-sélection client depuis `?client_id=<id>` (LOT 8.2)
+// ----------------------------------------------------------------
+
+/** Shape du détail renvoyé par `GET /api/admin/clients/{id}`. */
+interface ClientDetailResponse {
+  id: string;
+  nom_complet: string;
+  telephone: string;
+  email: string | null;
+  points_fidelite: number;
+  preferences_lavage: PreferencesLavage | null;
+}
+
+/**
+ * Fetch le détail d'un client via `GET /api/admin/clients/{id}` et le mappe
+ * en `ClientInfo` pour le reducer. Renvoie null si le fetch échoue.
+ *
+ * `solde_impaye` est mis à 0 car le GET détail ne renvoie pas cet agrégat
+ * (il faudrait fetch les commandes pour le calculer — pas critique pour
+ * le wizard ; l'info est surtout utile comme warning dans la step client).
+ */
+async function fetchClientForWizard(id: string): Promise<ClientInfo | null> {
+  try {
+    const res = await fetch(`/api/admin/clients/${id}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (!json.success || !json.data) return null;
+    const d: ClientDetailResponse = json.data;
+    return {
+      id: d.id,
+      nom: d.nom_complet,
+      telephone: d.telephone,
+      email: d.email,
+      solde_impaye: 0,
+      preferences_lavage: d.preferences_lavage ?? null,
+      points_fidelite: d.points_fidelite ?? 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function CommandeWizard() {
   const [state, dispatch] = useReducer(wizardReducer, initialState);
+  // Pré-sélection client : true pendant le fetch du `?client_id=<id>`.
+  const [preselecting, setPreselecting] = useState(false);
+
+  /**
+   * Lit `?client_id=<id>` dans l'URL au montage et pré-sélectionne le client
+   * si présent. Utilise `window.location.search` (pas useSearchParams) pour
+   * éviter l'exigence d'un <Suspense> boundary.
+   *
+   * Encapsulé dans un `useCallback` (async) pour éviter les setState
+   * synchrones dans le corps de l'effect (lint `react-hooks/set-state-in-effect`).
+   * La fonction async diffère l'exécution des setState au-delà du corps
+   * synchrone de l'effect — pattern identique à `clients-page.tsx` /
+   * `qr-scanner.tsx`.
+   */
+  const preselectClient = useCallback(async () => {
+    // SSR guard + lecture du query param `client_id`.
+    if (typeof window === "undefined") return;
+    const clientId = new URLSearchParams(window.location.search).get(
+      "client_id"
+    );
+    if (!clientId) return;
+
+    setPreselecting(true);
+    try {
+      const client = await fetchClientForWizard(clientId);
+      if (!client) {
+        toast.error(
+          "Impossible de pré-sélectionner ce client. Sélectionnez-le manuellement."
+        );
+        return;
+      }
+      dispatch({ type: "SET_CLIENT", client });
+    } finally {
+      setPreselecting(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    preselectClient();
+  }, [preselectClient]);
 
   const currentStepDef = WIZARD_STEPS[state.step - 1];
   const isStep1 = state.step === 1;
@@ -87,13 +175,24 @@ export function CommandeWizard() {
       {/* Contenu de l'étape courante */}
       <Card className="flex-1">
         <CardContent className="p-4 sm:p-6">
-          {state.step === 1 && <StepClient state={state} dispatch={dispatch} />}
-          {state.step === 2 && (
-            <StepArticles state={state} dispatch={dispatch} />
-          )}
-          {state.step === 3 && <StepRecap state={state} dispatch={dispatch} />}
-          {state.step === 4 && (
-            <StepConfirmation state={state} dispatch={dispatch} />
+          {preselecting ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+              <Loader2 className="size-6 animate-spin text-primary" />
+              <p className="text-sm text-muted-foreground">
+                Pré-sélection du client…
+              </p>
+            </div>
+          ) : (
+            <>
+              {state.step === 1 && <StepClient state={state} dispatch={dispatch} />}
+              {state.step === 2 && (
+                <StepArticles state={state} dispatch={dispatch} />
+              )}
+              {state.step === 3 && <StepRecap state={state} dispatch={dispatch} />}
+              {state.step === 4 && (
+                <StepConfirmation state={state} dispatch={dispatch} />
+              )}
+            </>
           )}
         </CardContent>
       </Card>

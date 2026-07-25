@@ -1,19 +1,19 @@
 /**
- * OgPressing — /admin/commandes (placeholder)
- * -------------------------------------------
- * Liste des commandes du pressing avec filtres par statut, date, client.
- * Suivi de production par article (recu → ... → retire/livre).
- * Module complet à venir.
+ * OgPressing — /admin/commandes
+ * ------------------------------
+ * Liste des commandes du pressing connecté :
+ *   - Recherche instantanée par n° ticket ou nom du client
+ *   - Filtres par statut commande (7 valeurs) et statut paiement (3 valeurs)
+ *   - Tableau (desktop) / cards (mobile) avec N° ticket, Client, Statut,
+ *     Paiement, Montant total, Date création, Date retrait prévue, Actions
+ *   - Bouton "Scanner QR" (QRScanner dialog → redirige vers le détail)
+ *   - Pagination (20 commandes/page)
+ *   - Clic sur une ligne → /admin/commandes/{id}
+ *
+ * Données récupérées via /api/admin/commandes (RLS isole par pressing).
  */
-import { List } from "lucide-react";
-import { AdminPagePlaceholder } from "@/components/ogpressing/admin/admin-page-placeholder";
+import { CommandesPage } from "@/components/ogpressing/admin/commandes/commandes-page";
 
-export default function CommandesPage() {
-  return (
-    <AdminPagePlaceholder
-      title="Commandes"
-      description="Liste et suivi des commandes"
-      icon={List}
-    />
-  );
+export default function CommandesAdminPage() {
+  return <CommandesPage />;
 }
