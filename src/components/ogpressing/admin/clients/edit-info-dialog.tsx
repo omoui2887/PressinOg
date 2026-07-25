@@ -1,122 +1,112 @@
 /**
- * OgPressing — NewClientDialog
- * -----------------------------
- * Dialog (modal) pour créer un nouveau client rattaché au pressing connecté.
- * Champs : Nom complet (requis), Téléphone (requis), Email (optionnel),
- * Adresse (optionnel).
+ * OgPressing — EditInfoDialog (LOT 8.2)
+ * --------------------------------------
+ * Dialog d'édition des coordonnées d'un client : nom_complet, telephone,
+ * email, adresse. Pré-rempli avec les valeurs courantes, submit via
+ * PATCH /api/admin/clients/{id}.
  *
- * Identique aux champs de l'Étape 1 du POS (Wizard Nouvelle Commande) —
- * pourra être réutilisé via refactor ultérieur.
+ * Sur succès : toast + callback `onUpdated(client)` pour que le parent
+ * (ClientDetailPage) mette à jour son état local `currentClient` + ferme
+ * le dialog. Sur erreur : toast.
  *
- * Submit : POST /api/admin/clients → on success, toast + appelle onCreate
- * (le parent peut rafraîchir la liste).
- *
- * Client component : gestion état formulaire + fetch.
+ * Client component — gestion état formulaire + fetch.
  */
 "use client";
 
-import { useState } from "react";
-import { Plus, Loader2, UserPlus, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Loader2, Pencil, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
-  DialogClose,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import type { ClientDetail } from "./client-detail-helpers";
 
-/**
- * Client créé par le dialog, renvoyé au parent via `onCreated`.
- * Inclut les champs minimaux nécessaires pour présélectionner le client
- * dans un flux parent (ex : Étape 1 du wizard commande).
- */
-export interface CreatedClient {
-  id: string;
-  nom_complet: string;
-  telephone: string;
-  email: string | null;
+interface EditInfoDialogProps {
+  client: ClientDetail;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Appelé avec le client mis à jour après succès du PATCH. */
+  onUpdated: (client: ClientDetail) => void;
 }
 
-interface NewClientDialogProps {
-  /**
-   * Callback legacy (sans argument) appelé après création. Conservé pour
-   * backward compat (ex : `ClientsPage` qui rafraîchit juste la liste).
-   */
-  onCreate?: () => void;
-  /**
-   * Callback appelé après création avec le client créé (id, nom_complet,
-   * telephone, email). Utilisé par le wizard commande pour présélectionner
-   * le nouveau client sans refetch de la liste.
-   */
-  onCreated?: (client: CreatedClient) => void;
-  trigger?: React.ReactNode;
-}
-
-type FormState = {
+interface FormState {
   nom_complet: string;
   telephone: string;
   email: string;
   adresse: string;
-};
+}
 
-const EMPTY: FormState = {
-  nom_complet: "",
-  telephone: "",
-  email: "",
-  adresse: "",
-};
+function toFormState(client: ClientDetail): FormState {
+  return {
+    nom_complet: client.nom_complet ?? "",
+    telephone: client.telephone ?? "",
+    email: client.email ?? "",
+    adresse: client.adresse ?? "",
+  };
+}
 
-export function NewClientDialog({
-  onCreate,
-  onCreated,
-  trigger,
-}: NewClientDialogProps) {
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<FormState>(EMPTY);
-  const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
+export function EditInfoDialog({
+  client,
+  open,
+  onOpenChange,
+  onUpdated,
+}: EditInfoDialogProps) {
+  const [form, setForm] = useState<FormState>(() => toFormState(client));
+  const [errors, setErrors] = useState<
+    Partial<Record<keyof FormState, string>>
+  >({});
   const [submitting, setSubmitting] = useState(false);
+
+  // Resync le formulaire quand le client change (ex : autre fiche ouverte)
+  // ou quand le dialog s'ouvre.
+  useEffect(() => {
+    if (open) {
+      setForm(toFormState(client));
+      setErrors({});
+    }
+  }, [open, client]);
 
   function update<K extends keyof FormState>(key: K, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
-    // Efface l'erreur du champ modifié
     if (errors[key]) {
       setErrors((prev) => ({ ...prev, [key]: undefined }));
     }
   }
 
   function validate(): boolean {
-    const nextErrors: Partial<Record<keyof FormState, string>> = {};
+    const next: Partial<Record<keyof FormState, string>> = {};
     if (!form.nom_complet.trim()) {
-      nextErrors.nom_complet = "Le nom complet est requis";
+      next.nom_complet = "Le nom complet est requis";
     }
     if (!form.telephone.trim()) {
-      nextErrors.telephone = "Le téléphone est requis";
+      next.telephone = "Le téléphone est requis";
     }
     if (
       form.email.trim() &&
       !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())
     ) {
-      nextErrors.email = "Format d'email invalide";
+      next.email = "Format d'email invalide";
     }
-    setErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
+    setErrors(next);
+    return Object.keys(next).length === 0;
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!validate()) return;
-
     setSubmitting(true);
     try {
-      const res = await fetch("/api/admin/clients", {
-        method: "POST",
+      const res = await fetch(`/api/admin/clients/${client.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           nom_complet: form.nom_complet.trim(),
@@ -127,27 +117,11 @@ export function NewClientDialog({
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || "Erreur lors de la création");
+        throw new Error(data.error || "Erreur lors de la mise à jour");
       }
-      toast.success(`Client « ${form.nom_complet.trim()} » créé avec succès`);
-      // L'API renvoie le client créé dans `data.data` (id, nom_complet,
-      // telephone, email, adresse, points_fidelite, …). On le remonte au
-      // parent via `onCreated` (présélection wizard) et `onCreate` (refresh).
-      const created: CreatedClient | undefined = data?.data
-        ? {
-            id: data.data.id,
-            nom_complet: data.data.nom_complet,
-            telephone: data.data.telephone,
-            email: data.data.email ?? null,
-          }
-        : undefined;
-      setForm(EMPTY);
-      setErrors({});
-      setOpen(false);
-      if (created) {
-        onCreated?.(created);
-      }
-      onCreate?.();
+      toast.success("Informations modifiées");
+      onUpdated(data.data as ClientDetail);
+      onOpenChange(false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Erreur inattendue";
       toast.error(msg);
@@ -158,47 +132,32 @@ export function NewClientDialog({
 
   function handleOpenChange(next: boolean) {
     if (submitting) return;
-    setOpen(next);
-    if (!next) {
-      // Reset en fermant
-      setForm(EMPTY);
-      setErrors({});
-    }
+    onOpenChange(next);
   }
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
-        {trigger ?? (
-          <Button>
-            <Plus className="size-4" />
-            Nouveau client
-          </Button>
-        )}
-      </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <UserPlus className="size-5 text-primary" />
-            Nouveau client
+            <Pencil className="size-5 text-primary" />
+            Modifier les informations
           </DialogTitle>
           <DialogDescription>
-            Renseignez les informations du client. Il sera rattaché à votre
-            pressing.
+            Mettez à jour les coordonnées du client.
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Nom complet */}
           <div className="space-y-1.5">
-            <Label htmlFor="client-nom">
+            <Label htmlFor="edit-nom">
               Nom complet <span className="text-danger">*</span>
             </Label>
             <Input
-              id="client-nom"
+              id="edit-nom"
               value={form.nom_complet}
               onChange={(e) => update("nom_complet", e.target.value)}
-              placeholder="ex : Awa Koné"
               disabled={submitting}
               required
               autoFocus
@@ -210,15 +169,14 @@ export function NewClientDialog({
 
           {/* Téléphone */}
           <div className="space-y-1.5">
-            <Label htmlFor="client-tel">
+            <Label htmlFor="edit-tel">
               Téléphone <span className="text-danger">*</span>
             </Label>
             <Input
-              id="client-tel"
+              id="edit-tel"
               type="tel"
               value={form.telephone}
               onChange={(e) => update("telephone", e.target.value)}
-              placeholder="ex : +225 07 00 00 00"
               disabled={submitting}
               required
             />
@@ -229,9 +187,9 @@ export function NewClientDialog({
 
           {/* Email */}
           <div className="space-y-1.5">
-            <Label htmlFor="client-email">Email (optionnel)</Label>
+            <Label htmlFor="edit-email">Email (optionnel)</Label>
             <Input
-              id="client-email"
+              id="edit-email"
               type="email"
               value={form.email}
               onChange={(e) => update("email", e.target.value)}
@@ -245,9 +203,9 @@ export function NewClientDialog({
 
           {/* Adresse */}
           <div className="space-y-1.5">
-            <Label htmlFor="client-adresse">Adresse (optionnel)</Label>
+            <Label htmlFor="edit-adresse">Adresse (optionnel)</Label>
             <Input
-              id="client-adresse"
+              id="edit-adresse"
               value={form.adresse}
               onChange={(e) => update("adresse", e.target.value)}
               placeholder="ex : Cocody, Abidjan"
@@ -266,12 +224,12 @@ export function NewClientDialog({
               {submitting ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  Création…
+                  Enregistrement…
                 </>
               ) : (
                 <>
-                  <Plus className="size-4" />
-                  Créer le client
+                  <Pencil className="size-4" />
+                  Enregistrer
                 </>
               )}
             </Button>

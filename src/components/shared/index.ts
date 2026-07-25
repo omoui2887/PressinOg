@@ -7,6 +7,10 @@
  * (Plutôt que d'importer chaque composant individuellement.)
  */
 export { StatusBadge, type StatusVariant } from "./status-badge";
+export {
+  QRScanner,
+  type QRScannerProps,
+} from "./qr-scanner";
 export { EmptyState, type EmptyStateProps } from "./empty-state";
 export {
   BottomNav,
