@@ -1,22 +1,20 @@
 /**
- * OgPressing — PersonnelActionsMenu
- * ----------------------------------
+ * OgPressing — PersonnelActionsMenu (LOT 9.3)
+ * --------------------------------------------
  * Menu d'actions (icône 3 points) pour chaque employé de la liste.
  *
  * Actions disponibles selon le contexte de l'employé :
- *   - "Modifier"                          → placeholder (formulaire au prochain prompt)
+ *   - "Modifier"                          → ouvre EditEmployeeDialog (formulaire pré-rempli)
  *   - "Réinitialiser le mot de passe"     → uniquement si methode_creation = creation_directe
+ *                                          → POST { action: "reset_password" }
+ *                                          → Affiche ResetPasswordResultDialog avec les nouveaux identifiants
  *   - "Renvoyer l'invitation"             → uniquement si statut = invite_en_attente ET methode = lien_invitation
- *   - "Désactiver le compte"              → si statut ≠ desactive
- *   - "Réactiver le compte"               → si statut = desactive
+ *                                          → POST { action: "resend_invitation" }
+ *   - "Désactiver le compte"              → si statut ≠ desactive → PATCH { action: "desactiver" }
+ *   - "Réactiver le compte"               → si statut = desactive → PATCH { action: "reactiver" }
  *
- * Chaque action destructrice (désactiver) ou irréversible (reset password,
- * resend invitation) demande une confirmation via AlertDialog avant exécution.
- *
- * Backend :
- *   - Désactiver/Réactiver → PATCH /api/admin/personnel/[id] { action }
- *   - Reset password / Resend invitation → POST (501 placeholder pour l'instant)
- *   - Modifier → toast "à venir" (formulaire détaillé au prochain prompt)
+ * Chaque action destructrice (désactiver, reset password) ou irréversible
+ * (resend invitation) demande une confirmation via AlertDialog avant exécution.
  *
  * 🔒 L'API vérifie en défense en profondeur que l'appelant est manager actif
  *    du même pressing. Le verrou anti-lockout (ne pas se désactiver soi-même)
@@ -56,6 +54,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { type Employe, ROLE_PERSONNEL_LABELS } from "./personnel-helpers";
+import { EditEmployeeDialog } from "./edit-employee-dialog";
+import {
+  ResetPasswordResultDialog,
+  type ResetPasswordCredentials,
+} from "./reset-password-result-dialog";
 
 interface PersonnelActionsMenuProps {
   employe: Employe;
@@ -76,11 +79,19 @@ export function PersonnelActionsMenu({
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
   const [pending, startTransition] = useTransition();
 
+  // Dialog de modification (ouvert par le menu "Modifier")
+  const [editOpen, setEditOpen] = useState(false);
+
+  // Dialog d'affichage des identifiants après reset password
+  const [resetCredentials, setResetCredentials] =
+    useState<ResetPasswordCredentials | null>(null);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+
   const isDesactive = employe.statut_compte === "desactive";
   const isInvite = employe.statut_compte === "invite_en_attente";
   const isDirectCreation = employe.methode_creation === "creation_directe";
 
-  // Titre + description de la boîte de confirmation selon l'action
+  /* ---- Titre + description de la boîte de confirmation ---- */
   function getConfirmConfig(): {
     title: string;
     description: string;
@@ -126,6 +137,7 @@ export function PersonnelActionsMenu({
     }
   }
 
+  /* ---- Exécution de l'action confirmée ---- */
   async function executeAction() {
     const action = confirmAction;
     setConfirmAction(null);
@@ -149,27 +161,36 @@ export function PersonnelActionsMenu({
               : `${employe.nom_complet} a été réactivé`
           );
           onUpdated?.();
-        } else if (action === "reset_password" || action === "resend_invitation") {
-          // POST placeholder (501 — logique complète à venir)
+        } else if (action === "reset_password") {
           const res = await fetch(`/api/admin/personnel/${employe.id}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action }),
           });
           const data = await res.json();
-          if (res.status === 501) {
-            toast.info("Fonctionnalité à venir", {
-              description:
-                action === "reset_password"
-                  ? "La réinitialisation de mot de passe sera implémentée prochainement."
-                  : "Le renvoi d'invitation sera implémenté prochainement.",
-            });
-            return;
-          }
           if (!res.ok || !data.success) {
-            throw new Error(data.error || "Erreur lors de l'action");
+            throw new Error(data.error || "Erreur lors de la réinitialisation");
           }
-          toast.success("Action effectuée");
+          // Affiche les nouveaux identifiants dans un dialog
+          if (data.credentials) {
+            setResetCredentials(data.credentials);
+            setResetDialogOpen(true);
+          }
+          toast.success("Mot de passe réinitialisé");
+          onUpdated?.();
+        } else if (action === "resend_invitation") {
+          const res = await fetch(`/api/admin/personnel/${employe.id}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.error || "Erreur lors du renvoi");
+          }
+          toast.success(
+            `Invitation renvoyée à ${data.invitedEmail ?? employe.email}`
+          );
           onUpdated?.();
         }
       } catch (err) {
@@ -179,17 +200,11 @@ export function PersonnelActionsMenu({
     });
   }
 
-  function handleModifier() {
-    toast.info("Fonctionnalité à venir", {
-      description:
-        "Le formulaire de modification d'un employé sera disponible au prochain lot.",
-    });
-  }
-
   const config = getConfirmConfig();
 
   return (
     <>
+      {/* ---- Menu déroulant ---- */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -212,8 +227,8 @@ export function PersonnelActionsMenu({
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
 
-          {/* Modifier */}
-          <DropdownMenuItem onClick={handleModifier}>
+          {/* Modifier — ouvre le dialog d'édition (mode contrôlé) */}
+          <DropdownMenuItem onSelect={() => setEditOpen(true)}>
             <Pencil className="size-4" />
             Modifier
           </DropdownMenuItem>
@@ -258,7 +273,15 @@ export function PersonnelActionsMenu({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* Boîte de confirmation unique pour toutes les actions */}
+      {/* ---- Dialog de modification (mode contrôlé, rendu hors du dropdown) ---- */}
+      <EditEmployeeDialog
+        employe={employe}
+        onUpdated={onUpdated}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+      />
+
+      {/* ---- Boîte de confirmation unique pour reset/resend/desactiver/reactiver ---- */}
       <AlertDialog
         open={confirmAction !== null}
         onOpenChange={(open) => {
@@ -301,6 +324,13 @@ export function PersonnelActionsMenu({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ---- Dialog d'affichage des identifiants après reset password ---- */}
+      <ResetPasswordResultDialog
+        open={resetDialogOpen}
+        onOpenChange={setResetDialogOpen}
+        credentials={resetCredentials}
+      />
     </>
   );
 }
