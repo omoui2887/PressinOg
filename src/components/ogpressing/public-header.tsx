@@ -20,7 +20,7 @@
  */
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { Menu, X, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -34,18 +34,43 @@ const NAV_LINKS = [
   { href: "#temoignages", label: "Témoignages" },
 ];
 
-export function PublicHeader() {
-  const [scrolled, setScrolled] = useState(false);
-  const [open, setOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
+/* ----------------------- External stores (no setState-in-effect) ----------------------- */
 
-  useEffect(() => {
-    setMounted(true);
-    const onScroll = () => setScrolled(window.scrollY > 8);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
+/** Retourne true côté client après hydration, false côté serveur et lors du
+ *  premier render client. Utilisé comme "mounted gate" pour les composants
+ *  Radix interactifs (Sheet/Dialog) dont les useId() causent des hydration
+ *  mismatches en SSR Next.js 16. */
+function subscribeNoop() {
+  return () => {};
+}
+function getClientSnapshot() {
+  return true;
+}
+function getServerSnapshot() {
+  return false;
+}
+
+/** Abonne au scroll de la fenêtre et retourne true si scrollY > 8. */
+function subscribeScroll(callback: () => void) {
+  window.addEventListener("scroll", callback, { passive: true });
+  return () => window.removeEventListener("scroll", callback);
+}
+function getScrollSnapshot() {
+  return window.scrollY > 8;
+}
+
+export function PublicHeader() {
+  const scrolled = useSyncExternalStore(
+    subscribeScroll,
+    getScrollSnapshot,
+    () => false // serveur : jamais scrolled
+  );
+  const [open, setOpen] = useState(false);
+  const mounted = useSyncExternalStore(
+    subscribeNoop,
+    getClientSnapshot,
+    getServerSnapshot
+  );
 
   return (
     <header

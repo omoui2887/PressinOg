@@ -3135,3 +3135,52 @@ Stage Summary:
 - Files modified: /home/z/my-project/.env.local (2 keys replaced)
 - No code changes needed — only environment configuration.
 - User can now successfully submit inscription demands. The demande will appear in Super Admin → Demandes page for validation/code generation.
+
+---
+Task ID: 29
+Agent: main
+Task: Correction "le panneau de prévisualisation n'affiche pas" (504 Gateway Time-out puis Deploy Failed)
+
+Work Log:
+- Analyse de la capture d'écran utilisateur : page d'erreur "504 Gateway Time-out" avec "alb" (Application Load Balancer)
+- Diagnostic des couches :
+  1. .env.local — MANQUANT (fichier supprimé entre sessions, cause racine des crashs dev server)
+  2. Dev server (localhost:3000) — instable, meurt après 1-3 requêtes en sandbox
+  3. Caddy (localhost:81) — OK quand dev server est vivant (HTTP 200)
+  4. External preview (space-z.ai) — retourne "500 Deploy Failed" (page Z.ai "Sorry, there was a problem deploying the code")
+
+- Fix 1 : Recréé .env.local avec les clés Supabase réelles (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY)
+  * Vérification : curl Supabase REST → HTTP 200 ✅ (clés valides)
+  * Vérification : dev server charge ".env.local" → plus de warning "Supabase env vars manquantes"
+
+- Fix 2 : Corrigé l'erreur de lint dans src/components/ogpressing/public-header.tsx
+  * Erreur : react-hooks/set-state-in-effect — setMounted(true) dans useEffect
+  * Cette erreur de lint faisait échouer le processus de déploiement Z.ai → "Deploy Failed"
+  * Fix : remplacé useState+useEffect par useSyncExternalStore (pattern React 18+)
+    - subscribeNoop / getClientSnapshot / getServerSnapshot pour le "mounted gate"
+    - subscribeScroll / getScrollSnapshot pour l'état "scrolled"
+    - Plus de setState dans useEffect → plus d'erreur lint
+  * Vérification : bun run lint → 0 errors ✅
+
+- Tentative de stabilisation du dev server :
+  * setsid + nohup + disown : process meurt quand même entre appels bash
+  * --webpack au lieu de Turbopack : fonctionne mais meurt aussi entre appels
+  * Bun-based keeper (dev-keeper.ts) : meurt aussi
+  * Bash watcher (dev-watch.sh) : meurt aussi
+  * Conclusion : le sandbox tue systématiquement les processus en arrière-plan entre appels bash (limite infrastructure)
+
+- Tests de la preview externe (space-z.ai) :
+  * localhost:3000 → 200 ✅ (dev server vivant)
+  * localhost:81 → 200 ✅ (Caddy proxy OK)
+  * space-z.ai → 500 "Deploy Failed" ❌ (page Z.ai, pas une erreur dev server)
+  * La page "Deploy Failed" persiste même quand dev server est vivant
+  * Cause : le déploiement Z.ai a échoué précédemment (erreur lint), la plateforme garde l'état "failed"
+
+Stage Summary:
+- 2 fichiers modifiés :
+  * .env.local — recréé avec clés Supabase (était manquant)
+  * src/components/ogpressing/public-header.tsx — useSyncExternalStore au lieu de useState+useEffect (fix lint error)
+- Lint : 0 errors ✅ (était 1 error avant)
+- Dev server : fonctionne sur localhost:3000 (200 en 120-160ms)
+- Preview externe : encore "Deploy Failed" — la plateforme Z.ai doit détecter le changement de code et redéployer
+- Note : le dev server est instable en sandbox (meurt entre appels bash), mais le code est correct
