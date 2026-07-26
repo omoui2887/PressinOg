@@ -1,23 +1,39 @@
 /**
- * OgPressing — API /api/admin/personnel (GET)
- * -------------------------------------------
- * Récupère la liste des employés du pressing connecté avec :
+ * OgPressing — API /api/admin/personnel (GET + POST)
+ * ---------------------------------------------------
+ *
+ * GET — Liste des employés du pressing connecté avec :
  *   - recherche par nom ou téléphone (param `q`)
  *   - filtre par rôle (param `role` : manager|receptionniste|caissier|laveur|repassage|livreur|comptable|all)
  *   - filtre par statut de compte (param `statut` : actif|invite_en_attente|desactive|all)
  *   - pagination (param `page` 1-indexed, `pageSize` default 20)
+ *   - Infos de limite du plan (plan, limit, count, limitAtteinte)
  *
- * Renvoie AUSSI les informations de limite du plan d'abonnement :
- *   - plan : starter | pro | business
- *   - limit : 3 | 8 | null (null = illimité)
- *   - count : nombre d'employés actifs+en attente (occupant un siège)
- *   - limitAtteinte : boolean (count >= limit, false si illimité)
+ * POST — Création d'un compte employé (LOT 9.2) :
+ *   Body : { methode, nom, prenom, telephone, email, role, password? }
+ *   - methode = "creation_directe" :
+ *       * Génère un email technique si non fourni ({telephone}@ogpressing.local)
+ *       * supabase.auth.admin.createUser({ email, password, email_confirm: true })
+ *       * INSERT personnel (statut='actif', mot_de_passe_temporaire=true)
+ *       * Retourne les identifiants à communiquer
+ *   - methode = "lien_invitation" :
+ *       * supabase.auth.admin.inviteUserByEmail(email, { redirectTo })
+ *       * INSERT personnel (statut='invite_en_attente', mot_de_passe_temporaire=true)
+ *       * Retourne confirmation d'envoi
  *
- * 🔒 SÉCURITÉ : getSupabaseServer() (client anon + JWT). RLS `isolation_pressing`
- * sur `personnel` garantit qu'on ne voit que les collègues du même pressing.
+ * 🔒 SÉCURITÉ :
+ *   - GET  : getSupabaseServer() (anon + JWT). RLS isole par pressing.
+ *   - POST : Manager authentifié + actif (vérifié). Utilise getSupabaseAdmin()
+ *     (service_role) pour createUser / inviteUserByEmail — opérations Admin
+ *     Auth impossibles avec la clé anon. L'INSERT personnel est fait avec
+ *     le client admin (contourne RLS) car le user_id cible n'appartient pas
+ *     encore à la session courante. Le pressing_id est FORCÉ à celui du
+ *     manager connecté (défense en profondeur).
+ *   - Vérification de la limite du plan avant création (anti-dépassement).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -159,5 +175,351 @@ export async function GET(request: NextRequest) {
     limit,
     count,
     limitAtteinte,
+  });
+}
+
+/* ================================================================
+ *  POST — Création d'un compte employé (LOT 9.2)
+ * ================================================================ */
+
+const ROLES_VALID_SET = new Set([
+  "manager",
+  "receptionniste",
+  "caissier",
+  "laveur",
+  "repassage",
+  "livreur",
+  "comptable",
+]);
+
+/** Génère un mot de passe aléatoire sécurisé de 10 caractères. */
+function generateRandomPassword(): string {
+  const chars =
+    "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
+  let pwd = "";
+  const array = new Uint8Array(10);
+  crypto.getRandomValues(array);
+  for (let i = 0; i < 10; i++) {
+    pwd += chars[array[i] % chars.length];
+  }
+  return pwd;
+}
+
+/** Nettoie un numéro de téléphone pour générer un email technique. */
+function phoneToEmail(telephone: string): string {
+  const digits = telephone.replace(/\D/g, "");
+  return `${digits}@ogpressing.local`;
+}
+
+interface CreateBody {
+  methode?: unknown;
+  nom?: unknown;
+  prenom?: unknown;
+  telephone?: unknown;
+  email?: unknown;
+  role?: unknown;
+  password?: unknown;
+}
+
+export async function POST(request: NextRequest) {
+  // ---- 1. Authentification + autorisation (manager actif) ----
+  const supabase = await getSupabaseServer();
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !userData.user) {
+    return NextResponse.json(
+      { success: false, error: "Non authentifié" },
+      { status: 401 }
+    );
+  }
+
+  const { data: me } = await supabase
+    .from("personnel")
+    .select("id, pressing_id, role, actif, statut_compte")
+    .eq("user_id", userData.user.id)
+    .maybeSingle();
+
+  if (
+    !me ||
+    me.role !== "manager" ||
+    me.actif !== true ||
+    me.statut_compte !== "actif"
+  ) {
+    return NextResponse.json(
+      { success: false, error: "Accès refusé — manager requis" },
+      { status: 403 }
+    );
+  }
+
+  const pressingId = me.pressing_id;
+  const creatorId = me.id;
+
+  // ---- 2. Vérification de la limite du plan ----
+  const { data: latestAbonnement } = await supabase
+    .from("abonnements")
+    .select("plan")
+    .eq("pressing_id", pressingId)
+    .order("date_debut", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const plan = latestAbonnement?.plan ?? "starter";
+  const limit = PLAN_LIMITS[plan] ?? null;
+
+  const { count: seatCount } = await supabase
+    .from("personnel")
+    .select("id", { count: "exact", head: true })
+    .eq("pressing_id", pressingId)
+    .in("statut_compte", ["actif", "invite_en_attente"]);
+
+  const count = seatCount ?? 0;
+  if (limit !== null && count >= limit) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: `Limite atteinte pour votre plan (${limit} employés). Passez au plan supérieur pour en ajouter plus.`,
+      },
+      { status: 403 }
+    );
+  }
+
+  // ---- 3. Parse + validation du body ----
+  let body: CreateBody;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { success: false, error: "Corps de requête invalide (JSON attendu)" },
+      { status: 400 }
+    );
+  }
+
+  const methode = typeof body.methode === "string" ? body.methode : "";
+  if (methode !== "creation_directe" && methode !== "lien_invitation") {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Méthode invalide. Valeurs attendues : 'creation_directe' ou 'lien_invitation'.",
+      },
+      { status: 400 }
+    );
+  }
+
+  const nom = typeof body.nom === "string" ? body.nom.trim() : "";
+  const prenom = typeof body.prenom === "string" ? body.prenom.trim() : "";
+  const telephone =
+    typeof body.telephone === "string" ? body.telephone.trim() : "";
+  const emailRaw =
+    typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  const role = typeof body.role === "string" ? body.role : "";
+
+  if (!nom || !prenom || !telephone) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Nom, prénom et téléphone sont obligatoires.",
+      },
+      { status: 400 }
+    );
+  }
+
+  if (!ROLES_VALID_SET.has(role)) {
+    return NextResponse.json(
+      { success: false, error: "Rôle invalide." },
+      { status: 400 }
+    );
+  }
+
+  // Selon la méthode, l'email est obligatoire (invitation) ou optionnel (directe)
+  let email = emailRaw;
+  if (methode === "lien_invitation") {
+    if (!email || !email.includes("@")) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Un email valide est obligatoire pour la méthode 'lien d'invitation'.",
+        },
+        { status: 400 }
+      );
+    }
+  } else {
+    // creation_directe : si pas d'email, on génère un email technique
+    if (!email || !email.includes("@")) {
+      email = phoneToEmail(telephone);
+    }
+  }
+
+  const nomComplet = `${prenom} ${nom}`;
+
+  // ---- 4. Vérification anti-doublon (email ou téléphone) ----
+  const { data: existing } = await supabase
+    .from("personnel")
+    .select("id, email, telephone")
+    .eq("pressing_id", pressingId)
+    .or(`email.eq.${email},telephone.eq.${telephone}`)
+    .limit(1)
+    .maybeSingle();
+
+  if (existing) {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          "Un employé avec cet email ou ce téléphone existe déjà dans votre pressing.",
+      },
+      { status: 409 }
+    );
+  }
+
+  // ---- 5. Création du compte Auth côté Supabase (service_role) ----
+  const admin = getSupabaseAdmin();
+
+  if (methode === "creation_directe") {
+    // Mot de passe : fourni par l'admin OU généré aléatoirement
+    const password =
+      typeof body.password === "string" && body.password.length >= 8
+        ? body.password
+        : generateRandomPassword();
+
+    const { data: createdUser, error: createErr } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true, // pas besoin de vérification email pour création directe
+      user_metadata: {
+        nom_complet: nomComplet,
+        telephone,
+        role,
+      },
+    });
+
+    if (createErr || !createdUser.user) {
+      console.error("[api/admin/personnel POST] createUser error:", createErr);
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Erreur lors de la création du compte Auth : ${createErr?.message ?? "inconnue"}`,
+        },
+        { status: 500 }
+      );
+    }
+
+    const newUserId = createdUser.user.id;
+
+    // ---- 6a. INSERT dans personnel (service_role — contourne RLS) ----
+    const { data: newEmploye, error: insertErr } = await admin
+      .from("personnel")
+      .insert({
+        pressing_id: pressingId,
+        user_id: newUserId,
+        nom_complet: nomComplet,
+        email,
+        telephone,
+        role,
+        methode_creation: "creation_directe",
+        statut_compte: "actif",
+        actif: true,
+        mot_de_passe_temporaire: true,
+        cree_par: creatorId,
+        date_activation: new Date().toISOString(),
+      })
+      .select(
+        "id, nom_complet, email, telephone, role, methode_creation, statut_compte, actif, created_at"
+      )
+      .maybeSingle();
+
+    if (insertErr || !newEmploye) {
+      console.error("[api/admin/personnel POST] INSERT error:", insertErr);
+      // Rollback : supprimer le user Auth qu'on vient de créer
+      await admin.auth.admin.deleteUser(newUserId);
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Erreur lors de l'enregistrement du personnel. Le compte Auth a été annulé.",
+        },
+        { status: 500 }
+      );
+    }
+
+    // ---- 7a. Réponse : identifiants à communiquer ----
+    return NextResponse.json({
+      success: true,
+      data: newEmploye,
+      methode: "creation_directe",
+      credentials: {
+        email,
+        telephone,
+        password,
+        nom_complet: nomComplet,
+      },
+    });
+  }
+
+  // ---- methode === "lien_invitation" ----
+
+  const redirectTo =
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    request.nextUrl.origin ??
+    "http://localhost:3000";
+  const inviteRedirect = `${redirectTo}/personnel/changer-mot-de-passe`;
+
+  const { data: invitedUser, error: inviteErr } =
+    await admin.auth.admin.inviteUserByEmail(email, {
+      redirectTo: inviteRedirect,
+    });
+
+  if (inviteErr || !invitedUser) {
+    console.error("[api/admin/personnel POST] inviteUser error:", inviteErr);
+    return NextResponse.json(
+      {
+        success: false,
+        error: `Erreur lors de l'envoi de l'invitation : ${inviteErr?.message ?? "inconnue"}`,
+      },
+      { status: 500 }
+    );
+  }
+
+  const newUserId = invitedUser.id;
+
+  // ---- 6b. INSERT dans personnel ----
+  const { data: newEmploye, error: insertErr } = await admin
+    .from("personnel")
+    .insert({
+      pressing_id: pressingId,
+      user_id: newUserId,
+      nom_complet: nomComplet,
+      email,
+      telephone,
+      role,
+      methode_creation: "lien_invitation",
+      statut_compte: "invite_en_attente",
+      actif: true,
+      mot_de_passe_temporaire: true,
+      cree_par: creatorId,
+      date_invitation: new Date().toISOString(),
+    })
+    .select(
+      "id, nom_complet, email, telephone, role, methode_creation, statut_compte, actif, created_at"
+    )
+    .maybeSingle();
+
+  if (insertErr || !newEmploye) {
+    console.error("[api/admin/personnel POST] INSERT error:", insertErr);
+    // Rollback : supprimer le user Auth invité
+    await admin.auth.admin.deleteUser(newUserId);
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Erreur lors de l'enregistrement du personnel. L'invitation a été annulée.",
+      },
+      { status: 500 }
+    );
+  }
+
+  // ---- 7b. Réponse : confirmation d'envoi ----
+  return NextResponse.json({
+    success: true,
+    data: newEmploye,
+    methode: "lien_invitation",
+    invitedEmail: email,
   });
 }

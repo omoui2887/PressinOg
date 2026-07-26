@@ -2968,3 +2968,100 @@ Stage Summary:
 - Lint OK (0 erreur, 0 warning), dev server OK sur :3000, 0 page error
 - ⚠️ Note : le mot de passe du compte manager admin1@ogpressing.ci reste "TestLot6_2026!" (changé temporairement au LOT 6). L'utilisateur peut le réinitialiser via le dashboard Supabase.
 - Le projet OgPressing est prêt pour le LOT 9 (`09-gestion-personnel.md`)
+
+---
+Task ID: 27
+Agent: main
+Task: LOT 9 (Gestion du personnel) — audit + implémentation LOT 9.2 (création employé 2 méthodes) + LOT 9.3 (actions cycle de vie)
+
+Work Log:
+- Lecture du worklog → confirmation que LOT 7 (POS commandes) et LOT 8 (CRM clients) sont COMPLETS (Tasks 26-a à 26-g).
+- Audit de l'existant pour LOT 9 :
+  * LOT 9.1 (liste personnel) → ✅ DÉJÀ IMPLÉMENTÉ (personnel-page, personnel-list, personnel-filters, personnel-pagination, personnel-actions-menu, personnel-helpers, add-employee-button, GET /api/admin/personnel). Compteur plan, filtres, pagination, recherche debounce — tout conforme au spec.
+  * LOT 9.2 (formulaire création 2 méthodes) → ❌ PLACEHOLDER (add-employee-button affichait toast "à venir", pas de formulaire, pas d'API POST).
+  * LOT 9.3 (actions cycle de vie) → ⚠️ PARTIEL. Désactiver/Réactiver ✅ (PATCH API). Modifier ❌ (toast placeholder). Reset password ❌ (POST 501). Renvoyer invitation ❌ (POST 501).
+- ⚠️ DÉCOUVERTE CRITIQUE : `.env.local` (avec clés Supabase) avait DISPARU. Le middleware affichait "Supabase env vars manquantes — auth désactivée". `.env` ne contenait que DATABASE_URL (Prisma SQLite).
+  * Recherche approfondie : clés Supabase (anon + service_role) NE SONT stockées nulle part dans le projet (worklog les rédacte, .gitignore exclut .env*, git n'a jamais commit les clés).
+  * Restauration de `.env.local` avec URL connue (https://yqaitafigfxlrprrouhr.supabase.co) + placeholders pour les 2 clés JWT + OGP_ROLE_CACHE_SECRET.
+  * ⚠️ ACTION UTILISATEUR REQUISE : remplacer NEXT_PUBLIC_SUPABASE_ANON_KEY et SUPABASE_SERVICE_ROLE_KEY par les vraies valeurs depuis https://supabase.com/dashboard/project/yqaitafigfxlrprrouhr/settings/api
+
+- Implémentation LOT 9.2 — API POST /api/admin/personnel (route.ts étendu) :
+  * Handler POST avec 2 méthodes : "creation_directe" et "lien_invitation".
+  * Sécurité : vérifie manager authentifié + actif. Vérifie limite du plan (starter=3, pro=8, business=illimité). Anti-doublon (email/téléphone).
+  * creation_directe : supabase.auth.admin.createUser({ email, password, email_confirm: true }) via getSupabaseAdmin(). Si pas d'email → génère {telephone}@ogpressing.local. INSERT personnel (statut='actif', mot_de_passe_temporaire=true). Retourne credentials { email, telephone, password }.
+  * lien_invitation : supabase.auth.admin.inviteUserByEmail(email, { redirectTo: /personnel/changer-mot-de-passe }). INSERT personnel (statut='invite_en_attente', mot_de_passe_temporaire=true). Retourne { invitedEmail }.
+  * Rollback : si INSERT personnel échoue, supprime le user Auth créé (deleteUser).
+  * Génération mot de passe aléatoire : 10 chars (crypto.getRandomValues, charset sans caractères ambigus 0/O/l/I).
+
+- Implémentation LOT 9.2 — Composant CreateEmployeeDialog (create-employee-dialog.tsx, ~370 lignes) :
+  * 3 étapes : "method" (choix) → "form" (formulaire) → "result" (confirmation).
+  * Étape 1 : 2 MethodCard cliquables (UserPlus + Mail) avec descriptions conformes au spec.
+  * Étape 2 : champs Nom, Prénom, Téléphone, Email (obligatoire pour invitation, optionnel pour directe), Rôle (Select avec descriptions courtes), Mot de passe temporaire (uniquement directe — bouton "Générer").
+  * Étape 3 : 
+    - creation_directe : CredentialRow (email + password + téléphone) avec copie individuelle + bouton "Copier les identifiants" + lien WhatsApp (wa.me avec indicatif 225).
+    - lien_invitation : CheckCircle2 + "Invitation envoyée à {email}".
+  * Reset complet à la fermeture du dialog.
+
+- Implémentation LOT 9.2 — Wire up add-employee-button.tsx :
+  * Remplacé le placeholder (toast "à venir") par <CreateEmployeeDialog> avec trigger custom.
+  * Si limite atteinte : bouton désactivé + Tooltip explicatif (pas de dialog).
+  * Si limite OK : CreateEmployeeDialog avec onCreated={fetchPersonnel} (rafraîchit la liste).
+
+- Implémentation LOT 9.3 — API [id]/route.ts réécrit (~330 lignes) :
+  * Refactoring : fonction checkManagerAuth() partagée entre PATCH et POST (évite la duplication).
+  * PATCH : 3 actions :
+    - "desactiver" → statut='desactive', actif=false, date_desactivation=NOW()
+    - "reactiver" → statut='actif', actif=true, date_desactivation=NULL
+    - "modifier" → UPDATE nom_complet, telephone, email, role. Anti-doublon (neq id). nom_complet reconstruit "{prenom} {nom}".
+  * POST : 2 actions (nécessitent service_role) :
+    - "reset_password" (uniquement creation_directe) → generateRandomPassword() → admin.auth.admin.updateUserById(id, { password }) → UPDATE personnel SET mot_de_passe_temporaire=true → retourne credentials.
+    - "resend_invitation" (uniquement lien_invitation + invite_en_attente) → admin.auth.admin.inviteUserByEmail(email, { redirectTo }) → UPDATE date_invitation.
+  * Verrou anti-lockout : ne pas se modifier/désactiver soi-même.
+
+- Implémentation LOT 9.3 — EditEmployeeDialog (edit-employee-dialog.tsx, ~250 lignes) :
+  * Mode contrôlé (open/onOpenChange props) pour intégration dans DropdownMenu.
+  * Champs pré-remplis depuis employe.nom_complet (split "Prenom Nom").
+  * PATCH /api/admin/personnel/[id] { action: "modifier", ... }.
+  * useEffect initialise les champs quand le dialog s'ouvre.
+
+- Implémentation LOT 9.3 — ResetPasswordResultDialog (reset-password-result-dialog.tsx, ~170 lignes) :
+  * Affiche les nouveaux identifiants après reset_password (email + password + copy + WhatsApp).
+  * Pattern identique à l'écran de confirmation du CreateEmployeeDialog.
+
+- Implémentation LOT 9.3 — Wire up personnel-actions-menu.tsx (~310 lignes) :
+  * "Modifier" → DropdownMenuItem onSelect={() => setEditOpen(true)} → EditEmployeeDialog (mode contrôlé, rendu hors dropdown).
+  * "Réinitialiser le mot de passe" → AlertDialog confirmation → POST { action: "reset_password" } → ResetPasswordResultDialog avec credentials.
+  * "Renvoyer l'invitation" → AlertDialog confirmation → POST { action: "resend_invitation" } → toast succès.
+  * "Désactiver"/"Réactiver" → PATCH (inchangé, déjà fonctionnel).
+  * Tous les appels API gèrent les erreurs avec toast.
+
+- Vérifications :
+  * `bun run lint` → ✅ 0 erreur.
+  * dev.log → compilation réussie ("✓ Compiled in 235ms"). .env.local rechargé automatiquement.
+  * Agent Browser :
+    - GET / → 200, landing page rend correctement (hero, features, pricing, form, footer).
+    - GET /login → 200, page de connexion rend correctement (email, password, CTA, liens).
+    - GET /admin/personnel → 307 redirect vers /login?next=%2Fadmin%2Fpersonnel (middleware auth fonctionne ✅).
+    - GET /personnel/changer-mot-de-passe → 307 redirect vers /login (middleware auth fonctionne ✅).
+    - Console : 0 erreur, 0 warning (juste HMR + React DevTools).
+    - Errors : vide.
+
+Stage Summary:
+- ✅ LOT 9.1 (liste personnel) — déjà implémenté, audit confirmé 100% conforme.
+- ✅ LOT 9.2 (création employé 2 méthodes) — IMPLÉMENTÉ :
+  * POST /api/admin/personnel avec creation_directe + lien_invitation.
+  * CreateEmployeeDialog (3 étapes : choix → form → confirmation).
+  * Écran confirmation avec identifiants + copie + WhatsApp (pour creation_directe).
+  * Wire up add-employee-button (plus placeholder).
+  * Page /personnel/changer-mot-de-passe déjà existante et compatible (gère les 2 méthodes via mot_de_passe_temporaire).
+- ✅ LOT 9.3 (actions cycle de vie) — IMPLÉMENTÉ :
+  * PATCH [id] étendu avec action "modifier" (+ desactiver/reactiver déjà existants).
+  * POST [id] implémenté avec "reset_password" + "resend_invitation".
+  * EditEmployeeDialog (mode contrôlé) pour modification.
+  * ResetPasswordResultDialog pour affichage nouveaux identifiants.
+  * Actions menu wire up complet (plus aucun placeholder).
+- ⚠️ .env.local restauré mais clés Supabase sont des PLACEHOLDERS. L'utilisateur DOIT remplacer NEXT_PUBLIC_SUPABASE_ANON_KEY et SUPABASE_SERVICE_ROLE_KEY par les vraies valeurs depuis le dashboard Supabase → Settings → API.
+- 6 fichiers créés/modifiés :
+  * NEW: create-employee-dialog.tsx, edit-employee-dialog.tsx, reset-password-result-dialog.tsx
+  * MODIFIED: route.ts (POST ajouté), [id]/route.ts (réécrit), add-employee-button.tsx (wire up), personnel-actions-menu.tsx (wire up), personnel-page.tsx (onCreated callback), .env.local (restauré)
+- Le projet OgPressing est prêt pour le LOT 10 (stock biodétergents) après restauration des clés Supabase.

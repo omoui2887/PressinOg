@@ -141,7 +141,11 @@ export function PersonnelPage() {
           </p>
         </div>
 
-        <AddEmployeeButton limitAtteinte={limitAtteinte} limit={limit} />
+        <AddEmployeeButton
+          limitAtteinte={limitAtteinte}
+          limit={limit}
+          onCreated={fetchPersonnel}
+        />
       </div>
 
       {/* Compteur de sièges + alerte limite */}
