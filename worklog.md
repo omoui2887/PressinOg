@@ -3065,3 +3065,30 @@ Stage Summary:
   * NEW: create-employee-dialog.tsx, edit-employee-dialog.tsx, reset-password-result-dialog.tsx
   * MODIFIED: route.ts (POST ajouté), [id]/route.ts (réécrit), add-employee-button.tsx (wire up), personnel-actions-menu.tsx (wire up), personnel-page.tsx (onCreated callback), .env.local (restauré)
 - Le projet OgPressing est prêt pour le LOT 10 (stock biodétergents) après restauration des clés Supabase.
+
+---
+Task ID: 26
+Agent: Main (hydration-fix)
+Task: Fix hydration mismatch error on PublicHeader Sheet trigger (aria-controls mismatch between server and client Radix useId).
+
+Work Log:
+- Read the error: `aria-controls="radix-_R_4kndlb_"` (client) vs `radix-_R_hkndlb_"` (server) on the Sheet trigger button in PublicHeader.
+- Investigated root cause: Radix UI Dialog (underlying Sheet) uses React's `useId()` to generate `aria-controls` IDs. In Next.js 16 SSR, subtle differences in the React fiber tree between server and client (RSC boundary, browser extensions) produce different `useId` values → hydration mismatch.
+- Audited the component tree: root layout (Toaster + SonnerToaster after children), PublicLayout (server component), PublicHeader (client component with Sheet), landing sections (Reveal, InscriptionForm with Radix Select). None had obvious structural server/client differences, confirming the issue is Radix `useId` instability in SSR.
+- Applied the **mounted gate** pattern to PublicHeader: added `const [mounted, setMounted] = useState(false)` set to `true` in `useEffect`. Before mount, render a static disabled `<Button>` placeholder (same dimensions/icon, no `aria-controls`). After mount, render the full interactive `<Sheet>` with trigger + content.
+- This ensures the server HTML and the initial client render produce identical output (both render the static button), eliminating the hydration mismatch. The interactive Sheet mounts after hydration.
+- Also added `<SheetDescription className="sr-only">` to resolve a pre-existing Radix accessibility warning ("Missing Description for DialogContent").
+- Verified with Agent Browser:
+  - Desktop viewport (1920x1080): page renders, no console errors, no hydration warnings.
+  - Mobile viewport (375x812): "Ouvrir le menu" button present and interactive.
+  - Clicked menu button → Sheet opens with all 4 nav links + "Se connecter" + "S'inscrire" + close button.
+  - Console completely clean after reload (only React DevTools info + HMR connected).
+
+Stage Summary:
+- Fixed file: `src/components/ogpressing/public-header.tsx`
+  - Added `mounted` state + `useEffect` gate
+  - Conditional render: `mounted ? <Sheet>...</Sheet> : <Button disabled placeholder>`
+  - Added `SheetDescription` import and sr-only description element
+- Root cause: Radix UI `useId()` generates different `aria-controls` IDs on server vs client in Next.js 16 SSR (known issue with RSC boundary + Radix Dialog).
+- Fix pattern: mounted gate (standard solution for Radix hydration mismatches in Next.js).
+- Verification: Agent Browser confirms zero hydration errors, zero console warnings, mobile menu fully functional.
