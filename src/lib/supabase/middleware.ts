@@ -418,6 +418,27 @@ function redirectTo(
   return redirect;
 }
 
+/**
+ * 🚀 PERF : Détecte la présence d'un cookie de session Supabase sans appeler
+ * Supabase. Les cookies de session Supabase (@supabase/ssr) ont le préfixe
+ * `sb-` et se terminent par `-auth-token` (format : `sb-<project-ref>-auth-token`).
+ *
+ * Utilisé par le fast-path du middleware pour skip l'appel réseau getUser()
+ * sur les routes publiques quand l'utilisateur n'est pas connecté.
+ */
+function hasSupabaseSessionCookie(request: NextRequest): boolean {
+  // getAll() est O(1) — lit juste l'en-tête Cookie. Aucun appel réseau.
+  const cookies = request.cookies.getAll();
+  for (const c of cookies) {
+    // Format cookie auth Supabase : sb-<ref>-auth-token
+    // (et variantes : sb-<ref>-auth-token.code, .code_verifier, etc.)
+    if (c.name.startsWith("sb-") && c.name.includes("auth-token")) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /* ========================================================================== */
 /*  CREATE MIDDLEWARE CLIENT                                                   */
 /* ========================================================================== */
@@ -552,6 +573,32 @@ export async function updateSession(
     return NextResponse.next({ request });
   }
 
+  const { pathname } = request.nextUrl;
+  const isProtected = PROTECTED_PREFIXES.some(
+    (p) => pathname === p || pathname.startsWith(p + "/")
+  );
+  const isAuthRoute = (AUTH_ROUTES as readonly string[]).includes(pathname);
+
+  // 🚀 FAST-PATH PERF : si la route n'est PAS protégée ET qu'il n'y a AUCUN
+  // cookie de session Supabase dans la requête, on skip complètement l'appel
+  // réseau `supabase.auth.getUser()` (qui ajoute 100-200ms de latence).
+  //
+  // Les cookies de session Supabase ont tous le préfixe `sb-` (par défaut
+  // `sb-<ref>-auth-token`). Si aucun n'est présent, l'utilisateur n'est pas
+  // connecté → pas besoin d'appeler Supabase pour le savoir.
+  //
+  // Cas couverts :
+  //   - Visiteur anonyme sur / (landing) → skip Supabase → réponse immédiate
+  //   - Visiteur anonyme sur /login, /activation → skip Supabase
+  //
+  // Cas non couverts (Supabase est quand même appelé) :
+  //   - Route protégée (/admin, /super-admin, /personnel) → vérification requise
+  //   - Route publique AVEC cookie de session → on rafraîchit la session
+  //     (utilisateur connecté qui visite la landing → on garde sa session active)
+  if (!isProtected && !hasSupabaseSessionCookie(request)) {
+    return NextResponse.next({ request });
+  }
+
   const cacheSecret = getCacheSecret();
 
   const { supabase, responseRef } = createMiddlewareClient(request);
@@ -562,12 +609,6 @@ export async function updateSession(
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  const { pathname } = request.nextUrl;
-  const isProtected = PROTECTED_PREFIXES.some(
-    (p) => pathname === p || pathname.startsWith(p + "/")
-  );
-  const isAuthRoute = (AUTH_ROUTES as readonly string[]).includes(pathname);
 
   // ---------------------------------------------------------------------
   // 1. Non authentifié sur une route protégée → /login?next=...

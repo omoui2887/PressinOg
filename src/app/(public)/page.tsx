@@ -10,6 +10,11 @@
  *   6. Formulaire d'inscription (placeholder — contenu détaillé à venir)
  *
  * Header sticky + footer gérés par le layout `(public)`.
+ *
+ * 🚀 PERF : Les sections below-the-fold sont wrappées dans des divs avec
+ * `content-visibility:auto` (classe `.cv-auto`) pour que le navigateur
+ * skippe leur rendu/layout jusqu'à ce qu'elles approchent du viewport.
+ * Cela accélère drastiquement le First Paint sur mobile.
  */
 import {
   HeroSection,
@@ -23,23 +28,33 @@ import {
 export default function PublicHomePage() {
   return (
     <>
-      {/* 1. HERO */}
+      {/* 1. HERO — au-dessus de la ligne de flottaison, rendu immédiat */}
       <HeroSection />
 
       {/* 2. PROBLÈME / SOLUTION */}
-      <ProblemSolutionSection />
+      <div className="cv-auto">
+        <ProblemSolutionSection />
+      </div>
 
       {/* 3. FONCTIONNALITÉS */}
-      <FeaturesSection />
+      <div className="cv-auto">
+        <FeaturesSection />
+      </div>
 
       {/* 4. PLANS TARIFAIRES */}
-      <PricingSection />
+      <div className="cv-auto">
+        <PricingSection />
+      </div>
 
       {/* 5. TÉMOIGNAGES */}
-      <TestimonialsSection />
+      <div className="cv-auto">
+        <TestimonialsSection />
+      </div>
 
-      {/* 6. FORMULAIRE D'INSCRIPTION (placeholder) */}
-      <InscriptionSection />
+      {/* 6. FORMULAIRE D'INSCRIPTION */}
+      <div className="cv-auto">
+        <InscriptionSection />
+      </div>
     </>
   );
 }
