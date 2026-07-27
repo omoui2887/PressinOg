@@ -1,19 +1,19 @@
 /**
- * OgPressing — /admin/services (placeholder)
- * ------------------------------------------
- * Catalogue des services proposés par le pressing (lavage, repassage,
- * secs, délicate, etc.) avec tarifs par catégorie d'article. Module
- * complet à venir.
+ * OgPressing — /admin/services (page wrapper) — LOT 11.1
+ * -------------------------------------------------------
+ * Page d'administration des services et tarifs du pressing.
+ *
+ * Toute la logique UI est encapsulée dans le composant client
+ * <ServicesPage /> (src/components/ogpressing/admin/services/services-page.tsx)
+ * — fetch, état, dialogs d'ajout/édition, toggle optimist.
+ *
+ * Auth + RLS : gérées par middleware (redirige vers /login si non authentifié)
+ * et par les API routes (/api/admin/services, /api/admin/services/[id]).
+ * Seul un manager actif peut écrire (POST/PATCH) ; tout personnel actif peut
+ * lire (GET).
  */
-import { Tag } from "lucide-react";
-import { AdminPagePlaceholder } from "@/components/ogpressing/admin/admin-page-placeholder";
+import { ServicesPage } from "@/components/ogpressing/admin/services/services-page";
 
-export default function ServicesPage() {
-  return (
-    <AdminPagePlaceholder
-      title="Services"
-      description="Catalogue des services et tarifs"
-      icon={Tag}
-    />
-  );
+export default function Page() {
+  return <ServicesPage />;
 }
