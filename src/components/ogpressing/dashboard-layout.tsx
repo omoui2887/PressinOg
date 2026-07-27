@@ -163,10 +163,10 @@ export function DashboardLayout({
           const content = (
             <span
               className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all duration-fast ease-smooth",
                 active
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  ? "bg-primary/10 text-primary font-semibold shadow-sm before:absolute before:left-0 before:top-1/2 before:h-6 before:-translate-y-1/2 before:w-1 before:rounded-full before:bg-primary before:transition-all before:duration-base"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground hover:translate-x-0.5 motion-reduce:hover:translate-x-0",
                 item.disabled && "pointer-events-none opacity-50"
               )}
             >
@@ -177,7 +177,7 @@ export function DashboardLayout({
                   className={cn(
                     "rounded-full px-2 py-0.5 text-[10px] font-semibold",
                     active
-                      ? "bg-primary-foreground/20 text-primary-foreground"
+                      ? "bg-primary/20 text-primary"
                       : "bg-muted text-muted-foreground"
                   )}
                 >

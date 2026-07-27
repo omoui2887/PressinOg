@@ -54,6 +54,9 @@ interface StatCardProps {
     /** true = positif (vert), false = négatif (rouge), undefined = neutre. */
     positive?: boolean;
   };
+  /** Délai d'apparition échelonné en ms (LOT 16.7 — stagger). 
+   *  Passer 0, 60, 120, 180... pour un effet cascade sur les dashboards. */
+  delay?: number;
   className?: string;
 }
 
@@ -64,10 +67,17 @@ export function StatCard({
   accent = "primary",
   description,
   trend,
+  delay = 0,
   className,
 }: StatCardProps) {
   return (
-    <Card className={cn("overflow-hidden", className)}>
+    <Card
+      className={cn(
+        "animate-in fade-in-0 slide-in-from-bottom-2 duration-300 fill-both motion-reduce:animate-none overflow-hidden hover:shadow-md hover:-translate-y-px motion-reduce:hover:translate-y-0",
+        className
+      )}
+      style={{ animationDelay: `${delay}ms` }}
+    >
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 space-y-1">

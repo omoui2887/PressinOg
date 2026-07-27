@@ -51,6 +51,116 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  /* ---- LOT 16 — Échelles de couleurs (nuances -50/-100/-400/-600/-700) ----
+     Permettent dégradés, hover/active cohérents, états visuels riches.
+     Génération automatique des utilities Tailwind : bg-primary-50,
+     text-warning-700, border-danger-400, etc. */
+  --color-primary-50: var(--primary-50);
+  --color-primary-100: var(--primary-100);
+  --color-primary-400: var(--primary-400);
+  --color-primary-600: var(--primary-600);
+  --color-primary-700: var(--primary-700);
+  --color-secondary-50: var(--secondary-50);
+  --color-secondary-100: var(--secondary-100);
+  --color-secondary-400: var(--secondary-400);
+  --color-secondary-600: var(--secondary-600);
+  --color-secondary-700: var(--secondary-700);
+  --color-warning-50: var(--warning-50);
+  --color-warning-100: var(--warning-100);
+  --color-warning-400: var(--warning-400);
+  --color-warning-600: var(--warning-600);
+  --color-warning-700: var(--warning-700);
+  --color-danger-50: var(--danger-50);
+  --color-danger-100: var(--danger-100);
+  --color-danger-400: var(--danger-400);
+  --color-danger-600: var(--danger-600);
+  --color-danger-700: var(--danger-700);
+
+  /* ---- LOT 16 — Tokens d'animation ---- */
+  --ease-smooth: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-bounce-subtle: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Keyframes LOT 16 — exposees comme utilities animate-* */
+  --animate-ripple: ogp-ripple 600ms var(--ease-smooth);
+  --animate-shake: ogp-shake 300ms var(--ease-smooth);
+  --animate-shimmer: ogp-shimmer 2s linear infinite;
+  --animate-pulse-glow: ogp-pulse-glow 2.5s var(--ease-smooth) infinite;
+  --animate-pop: ogp-pop 200ms var(--ease-bounce-subtle);
+  --animate-fade-in-down: ogp-fade-in-down 150ms var(--ease-smooth);
+  --animate-pulse-border: ogp-pulse-border 2s var(--ease-smooth) infinite;
+
+  @keyframes ogp-ripple {
+    to {
+      transform: scale(4);
+      opacity: 0;
+    }
+  }
+  @keyframes ogp-shake {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    20% {
+      transform: translateX(-4px);
+    }
+    40% {
+      transform: translateX(4px);
+    }
+    60% {
+      transform: translateX(-3px);
+    }
+    80% {
+      transform: translateX(3px);
+    }
+  }
+  @keyframes ogp-shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+  @keyframes ogp-pulse-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 oklch(0.546 0.215 262.88 / 0.35);
+    }
+    50% {
+      box-shadow: 0 0 0 8px oklch(0.546 0.215 262.88 / 0);
+    }
+  }
+  @keyframes ogp-pop {
+    0% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.15);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+  @keyframes ogp-fade-in-down {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes ogp-pulse-border {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
 }
 
 :root {
@@ -65,10 +175,22 @@
   /* Primary = #2563EB (bleu OgPressing) → boutons, liens, éléments actifs */
   --primary: oklch(0.546 0.215 262.88);
   --primary-foreground: oklch(0.985 0 0);
+  /* Échelle primary (LOT 16) : nuances pour dégradés, hover, états */
+  --primary-50: oklch(0.97 0.015 262.88);
+  --primary-100: oklch(0.93 0.04 262.88);
+  --primary-400: oklch(0.6 0.19 262.88);
+  --primary-600: oklch(0.47 0.22 262.88);
+  --primary-700: oklch(0.4 0.22 262.88);
 
   /* Secondary = #10B981 (vert) → succès, statut payé, validations */
   --secondary: oklch(0.696 0.17 162.48);
   --secondary-foreground: oklch(0.985 0 0);
+  /* Échelle secondary (LOT 16) */
+  --secondary-50: oklch(0.97 0.015 162.48);
+  --secondary-100: oklch(0.93 0.04 162.48);
+  --secondary-400: oklch(0.72 0.15 162.48);
+  --secondary-600: oklch(0.58 0.17 162.48);
+  --secondary-700: oklch(0.48 0.16 162.48);
 
   --muted: oklch(0.97 0 0);
   --muted-foreground: oklch(0.556 0 0);
@@ -81,10 +203,22 @@
   --destructive-foreground: oklch(0.985 0 0);
   --danger: oklch(0.637 0.237 25.18);
   --danger-foreground: oklch(0.985 0 0);
+  /* Échelle danger (LOT 16) */
+  --danger-50: oklch(0.97 0.015 25.18);
+  --danger-100: oklch(0.93 0.04 25.18);
+  --danger-400: oklch(0.66 0.22 25.18);
+  --danger-600: oklch(0.54 0.24 25.18);
+  --danger-700: oklch(0.45 0.23 25.18);
 
   /* Warning = #F59E0B (ambre) → alertes stock bas, soldes impayés */
   --warning: oklch(0.769 0.188 70.08);
   --warning-foreground: oklch(0.205 0 0);
+  /* Échelle warning (LOT 16) */
+  --warning-50: oklch(0.97 0.02 70.08);
+  --warning-100: oklch(0.93 0.05 70.08);
+  --warning-400: oklch(0.79 0.17 70.08);
+  --warning-600: oklch(0.66 0.19 70.08);
+  --warning-700: oklch(0.55 0.18 70.08);
 
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
@@ -118,9 +252,19 @@
   /* Primary reste le bleu OgPressing même en dark */
   --primary: oklch(0.6 0.2 262.88);
   --primary-foreground: oklch(0.985 0 0);
+  --primary-50: oklch(0.2 0.03 262.88);
+  --primary-100: oklch(0.25 0.05 262.88);
+  --primary-400: oklch(0.65 0.19 262.88);
+  --primary-600: oklch(0.52 0.22 262.88);
+  --primary-700: oklch(0.45 0.22 262.88);
 
   --secondary: oklch(0.696 0.17 162.48);
   --secondary-foreground: oklch(0.985 0 0);
+  --secondary-50: oklch(0.2 0.03 162.48);
+  --secondary-100: oklch(0.25 0.05 162.48);
+  --secondary-400: oklch(0.72 0.15 162.48);
+  --secondary-600: oklch(0.58 0.17 162.48);
+  --secondary-700: oklch(0.48 0.16 162.48);
 
   --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.708 0 0);
@@ -131,9 +275,19 @@
   --destructive-foreground: oklch(0.985 0 0);
   --danger: oklch(0.704 0.191 22.216);
   --danger-foreground: oklch(0.985 0 0);
+  --danger-50: oklch(0.2 0.03 22.216);
+  --danger-100: oklch(0.25 0.05 22.216);
+  --danger-400: oklch(0.7 0.2 22.216);
+  --danger-600: oklch(0.58 0.22 22.216);
+  --danger-700: oklch(0.48 0.21 22.216);
 
   --warning: oklch(0.769 0.188 70.08);
   --warning-foreground: oklch(0.205 0 0);
+  --warning-50: oklch(0.2 0.03 70.08);
+  --warning-100: oklch(0.25 0.05 70.08);
+  --warning-400: oklch(0.79 0.17 70.08);
+  --warning-600: oklch(0.66 0.19 70.08);
+  --warning-700: oklch(0.55 0.18 70.08);
 
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
@@ -215,5 +369,130 @@ html {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* ============================================================
+   LOT 16 — Dégradés subtils & utilitaires d'animation
+   ============================================================
+   Classes utilitaires pour dégradés doux (135deg) utilisés sur
+   les boutons principaux, headers de cards, et éléments mis en
+   avant. Chaque dégradé va de la couleur de base vers une teinte
+   légèrement plus foncée (-600) pour un effet de profondeur
+   professionnel, jamais criard. */
+
+.bg-gradient-primary {
+  background-image: linear-gradient(
+    135deg,
+    var(--primary) 0%,
+    var(--primary-600) 100%
+  );
+}
+.bg-gradient-secondary {
+  background-image: linear-gradient(
+    135deg,
+    var(--secondary) 0%,
+    var(--secondary-600) 100%
+  );
+}
+.bg-gradient-warning {
+  background-image: linear-gradient(
+    135deg,
+    var(--warning) 0%,
+    var(--warning-600) 100%
+  );
+}
+.bg-gradient-danger {
+  background-image: linear-gradient(
+    135deg,
+    var(--danger) 0%,
+    var(--danger-600) 100%
+  );
+}
+
+/* Halo doux coloré (box-shadow à faible opacité) pour le focus
+   des champs de formulaire et les effets de "glow" discret. */
+.glow-primary {
+  box-shadow: 0 0 0 3px oklch(0.546 0.215 262.88 / 0.15);
+}
+.glow-secondary {
+  box-shadow: 0 0 0 3px oklch(0.696 0.17 162.48 / 0.15);
+}
+.glow-warning {
+  box-shadow: 0 0 0 3px oklch(0.769 0.188 70.08 / 0.15);
+}
+.glow-danger {
+  box-shadow: 0 0 0 3px oklch(0.637 0.237 25.18 / 0.15);
+}
+
+/* Skeleton shimmer — dégradé qui se déplace en boucle douce.
+   Utilisé par le composant Skeleton (LOT 16.7) pour un rendu
+   plus premium qu'un simple pulse d'opacité. */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--muted) 0%,
+    var(--accent) 50%,
+    var(--muted) 100%
+  );
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
+}
+
+/* ============================================================
+   LOT 16.6 — Sonner Toasts : variantes colorées + barre de progression
+   ============================================================
+   Chaque type de toast (success/error/warning/info) reçoit une
+   bordure gauche colorée épaisse et une fine barre de progression
+   animée en bas qui indique le temps restant avant disparition. */
+
+.ogp-toast[data-sonner-toast][data-type="success"] {
+  --toast-border-color: var(--secondary);
+}
+.ogp-toast[data-sonner-toast][data-type="error"] {
+  --toast-border-color: var(--danger);
+  animation: ogp-shake 300ms var(--ease-smooth);
+}
+.ogp-toast[data-sonner-toast][data-type="warning"] {
+  --toast-border-color: var(--warning);
+}
+.ogp-toast[data-sonner-toast][data-type="info"] {
+  --toast-border-color: var(--primary);
+}
+
+/* Barre de progression animée en bas du toast.
+   Utilise la variable --toast-duration (défaut 4s) pour synchroniser
+   avec la durée d'affichage du toast. L'animation rétrécit la barre
+   de 100% à 0% sur la durée, donnant un compte à rebours visuel. */
+.ogp-toast[data-sonner-toast]::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--toast-border-color, var(--primary));
+  border-radius: 0 0 var(--radius) var(--radius);
+  animation: ogp-toast-progress var(--toast-duration, 4s) linear forwards;
+  transform-origin: left;
+}
+
+@keyframes ogp-toast-progress {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+/* Désactive les effets visuels si reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .ogp-toast[data-sonner-toast][data-type="error"] {
+    animation: none;
+  }
+  .ogp-toast[data-sonner-toast]::after {
+    animation: none;
+    opacity: 0.3;
   }
 }
