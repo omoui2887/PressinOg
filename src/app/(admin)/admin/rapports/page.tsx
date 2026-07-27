@@ -1,19 +1,15 @@
 /**
- * OgPressing — /admin/rapports (placeholder)
- * ------------------------------------------
- * Rapports et statistiques : CA, panier moyen, taux de retard, top
- * clients, top services. Exports Excel (plan Pro/Business). Module
- * complet à venir.
+ * OgPressing — /admin/rapports (LOT 12.1)
+ * ----------------------------------------
+ * Vue d'ensemble des rapports du pressing : CA, commandes, panier moyen,
+ * remises, graphiques (CA par jour, par mode de paiement, par type de
+ * service), clients avec impayés et remises appliquées.
+ *
+ * Server Component — délègue tout le rendu interactif au client orchestrator
+ * <RapportsPage /> qui gère la période, le fetch et les sous-composants.
  */
-import { BarChart3 } from "lucide-react";
-import { AdminPagePlaceholder } from "@/components/ogpressing/admin/admin-page-placeholder";
+import { RapportsPage } from "@/components/ogpressing/admin/rapports/rapports-page";
 
-export default function RapportsPage() {
-  return (
-    <AdminPagePlaceholder
-      title="Rapports"
-      description="Statistiques et exports"
-      icon={BarChart3}
-    />
-  );
+export default function Page() {
+  return <RapportsPage />;
 }

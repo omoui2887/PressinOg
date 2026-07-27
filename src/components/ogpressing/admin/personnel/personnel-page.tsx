@@ -29,6 +29,7 @@ import {
 import { PersonnelList, type Employe } from "./personnel-list";
 import { PersonnelPagination } from "./personnel-pagination";
 import { AddEmployeeButton } from "./add-employee-button";
+import { RapportExportButton } from "../rapports/rapport-export-button";
 
 const PAGE_SIZE = 20;
 
@@ -141,11 +142,18 @@ export function PersonnelPage() {
           </p>
         </div>
 
-        <AddEmployeeButton
-          limitAtteinte={limitAtteinte}
-          limit={limit}
-          onCreated={fetchPersonnel}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <RapportExportButton
+            type="personnel"
+            size="sm"
+            label="Exporter le personnel"
+          />
+          <AddEmployeeButton
+            limitAtteinte={limitAtteinte}
+            limit={limit}
+            onCreated={fetchPersonnel}
+          />
+        </div>
       </div>
 
       {/* Compteur de sièges + alerte limite */}
