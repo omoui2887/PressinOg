@@ -25,10 +25,12 @@ export const config = {
      * - _next/static        (fichiers statiques)
      * - _next/image         (optimisation images)
      * - favicon.ico         (favicon)
+     * - api                 (les routes API gèrent leur propre auth)
      * - .*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$  (images)
      *
-     * Ça évite de rafraîchir la session sur des assets statiques (perf).
+     * Ça évite de rafraîchir la session sur des assets statiques et les
+     * API (perf) — les API routes lisent la session via cookies directement.
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/.*|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };
