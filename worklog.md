@@ -3292,3 +3292,132 @@ Stage Summary:
   * TTFB : 125ms | DOMContentLoaded : 741ms | Load : 755ms | CLS : 0
 - En production (sans dev overhead Turbopack) : TTFB attendu <50ms pour visiteurs anonymes (middleware skip Supabase)
 - L'application est fluide et rapide sur mobile (80% des utilisateurs) et desktop
+
+---
+Task ID: AUDIT-1
+Agent: Explore
+Task: Audit complet de l'implémentation OgPressing vs specs LOT 0-10
+
+Work Log:
+- Lecture intégrale du worklog (3 295 lignes, Tasks 0 → 31) pour comprendre l'historique
+- Lecture des 8 fichiers spec restants : `03-authentification.md`, `04-landing-page.md`, `05-dashboard-super-admin.md`, `06-dashboard-admin-base (1).md`, `07-pos-commandes.md`, `08-crm-clients.md`, `09-gestion-personnel (1).md`, `10-stock-biodetergents (1).md`
+- Inventaire systématique de toutes les pages via Glob : `src/app/**/page.tsx` → 23 pages trouvées (5 super-admin, 2 personnel, 12 admin, 3 public)
+- Inventaire des API routes via Glob : `src/app/api/**/route.ts` → 18 routes trouvées
+- Inventaire des composants via Glob : `src/components/ogpressing/**` + `src/components/shared/**`
+- Vérification LOT 3 : lecture login/page.tsx (416 lignes), activation/page.tsx (898 lignes), changer-mot-de-passe/page.tsx (553 lignes), middleware.ts (37 lignes) + lib/supabase/middleware.ts (813 lignes), API activation/route.ts (348 lignes), API activation/verify-code/route.ts (132 lignes)
+- Vérification LOT 4 : lecture (public)/page.tsx (60 lignes), api/public/inscription/route.ts (277 lignes), 7 composants landing (hero 277 lignes, problem-solution 104, features 114, pricing 169, testimonials 111, inscription-form 571, inscription-placeholder 155), public-header (198), public-footer (139)
+- Vérification LOT 5 : lecture des 4 pages super-admin/dashboard (292 lignes), demandes (32), pressings (21), abonnements (27). Lecture composants super-admin (chart-nouveaux-pressings 142, demandes/* ~1 511, pressings/* ~1 399, abonnements/* ~1 512). Lecture API super-admin (demandes/generer-code 283, abonnements/[id]/renouveler 290, abonnements/[id] 211)
+- Vérification LOT 6 : lecture (admin)/layout.tsx (127 lignes), admin/dashboard/page.tsx (427 lignes), admin-shell.tsx (82), admin-bottom-nav.tsx (215), subscription-banner.tsx (50), dashboard-shortcuts.tsx
+- Vérification LOT 7 : lecture commande-wizard/commande-wizard.tsx (236), step-client (509), step-articles (705), step-recap (961), step-confirmation (1032), state.ts (435), stepper.tsx (117), commande-print.ts (445), qr-scanner.tsx (228), commande-detail.tsx (573), commandes-page.tsx (223), api/admin/commandes/route.ts (874), api/admin/commandes/[id]/route.ts (191), api/admin/commandes/[id]/articles/[articleId]/route.ts (145). Grep QRCodeSVG + JsBarcode + @media print dans step-confirmation et commande-print
+- Vérification LOT 8 : lecture (admin)/admin/clients/page.tsx (20), (admin)/admin/clients/[id]/page.tsx (125), clients-page.tsx (127), client-detail-page.tsx (725). Lecture export-impayes-button.tsx (47) pour confirmer le placeholder Lot 12
+- Vérification LOT 9 : lecture (admin)/admin/personnel/page.tsx, personnel-page.tsx (270), personnel-actions-menu.tsx (336), create-employee-dialog.tsx (685), edit-employee-dialog.tsx (250), reset-password-result-dialog.tsx (189), api/admin/personnel/route.ts (525), api/admin/personnel/[id]/route.ts (514). Grep redirectTo = `${origin}/personnel/changer-mot-de-passe` confirmé (pas de /personnel/definir-mot-de-passe séparé — choix volontaire documenté Task 27)
+- Vérification LOT 10 : grep `produits_stock|mouvements_stock|fds_url|seuil_alerte` dans src → 2 fichiers uniquement (database.types.ts + admin/dashboard/page.tsx pour alertes stock). Lecture (admin)/admin/stock/page.tsx (18 lignes) → AdminPagePlaceholder seulement. Aucune API route stock. Aucun composant stock. Aucune page /admin/stock/mouvements
+- Croisement des constats avec les Stage Summary du worklog : LOT 0-9 déclarés complets (Tasks 22, 24, 25, 26, 27), LOT 10 déclaré "prêt pour implémentation" (Task 27)
+- Conclusion : LOT 3-9 conformes au spec (avec 1 écart mineur LOT 9 — page definirmot-de-passe fusionnée avec changer-mot-de-passe). LOT 10 ENTIEREMENT MANQUANT (placeholder uniquement)
+
+Stage Summary:
+
+| LOT | Spec | État | % | Notes clés |
+|---|---|---|---|---|
+| **3** | `03-authentification.md` | ✅ DONE | 100 % | /login (RHF+zod, mot_de_passe_temporaire, 3 rôles), /activation (stepper 2 étapes, verify-code), /personnel/changer-mot-de-passe (553 lignes), middleware 813 lignes (cache HMAC 5 min, redirect auth→dashboard, cross-space, pressing suspendu) |
+| **4** | `04-landing-page.md` | ✅ DONE | 100 % | Landing 6 sections (hero, problème/solution, 8 features, 3 pricing cards, 3 témoignages, inscription), header sticky + footer sticky, formulaire 11 champs (RHF+zod), API /api/public/inscription (277 lignes, anti-doublon 24h, validation tel ivoirien) |
+| **5** | `05-dashboard-super-admin.md` | ✅ DONE | 100 % | 4 pages : /dashboard (4 StatCards + Recharts line chart 6 mois + 5 dernières demandes), /demandes (filtres + Sheet détails + Appeler/WhatsApp + Valider+Code PRS-XXXX-XXXX alphabet sans I/O/0/1 + Refuser), /pressings (filtres + Sheet détails + Suspendre/Réactiver + personnel list), /abonnements (3 StatCards plans + alertes + Renouveler déclaratif INSERT paiements + Changer plan + Suspendre) |
+| **6** | `06-dashboard-admin-base (1).md` | ✅ DONE | 100 % | (admin)/layout.tsx (AdminShell + 9 items sidebar + BottomNav mobile 5+Plus + SubscriptionBanner non-bloquante), /admin/dashboard (4 StatCards CA/cmd du jour/en cours/alertes stock + Raccourcis + 5 cmd récentes + alertes stock + Top 5 impayés) |
+| **7** | `07-pos-commandes.md` | ✅ DONE | 100 % | Wizard 4 étapes (Client recherche+préférences / Articles POS avec services / Récap+remise 5 types+acompte+date J+2 / Confirmation QRCodeSVG+JsBarcode code128+printable ticket @media print+étiquettes). QRScanner html5-qrcode (228 lignes). /admin/commandes (filtres+pagination 20+Scanner QR). /admin/commandes/[id] (détail + édition statut article inline + reprint). POST /api/admin/commandes (874 lignes, transactionnelle avec rollback) |
+| **8** | `08-crm-clients.md` | ✅ DONE | 100 % | /admin/clients (recherche debounce 300ms + filtre impayés + 20/page + Nouveau client Dialog + Export impayés placeholder Lot 12). /admin/clients/[id] (header + 3 tabs Informations/Commandes/Paiements + EditInfo/EditPreferences/EditNotes Dialogs + bouton Nouvelle commande → ?client_id= pré-sélection wizard) |
+| **9** | `09-gestion-personnel (1).md` | ✅ DONE | 95 % | /admin/personnel (compteur X/Y plan + alerte limite + filtres + liste + 5 actions menu). 2 méthodes création (directe + invitation, 685 lignes CreateEmployeeDialog). 5 actions (Modifier/EditDialog, ResetPassword/ResultDialog, Renvoyer invitation, Désactiver, Réactiver). ⚠️ Pas de page /personnel/definir-mot-de-passe dédiée — l'invitation redirectTo pointe vers /personnel/changer-mot-de-passe (déjà existante, gère les 2 méthodes via flag mot_de_passe_temporaire). Fonctionnalité équivalente, URL différente du spec |
+| **10** | `10-stock-biodetergents (1).md` | ❌ MISSING | 0 % | Page /admin/stock = AdminPagePlaceholder (18 lignes). ❌ Pas de /admin/stock/mouvements. ❌ Aucune API route /api/admin/stock ou /api/admin/produits-stock. ❌ Aucun composant stock. ❌ Pas d'upload FDS PDF. ❌ Pas d'enregistrement mouvement. ❌ Pas de filtre/type/quantité/date/export. Seules références à `produits_stock` : database.types.ts (type) + admin/dashboard (compteur alertes). La table et le trigger `trg_mouvements_stock_appliquer` existent en DB depuis LOT 2 — seul le code applicatif manque |
+
+**Verdict global (LOT 3-10)** :
+- ✅ 7 lots sur 8 conformes (LOT 3, 4, 5, 6, 7, 8, 9)
+- ❌ 1 lot entièrement manquant (LOT 10 — stock biodétergents)
+- ⚠️ 1 écart mineur LOT 9 (page definirmot-de-passe fusionnée avec changer-mot-de-passe — fonctionnalité équivalente)
+
+**Complétion globale estimée : ~87 %** (7/8 lots + 1 lot manquant + 1 écart mineur)
+
+**Écarts mineurs non-bloquants** ( hors LOT 10) :
+- LOT 8.1 : bouton Export xlsx impayés = placeholder (toast "Fonctionnalité à venir") — délibéré, reporté au Lot 12 selon le spec
+- LOT 9.2 : page /personnel/definir-mot-de-passe n'existe pas en tant que route distincte — l'invitation redirige vers /personnel/changer-mot-de-passe (URL différente, fonctionnalité identique)
+- LOT 7.6 : bouton Export xlsx mouvements stock = non pertinent (LOT 10 non implémenté)
+
+**Écarts hors-périmètre audit** (placeholders volontaires pour d'autres lots) :
+- /admin/services = placeholder (LOT 11 non audité)
+- /admin/rapports = placeholder (LOT 12 non audité)
+- /admin/pressing = placeholder (LOT 11 non audité)
+- /personnel = placeholder dashboard (rôles personnel = hors spec LOT 3-10)
+
+**Recommandations pour le main agent** :
+1. ⚡ **PRIORITY 1 — Implémenter LOT 10 entièrement** :
+   - Créer page /admin/stock avec liste produits, statuts visuels 🔴🟡✅, dialog Ajouter produit (Nom, Catégorie, Unité, Qté initiale, Seuil, Date expiration, Upload FDS PDF)
+   - Créer page /admin/stock/mouvements avec historique + filtres (produit/type/date) + export xlsx placeholder
+   - Créer API routes : GET/POST /api/admin/stock (produits), POST /api/admin/stock/[id]/mouvements, GET /api/admin/stock/mouvements, PATCH /api/admin/stock/[id]
+   - Créer composants : stock-page, stock-list, stock-filters, add-product-dialog, mouvement-dialog, view-fds-button, edit-product-dialog, mouvements-page, mouvements-filters
+   - Vérifier que `produits_stock` et le trigger `trg_mouvements_stock_appliquer` sont déjà en DB (LOT 2 migration 005)
+2. **OPTIONAL — Coriger LOT 9 écart URL** : soit créer une page /personnel/definir-mot-de-passe qui re-export le contenu de /personnel/changer-mot-de-passe, soit documenter le choix de fusion dans PROJECT_CONTEXT.md (déjà fait dans Task 27)
+3. **AUCUNE ACTION** sur LOT 3-8 (conformes au spec)
+4. **LTS — Préparer Lot 11 (services & tarifs)** et **Lot 12 (rapports & exports xlsx réels)** après LOT 10
+
+**Next actions immédiates** :
+- Lancer un sous-agent "Implement" pour LOT 10 avec le prompt `10-stock-biodetergents (1).md`
+- Le sous-agent devra créer ~10-12 fichiers (2 pages, 4-5 API routes, 6-8 composants)
+- Schéma DB déjà prêt (LOT 2), juste le code applicatif à écrire
+- Après LOT 10 : passer au LOT 11 (services & tarifs — actuels placeholders /admin/services et /admin/pressing)
+
+---
+Task ID: 32
+Agent: main
+Task: Implémentation LOT 10 — Stock biodétergents (/admin/stock + /admin/stock/mouvements)
+
+Work Log:
+- Audit complet (Task AUDIT-1) : LOT 10 était 0% implémenté (placeholder AdminPagePlaceholder)
+- Lecture schema DB : produits_stock + mouvements_stock + trigger + RLS déjà en place (LOT 2 + gap fill 010)
+  * produits_stock : pressing_id, nom, categorie (enum 6 valeurs), unite (litre/kg), quantite_actuelle, seuil_alerte, prix_achat_unitaire, fournisseur, fds_url, date_expiration
+  * mouvements_stock : produit_id, type_mouvement (entree/sortie/ajustement), quantite, motif, date_mouvement, enregistre_par, commande_id
+  * Trigger AFTER INSERT met à jour quantite_actuelle automatiquement (entree +=, sortie -=, exception si < 0)
+  * RLS : isolation par pressing_id (produits_stock direct, mouvements_stock via JOIN)
+- Étude patterns existants : API personnel (route.ts + [id]/route.ts), page personnel (client orchestrator), dialog création (RHF + zod), upload Storage (renouvellement-dialog)
+- Création 17 fichiers :
+
+API Routes (4 fichiers) :
+  * src/app/api/admin/stock/route.ts — GET (liste triée alertes en premier) + POST (création produit, manager only)
+  * src/app/api/admin/stock/[id]/route.ts — PATCH (modification produit, manager only)
+  * src/app/api/admin/stock/[id]/mouvements/route.ts — POST (entrée/sortie, manager+réceptionniste, trigger met à jour quantite, gestion erreur stock négatif → 400)
+  * src/app/api/admin/stock/mouvements/route.ts — GET (historique avec JOIN produit/personnel/commande, filtres produit_id/type/date_start/date_end, pagination 20/page)
+
+Composants (9 fichiers dans src/components/ogpressing/admin/stock/) :
+  * stock-helpers.tsx — CATEGORIES, UNITES, getStockStatus (🔴🟡✅), getExpirationStatus, formatQuantite (virgule décimale FR), formatFCFA, formatDate, formatDateTime, types ProduitStock + MouvementStock
+  * stock-page.tsx — Client orchestrator (fetch + debounce 300ms + gestion dialogs)
+  * stock-list.tsx — Tableau desktop + cards mobile, badges statut + expiration, compteur alertes en haut
+  * stock-filters.tsx — Recherche par nom + lien historique mouvements
+  * add-product-dialog.tsx — Formulaire RHF+zod (nom, catégorie, unité, quantité initiale, seuil, expiration, prix, fournisseur) + upload FDS PDF vers Storage bucket 'fds' (échec non bloquant)
+  * edit-product-dialog.tsx — Pré-rempli, modification + re-upload/removal FDS
+  * mouvement-dialog.tsx — Entrée/Sortie (cards cliquables), quantité avec boutons +/-, aperçu nouveau stock, notes
+  * stock-actions-menu.tsx — DropdownMenu (Enregistrer mouvement, Voir FDS si fds_url, Modifier)
+  * mouvements-page.tsx — Client orchestrator (filtres + pagination)
+  * mouvements-list.tsx — Tableau desktop + cards mobile, badges Entrée vert/Sortie orange, lien commande si ticket
+  * mouvements-filters.tsx — Filtre produit (dropdown), type (tous/entrée/sortie), plage dates, export xlsx placeholder (toast "à venir")
+
+Pages (2 fichiers) :
+  * src/app/(admin)/admin/stock/page.tsx — Remplace placeholder, render <StockPage />
+  * src/app/(admin)/admin/stock/mouvements/page.tsx — Nouvelle page, render <MouvementsPage />
+
+- Vérifications :
+  * bun run lint → 0 errors ✅
+  * Dev server démarre en 831ms ✅
+  * GET /admin/stock (non auth) → HTTP 307 redirect /login?next=%2Fadmin%2Fstock ✅
+  * GET /admin/stock/mouvements (non auth) → HTTP 307 redirect /login ✅
+  * GET /api/admin/stock (non auth) → HTTP 401 ✅
+  * GET /api/admin/stock/mouvements (non auth) → HTTP 401 ✅
+  * Agent Browser : /admin/stock redirige correctement vers /login, page de connexion rendue sans erreur ✅
+
+Stage Summary:
+- LOT 10 entièrement implémenté (PROMPT 10.1 + 10.2)
+- 17 fichiers créés (4 API routes + 11 composants + 2 pages)
+- 0 fichier modifié existant (sauf page.tsx stock qui remplacait un placeholder)
+- Lint : 0 errors ✅
+- Sécurité : RLS respectée (getSupabaseServer + JWT), manager requis pour écriture, manager+réceptionniste pour mouvements, trigger DB gère quantite_actuelle atomiquement
+- Mobile-first : cards sur mobile, tableaux sur desktop (md: breakpoint)
+- Design system respecté : primary bleu, secondary vert, warning orange, danger rouge ; badges catégories colorés
+- FDS upload : bucket Storage 'fds' via getSupabaseBrowser (client-side), échec non bloquant (toast warning)
+- Export xlsx : placeholder toast (développé en LOT 12)
+- Complétion globale OgPressing : ~87% → ~99% (LOT 10 était le seul manquant)

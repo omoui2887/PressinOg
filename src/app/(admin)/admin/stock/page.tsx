@@ -1,18 +1,18 @@
 /**
- * OgPressing — /admin/stock (placeholder)
- * ---------------------------------------
- * Stock de biodétergents : entrées/sorties, seuils d'alerte, inventaire,
- * valorisation. Module complet à venir.
+ * OgPressing — /admin/stock (LOT 10.1)
+ * -------------------------------------
+ * Gestion du stock de biodétergents du pressing :
+ *   - Liste des produits avec statut visuel (🔴🟡✅)
+ *   - Ajout d'un produit (Dialog : nom, catégorie, unité, quantité, seuil,
+ *     expiration, FDS PDF upload)
+ *   - Enregistrement de mouvements (entrée/sortie)
+ *   - Voir la FDS (PDF nouvel onglet)
+ *   - Modifier un produit
+ *
+ * Lien vers /admin/stock/mouvements (historique).
  */
-import { Package } from "lucide-react";
-import { AdminPagePlaceholder } from "@/components/ogpressing/admin/admin-page-placeholder";
+import { StockPage } from "@/components/ogpressing/admin/stock/stock-page";
 
-export default function StockPage() {
-  return (
-    <AdminPagePlaceholder
-      title="Stock"
-      description="Biodétergents et consommables"
-      icon={Package}
-    />
-  );
+export default function StockAdminPage() {
+  return <StockPage />;
 }
