@@ -3624,3 +3624,229 @@ Stage Summary:
 - Données de test cohérentes : Pressing Excellence a 5 services actifs + abonnement Pro + horaires 08:00-18:00 (dimanche fermé) + email/adresse renseignés → tickets imprimés auront des données cohérentes
 - Complétion globale OgPressing : ~99% → ~100% (LOT 11 était le dernier lot fonctionnel manquant avec LOT 10)
 - Reste : LOT 12 (rapports & exports xlsx réels) — placeholders actuels dans /admin/rapports + boutons Export
+
+---
+Task ID: 12-a
+Agent: full-stack-developer (LOT 12.1 rapports page)
+Task: Implémentation PROMPT 12.1 — /admin/rapports (vue d'ensemble avec graphiques)
+
+Work Log:
+- Lecture worklog (3 626 lignes) — focus sur Tasks 32 (LOT 10 stock), 11-a (LOT 11.1 services), 11-b (LOT 11.2 pressing), 33 (vérif LOT 11) comme patterns de référence
+- Lecture PROJECT_CONTEXT.md — design system (primary #2563EB, secondary #10B981, warning #F59E0B, danger #EF4444), FCFA, français UI, RLS par pressing_id, aucun paiement intégré
+- Lecture spec upload/12-rapports-exports.md (PROMPT 12.1)
+- Lecture foundation file src/components/ogpressing/admin/rapports/rapports-helpers.tsx — types, libellés FR, couleurs oklch, computePeriode, CONFIG_RAPPORTS déjà prêts (créés par main agent)
+- Lecture patterns de référence :
+  * chart-nouveaux-pressings.tsx (Recharts : ResponsiveContainer, custom Tooltip, empty state dashed, oklch colors)
+  * stat-card.tsx (composant StatCard réutilisable, props label/value/icon/accent/description)
+  * api/admin/clients/route.ts (pattern auth + RLS + agrégation JS)
+  * api/admin/commandes/route.ts (pattern auth personnel actif)
+  * stock-page.tsx (pattern client orchestrator + fetch + loading)
+  * pressing-config-page.tsx (pattern shadcn Tabs)
+- Création de 7 fichiers :
+
+  1. src/app/api/admin/rapports/route.ts (~370 lignes)
+     - GET endpoint, `export const dynamic = "force-dynamic"`
+     - Auth : tout personnel actif (même pattern que commandes GET)
+     - Query params : ?periode=aujourdhui|semaine|mois|perso&start=YYYY-MM-DD&end=YYYY-MM-DD
+     - Utilise computePeriode() de rapports-helpers
+     - 4 stats : ca_total (Σ montant_total), nombre_commandes (count), panier_moyen (ca_total/nombre, 0 si 0), total_remises (Σ montant_remise WHERE remise_type ≠ aucune)
+     - ca_par_jour : 1 point par jour UTC dans la période (cap 120 jours), fill 0 pour jours sans commande
+     - ca_par_mode : agrège paiements par methode, fallback défensif date_paiement → created_at si erreur, filtre montant > 0, ordre especes/mobile_money/carte_bancaire
+     - ca_par_type_service : agrège commande_lignes.montant_ligne par service.type (join Supabase), filtre montant > 0, ordre TYPES_SERVICE_ORDONNES
+     - clients_impayes : vue GLOBALE (non filtrée par période) — tous clients + commandes non_paye/partiel, solde = Σ(montant_total − montant_paye) > 0, tri décroissant, top 20
+     - remises_appliquees : commandes période avec remise_type ≠ aucune, join clients pour nom, mappé vers REMISE_TYPE_LABELS
+     - Réponse typée RapportsDataResponse
+
+  2. src/components/ogpressing/admin/rapports/period-selector.tsx (~95 lignes)
+     - Client component, shadcn Tabs comme contrôle segmenté (4 onglets OPTIONS_PERIODE)
+     - TabsList scrollable sur mobile (overflow-x-auto), tabs flex-1 sm:flex-none
+     - Quand "perso" actif : grid-cols-1 sm:grid-cols-2 avec 2 <Input type=date> h-11 (≥ 44px) + Label Début/Fin
+     - Aria-labels sur inputs
+
+  3. src/components/ogpressing/admin/rapports/rapports-charts.tsx (~330 lignes)
+     - 3 composants exportés : ChartCaParJour, ChartCaParMode, ChartCaParTypeService
+     - Recharts ResponsiveContainer width="100%" height={260}
+     - ChartCaParJour : BarChart vertical (XAxis=date JJ/MM, YAxis=CA formatFCFACompact), bar fill CHART_COLORS.primary, radius top
+     - ChartCaParMode : PieChart donut (innerRadius=42, outerRadius=80, stroke blanc), Cell fill=entry.couleur, légende custom flex-wrap en bas
+     - ChartCaParTypeService : BarChart horizontal (layout=vertical, YAxis=type, XAxis=montant), Cell fill par couleur de type
+     - Custom Tooltips FR (montants formatés via formatFCFA)
+     - Couleurs oklch concrètes depuis CHART_COLORS / COULEURS_MODE_PAIEMENT / COULEURS_TYPE_SERVICE
+     - Empty state : carte dashed border + icône + message FR (mirror ChartNouveauxPressings)
+
+  4. src/components/ogpressing/admin/rapports/clients-impayes-section.tsx (~160 lignes)
+     - Card + CardHeader (titre + Badge count warning si > 0, muted si 0)
+     - Desktop md+ : Table (Nom | Téléphone | Solde impayé | Nb commandes)
+     - Mobile : Cards empilées border-danger/20 bg-danger/5
+     - Solde impayé en Badge danger (bg-danger/10 text-danger)
+     - Empty state : icône Users secondary + message FR
+     - Loading : 3 Skeletons h-12
+
+  5. src/components/ogpressing/admin/rapports/remises-section.tsx (~170 lignes)
+     - Card + CardHeader (titre + Badge count)
+     - Desktop : Table (N° ticket | Client | Type remise | Montant | Date)
+     - Mobile : Cards empilées
+     - Badge type remise coloré selon type (pourcentage=primary, montant_fixe=secondary, article_gratuit/fidelite=warning)
+     - Montant remise préfixé "−" en warning, Date via formatDate
+     - Empty state : icône Tag muted + message FR
+
+  6. src/components/ogpressing/admin/rapports/rapports-page.tsx (~190 lignes)
+     - Client orchestrator ("use client")
+     - State : periode (default "aujourdhui"), customStart, customEnd, data, loading
+     - fetchRapports() useCallback : URL avec periode + dates, fetch /api/admin/rapports
+     - useEffect sur [fetchRapports] → refetch quand periode/dates changent
+     - Layout mobile-first max-w-7xl mx-auto space-y-5 :
+       * Header : titre "Rapports" + BarChart3 icon + description
+       * Card period-selector (Période analysée + CalendarDays icon)
+       * 4 StatCards grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 : CA total (primary, formatFCFACompact), Commandes (secondary, valeur brute), Panier moyen (warning, formatFCFACompact), Total remises (warning, formatFCFA)
+       * Card ChartCaParJour (titre "CA par jour")
+       * grid lg:grid-cols-2 : Card ChartCaParMode + Card ChartCaParTypeService
+       * ClientsImpayesSection
+       * RemisesSection
+     - Loading skeletons pour StatCards (h-124px) et charts (h-300px)
+     - PAS de boutons d'export (laissés au main agent Task 3)
+
+  7. src/app/(admin)/admin/rapports/page.tsx (~14 lignes)
+     - Remplace placeholder AdminPagePlaceholder
+     - Server Component (pas de "use client")
+     - Render <RapportsPage />
+
+- Vérifications :
+  * bun run lint → 0 errors, 0 warnings ✅
+  * Smoke test API non-auth : GET /api/admin/rapports → HTTP 401 {"success":false,"error":"Non authentifié"} ✅
+  * Smoke test page non-auth : GET /admin/rapports → HTTP 307 redirect /login ✅
+  * Dev log : compile OK (227ms), aucun warning/error sur les nouveaux fichiers ✅
+
+Stage Summary:
+- LOT 12.1 entièrement implémenté (PROMPT 12.1 — page /admin/rapports vue d'ensemble)
+- 7 fichiers créés (1 API route + 5 composants + 1 page modifiée) — ~1 330 lignes
+- 0 fichier existant modifié (sauf page.tsx rapports qui remplaçait un placeholder)
+- Lint : 0 errors, 0 warnings ✅
+- Sécurité : RLS respectée (getSupabaseServer + JWT), tout personnel actif authentifié pour GET, pressing_id filtré automatiquement via RLS sur toutes les tables lues (commandes, clients, paiements, commande_lignes, services, personnel)
+- Mobile-first : TabsList scrollable, inputs date empilés sur mobile, cards sur mobile + tableaux sur desktop (md: breakpoint), zones tactiles ≥ 44px (h-11)
+- Design system respecté : primary bleu (CA total, lavage), secondary vert (commandes, repassage, espèces), warning orange (panier moyen, remises, carte bancaire), danger rouge (impayés)
+- Aucun paiement intégré — affichage déclaratif uniquement (paiements enregistrés par le caissier, jamais initiés depuis l'app)
+- Décisions clés :
+  * Tabs comme contrôle segmenté (pas de TabsContent) — inputs date rendus conditionnellement
+  * ca_par_jour cap 120 jours (évite graphiques illisibles sur périodes perso longues)
+  * ca_par_type_service en BarChart horizontal (libellés FR longs lisibles sur Y)
+  * Légende custom pour PieChart (évite débordement mobile)
+  * clients_impayes = vue globale (non filtrée par période) — cohérent avec bouton export impayés à venir
+  * Paiements : fallback défensif date_paiement → created_at si erreur
+  * Couleurs oklch concrètes (Recharts ne supporte pas les var CSS)
+- Points d'attention pour main agent (Task 3) :
+  * Boutons d'export .xlsx NON intégrés ici — à ajouter dans rapports-page.tsx (header ou à côté du period-selector)
+  * Helpers CONFIG_RAPPORTS + COLONNES_* déjà prêts dans rapports-helpers.tsx
+  * API /api/admin/rapports renvoie déjà start + end ISO (utiles pour exports journalier/hebdo/mensuel)
+  * Pour exports détaillés (commandes, paiements), le main agent devra créer des sous-routes API dédiées (périmètre Task 12-b)
+
+---
+Task ID: 12-b
+Agent: full-stack-developer (LOT 12.2+12.3 exports)
+Task: Implémentation PROMPT 12.2 + 12.3 — 9 exports .xlsx + bouton générique
+
+Work Log:
+- Lecture worklog.md (3 626 lignes) — focus sur Tasks 32 (LOT 10 stock pattern), 11-a, 11-b, 33 ( recouvrement clés Supabase )
+- Lecture PROJECT_CONTEXT.md — design system ( primary #2563EB, secondary #10B981, warning #F59E0B, danger #EF4444 ), FCFA, français UI, no payment, RLS multi-tenant
+- Lecture upload/12-rapports-exports.md ( PROMPT 12.2 + 12.3 spec )
+- Lecture rapports-helpers.tsx — récupéré TypeRapport, CONFIG_RAPPORTS ( type → columns + fileName + withDate/withMois/withPeriode ), tous les *_LABELS ( STATUT_COMMANDE, STATUT_PAIEMENT, METHODE_PAIEMENT, REMISE_TYPE, TYPE_SERVICE ), COLONNES_* pour les 9 rapports
+- Lecture export-xlsx.ts — `exportToExcel(data, columns, fileName)` + type `ExportColumn`
+- Lecture patterns miroir : api/admin/clients/route.ts (agrégation commandes par client sans pagination), api/admin/commandes/route.ts (auth personnel actif), api/admin/commandes/[id]/route.ts (nested select + cast unknown → type), api/admin/personnel/route.ts (manager-only auth), clients/export-impayes-button.tsx (button UX pattern), lib/utils/format.ts (formatDateOnly, formatTime)
+- Création des 10 fichiers :
+
+  1. src/app/api/admin/rapports/journalier/route.ts ( ~210 lignes ) — ?date=YYYY-MM-DD, computeDayBounds ( UTC 00:00 → 23:59:59.999 ), SELECT commandes + nested client/lignes(quantite,description,service:services(nom))/paiements(methode). Articles = "2 Lavage, 1 Repassage". Tri created_at ASC.
+  2. src/app/api/admin/rapports/hebdomadaire/route.ts ( ~225 lignes ) — ?date=YYYY-MM-DD, computeWeekBounds ( semaine ISO lundi → dimanche ). Même select + colonne date. Tri created_at ASC.
+  3. src/app/api/admin/rapports/mensuel/route.ts ( ~245 lignes ) — ?mois=YYYY-MM, computeMonthBounds ( 1er → dernier jour du mois ). SELECT commandes + nested lignes(montant_ligne, service:services(type)). Group by day UTC ( Map ). Tous les jours du mois inclus ( 0/0/"—" pour les jours vides ). repartition_service = "Lavage: 5000, Repassage: 3000" en respectant TYPES_SERVICE_ORDONNES. Tri date ASC.
+  4. src/app/api/admin/rapports/commandes/route.ts ( ~175 lignes ) — pas de filtre période, limit 1000. SELECT toutes commandes + nested client. Tri created_at DESC. remise_appliquee : si type === "aucune" → "Aucune" ; sinon `${Label FR} ${valeur}${unit} = ${montant_remise} FCFA` ( unit = "%" pour pourcentage, " FCFA" sinon ).
+  5. src/app/api/admin/rapports/clients/route.ts ( ~205 lignes ) — pas de filtre période, tous clients ( pas de pagination ). 2 requêtes ( clients + commandes ) + agrégation JS (même pattern que /api/admin/clients GET mais sans pagination ). solde_impaye = SUM(montant_total - montant_paye) pour commandes WHERE statut_paiement IN ( non_paye, partiel ). Tri nom_complet ASC. preferences_lavage = notes ( ou "—" ).
+  6. src/app/api/admin/rapports/paiements/route.ts ( ~205 lignes ) — ?start=ISO&end=ISO optionnels (filtre sur date_paiement). SELECT paiements + nested `commande:commandes(id, numero_commande, client:clients(nom_complet))` + `caissier:personnel!paiements_enregistre_par_fkey(nom_complet)`. Tri date_paiement DESC nullsFirst:false. Limit 1000. date = date_paiement ?? created_at ( défensif ). est_acompte → "Oui"/"Non".
+  7. src/app/api/admin/rapports/impayes/route.ts ( ~200 lignes ) — pas de filtre période. 2 requêtes ( clients + commandes WHERE statut_paiement IN non_paye/partiel ). Agrégation par client ( solde_impaye, nombre_commandes_impayees, MIN created_at ). Filtrage solde_impaye > 0. Tri solde_impaye DESC.
+  8. src/app/api/admin/rapports/remises/route.ts ( ~180 lignes ) — ?start=ISO&end=ISO optionnels (filtre sur created_at). SELECT commandes WHERE `remise_type != 'aucune'` + nested client. Tri created_at DESC. Limit 1000. remise_valeur = `${valeur}${unit}` ( % pour pourcentage, " FCFA" sinon ). montant_total_avant_apres = `${avant} → ${apres} FCFA`.
+  9. src/app/api/admin/rapports/personnel/route.ts ( ~185 lignes ) — Manager-only auth (vérifie `me.role === "manager"`, actif, statut_compte === "actif"). Tous les employés du pressing. Split nom_complet ( dernier mot = nom, reste = prenom ). Mappings FR locaux : ROLE_LABELS, STATUT_COMPTE_LABELS, METHODE_CREATION_LABELS. Tri created_at DESC.
+  10. src/components/ogpressing/admin/rapports/rapport-export-button.tsx ( ~155 lignes ) — Client component. Props : type, variant/size ( VariantProps<typeof buttonVariants> ), className, label (override), date, mois, start, end, disabled. Au clic : URL `/api/admin/rapports/${type}` + query params selon CONFIG_RAPPORTS[type].withDate/withMois/withPeriode. fetch no-store → parse JSON → toast.error si !success → toast.info si 0 ligne → exportToExcel + toast.success. Try/catch réseau. Bouton : Download/Loader2 icon + libellé full ( hidden sm:inline ) / "Export" abrégé ( sm:hidden ).
+
+- Décisions défensives :
+  * PostgREST paiements.enregistre_par → personnel : utilisé forme explicite `caissier:personnel!paiements_enregistre_par_fkey(nom_complet)` plutôt que `personnel:enregistre_par(nom_complet)` pour éviter toute ambiguïté de FK ( même pattern que `personnel!commandes_cree_par_fkey` dans commandes/[id]/route.ts ).
+  * Validation date/mois : regex + isNaN check. Retourne 400 avec message FR clair. Auth check avant validation ( ne pas révéler les chemins aux non-auth ).
+  * Mensuel : tous les jours du mois listés ( 0/0/"—" pour les jours vides ), midi UTC pour éviter effets de bord timezone.
+  * Personne route : mappings FR locaux (ROLE_LABELS, STATUT_COMPTE_LABELS, METHODE_CREATION_LABELS) dans le fichier ( rapports-helpers.tsx ne les expose pas — ne pas le modifier hors périmètre ).
+  * Date effective paiements : date_paiement ?? created_at ( défensif si date_paiement NULL ).
+
+- Vérifications :
+  * `bun run lint` → EXIT_CODE=0 ✅ ( 0 errors, 0 warnings )
+  * `bunx tsc --noEmit` → 0 erreurs sur les 10 nouveaux fichiers ✅ ( erreurs pré-existantes dans inscription-form.tsx, abonnements-page.tsx, shared/index.ts, rapports/route.ts (Task 12-a) — hors périmètre )
+  * curl smoke test non-auth sur les 9 routes : toutes retournent 401 "Non authentifié" ✅ ( journalier, hebdomadaire, mensuel, commandes, clients, paiements, impayes, remises, personnel )
+  * dev.log : tous les endpoints compilent correctement ( "Compiled in 227ms" + chaque route "401 in ~XXXms ( compile: ... )" )
+
+Stage Summary:
+- LOT 12.2 + 12.3 entièrement implémenté ( PROMPT 12.2 : 8 exports + PROMPT 12.3 : 1 export personnel )
+- 10 fichiers créés ( 9 routes API + 1 composant bouton générique )
+- 0 fichier existant modifié (périmètre strictement respecté : pas de touche à rapports-page, period-selector, rapports-charts, clients-impayes-section, remises-section, clients-page, personnel-page, export-impayes-button, /admin/rapports/route.ts main route)
+- Lint : 0 errors ✅
+- TypeScript : 0 erreurs sur les 10 nouveaux fichiers ✅
+- Sécurité : RLS via getSupabaseServer() ( jamais service_role ), auth personnel actif sur 8 routes, manager-only sur la route personnel ( données RH ), `export const dynamic = "force-dynamic"` sur toutes les 9 routes
+- Format Excel respecté : montants entiers ( sans suffixe FCFA ), dates "JJ/MM/AAAA", heures "HH:mm", enums en libellés FR, null/undefined → "" ou "—"
+- Composant RapportExportButton générique : réutilisable pour les 9 types via CONFIG_RAPPORTS, gère période (date/mois/start/end) selon config, toast success/error/info, loading state, mobile-first ( libellé abrégé "Export" sur mobile )
+- PostgREST défensif : `personnel!paiements_enregistre_par_fkey` pour éviter ambiguïté FK sur paiements.enregistre_par → personnel
+- Prêt pour intégration par le main agent ( boutons à placer sur /admin/rapports, /admin/clients, /admin/personnel )
+
+---
+Task ID: 12-c
+Agent: main
+Task: LOT 12 — Intégration des boutons d'export + vérification end-to-end
+
+Work Log:
+- Lecture des livrables Task 12-a (7 fichiers : page rapports + API agrégation + 5 composants) et Task 12-b (10 fichiers : 9 routes API export + bouton générique RapportExportButton)
+- Lecture du rapport-export-button.tsx pour comprendre les props (type, date, mois, start, end, label, variant, size)
+- Intégration 1/3 — /admin/rapports (rapports-page.tsx) :
+  * Ajout import RapportExportButton + computePeriode + icône FileSpreadsheet
+  * Nouvelle section Card "Exports Excel (.xlsx)" placée après le sélecteur de période
+  * 2 sous-groupes : "Liés à la période sélectionnée" (Journalier, Hebdomadaire, Mensuel, Remises période) + "Exports globaux" (Toutes les commandes, Tous les paiements)
+  * Calcul periodeCfg = computePeriode(periode, customStart, customEnd) → exportDate = start.slice(0,10), exportMois = start.slice(0,7)
+  * Boutons size="sm" avec labels courts (Journalier, Hebdomadaire, Mensuel, etc.) + flex-wrap pour mobile
+- Intégration 2/3 — /admin/clients (clients-page.tsx) :
+  * Remplacement import ExportImpayesButton par import RapportExportButton (depuis ../rapports/rapport-export-button)
+  * Remplacement <ExportImpayesButton /> par 2 boutons : <RapportExportButton type="clients" label="Exporter les clients" /> + <RapportExportButton type="impayes" label="Exporter les impayés" />
+  * flex-wrap sur le conteneur de boutons pour mobile
+- Intégration 3/3 — /admin/personnel (personnel-page.tsx) :
+  * Ajout import RapportExportButton
+  * Ajout <RapportExportButton type="personnel" label="Exporter le personnel" /> à côté de AddEmployeeButton dans un conteneur flex-wrap
+- Suppression du fichier placeholder mort export-impayes-button.tsx (plus aucun import)
+- Vérification lint : bun run lint → 0 errors, 0 warnings ✅
+- Vérification end-to-end via Agent Browser (login admin1@ogpressing.ci → Pressing Excellence, plan Pro) :
+  * /admin/rapports : page rendue avec sélecteur 4 tabs + 4 StatCards + 3 graphiques (Recharts) + section clients impayés (4 clients, données réelles) + section remises + 6 boutons d'export ✅
+  * Switch "Ce mois-ci" : CA total 39,5 K FCFA, 8 commandes, panier moyen 4,9 K FCFA, Total remises 0 FCFA — graphiques SvgRoot (Recharts rendu) ✅
+  * Test export "Toutes les commandes" → toast "Export réussi — 8 ligne(s) exportée(s)" ✅
+  * Test export "Tous les paiements" → toast "Aucune donnée à exporter" (0 paiement enregistré pour ce pressing) ✅
+  * Test export "Journalier" (date dérivée de la période "Ce mois-ci" = 2026-07-01) → API GET /api/admin/rapports/journalier?date=2026-07-01 → 200 + toast "Aucune donnée à exporter" (0 commande le 1er juillet) ✅
+  * /admin/clients : 2 boutons d'export (Exporter les clients + Exporter les impayés) + Nouveau client ✅
+  * Test export "Exporter les impayés" → toast "Export réussi — 4 ligne(s) exportée(s)" (4 clients avec impayés) ✅
+  * /admin/personnel : bouton "Exporter le personnel" + bouton "Ajouter un employé" ✅
+  * Test export "Exporter le personnel" → toast "Export réussi — 1 ligne(s) exportée(s)" (1 employé : Awa Koné) ✅
+  * Vérification mobile (iPhone 14) : 4 tabs + 6 boutons d'export accessibles, labels "Export" abrégés sur mobile ✅
+  * Aucune erreur JS ni hydration error liée au LOT 12 ✅
+- dev.log : tous les endpoints /api/admin/rapports/* retournent 200 (authentifiés) ✅
+
+Stage Summary:
+- LOT 12 entièrement implémenté et vérifié (PROMPT 12.1 + 12.2 + 12.3)
+- 21 fichiers au total :
+  * 2 fichiers fondation (main agent) : export-xlsx.ts + rapports-helpers.tsx
+  * 7 fichiers Task 12-a (sous-agent) : /api/admin/rapports/route.ts + 5 composants (period-selector, rapports-charts, clients-impayes-section, remises-section, rapports-page) + page.tsx update
+  * 10 fichiers Task 12-b (sous-agent) : 9 routes API export (journalier, hebdomadaire, mensuel, commandes, clients, paiements, impayes, remises, personnel) + rapport-export-button.tsx
+  * 3 fichiers intégration (main agent) : rapports-page.tsx (ajout section exports), clients-page.tsx (remplacement ExportImpayesButton + ajout clients export), personnel-page.tsx (ajout personnel export)
+  * 1 fichier supprimé : export-impayes-button.tsx (placeholder mort)
+- Lint : 0 errors, 0 warnings ✅
+- 9 exports .xlsx fonctionnels et testés :
+  1. Journalier (avec date dérivée de la période)
+  2. Hebdomadaire (avec date dérivée de la période)
+  3. Mensuel (avec mois dérivé de la période)
+  4. Commandes (global, 8 lignes testées)
+  5. Clients (global)
+  6. Paiements (global, 0 ligne testé → toast "Aucune donnée")
+  7. Impayés (global, 4 lignes testées)
+  8. Remises (avec période optionnelle)
+  9. Personnel (manager-only, 1 ligne testée)
+- Sécurité : RLS respectée (getSupabaseServer + JWT), personnel actif requis, manager-only pour l'export personnel. Aucun service_role utilisé sur les routes de lecture.
+- Mobile-first : boutons flex-wrap, labels abrégés "Export" sur mobile, tabs scrollables, graphiques ResponsiveContainer
+- Design system : couleurs oklch des charts (primary bleu, secondary vert, warning ambre, chart-3, chart-5 violet), FCFA avec séparateurs, format JJ/MM/AAAA
+- Toasts sonner : "Export réussi — N ligne(s) exportée(s)" / "Aucune donnée à exporter" / "Export échoué" (erreur)
+- Fichiers .xlsx : générés côté client via SheetJS (xlsx v0.18.5), nommés {fileName}_{YYYY-MM-DD}.xlsx, montants en nombres entiers (calculs Excel), dates JJ/MM/AAAA, enums en libellés FR, 1re ligne figée

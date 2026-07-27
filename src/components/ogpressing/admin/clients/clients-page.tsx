@@ -18,7 +18,7 @@ import { ClientsFilters } from "./clients-filters";
 import { ClientsList, type ClientEnrichi } from "./clients-list";
 import { ClientsPagination } from "./clients-pagination";
 import { NewClientDialog } from "./new-client-dialog";
-import { ExportImpayesButton } from "./export-impayes-button";
+import { RapportExportButton } from "../rapports/rapport-export-button";
 
 const PAGE_SIZE = 20;
 
@@ -95,8 +95,17 @@ export function ClientsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <ExportImpayesButton />
+        <div className="flex flex-wrap items-center gap-2">
+          <RapportExportButton
+            type="clients"
+            size="sm"
+            label="Exporter les clients"
+          />
+          <RapportExportButton
+            type="impayes"
+            size="sm"
+            label="Exporter les impayés"
+          />
           <NewClientDialog onCreate={fetchClients} />
         </div>
       </div>

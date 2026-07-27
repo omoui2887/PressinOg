@@ -1,0 +1,152 @@
+/**
+ * OgPressing — API /api/admin/rapports/commandes (GET) — LOT 12.2
+ * ---------------------------------------------------------------
+ * Export .xlsx — Rapport Commandes : liste complète de toutes les commandes.
+ *
+ * Aucun filtre de période. Limité à 1000 lignes ( .limit(1000) ).
+ *
+ * Colonnes retournées ( alignées sur COLONNES_COMMANDES ) :
+ *   numero_ticket | client | date_creation | date_retrait_prevue |
+ *   statut | statut_paiement | montant_total | remise_appliquee
+ *
+ * - Montants : entiers ( sans suffixe FCFA, pour calculs Excel ).
+ * - Dates    : "JJ/MM/AAAA" ( formatDateOnly ).
+ * - Enums    : libellés FR ( STATUT_COMMANDE_LABELS, STATUT_PAIEMENT_LABELS,
+ *   REMISE_TYPE_LABELS ).
+ * - Tri      : created_at DESC.
+ *
+ * 🔒 SÉCURITÉ : getSupabaseServer() (anon + JWT) → RLS isole par pressing_id.
+ *   Auth : n'importe quel personnel actif du pressing.
+ */
+import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseServer } from "@/lib/supabase/server";
+import { formatDateOnly } from "@/lib/utils/format";
+import {
+  STATUT_COMMANDE_LABELS,
+  STATUT_PAIEMENT_LABELS,
+  REMISE_TYPE_LABELS,
+} from "@/components/ogpressing/admin/rapports/rapports-helpers";
+
+export const dynamic = "force-dynamic";
+
+/* -------------------------------------------------------------------------- */
+/*  TYPES                                                                      */
+/* -------------------------------------------------------------------------- */
+
+interface CommandeRow {
+  id: string;
+  numero_commande: string;
+  statut: string;
+  statut_paiement: string;
+  montant_total: number;
+  remise_type: string | null;
+  remise_valeur: number | null;
+  montant_remise: number | null;
+  date_pret_prevue: string | null;
+  created_at: string;
+  client: { nom_complet: string | null } | null;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  HELPERS                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Construit le libellé "Remise appliquée".
+ * - Si remise_type === "aucune" ou null → "Aucune"
+ * - Sinon : `${Label FR} ${valeur}${unit} = ${montant_remise} FCFA`
+ *   où unit = "%" pour pourcentage, " FCFA" pour les autres types.
+ */
+function buildRemiseLabel(cmd: CommandeRow): string {
+  const type = cmd.remise_type;
+  if (!type || type === "aucune") return "Aucune";
+  const label = REMISE_TYPE_LABELS[type] ?? type;
+  const valeur = cmd.remise_valeur ?? 0;
+  const montantRemise = Math.trunc(cmd.montant_remise ?? 0);
+  const unit = type === "pourcentage" ? "%" : " FCFA";
+  return `${label} ${valeur}${unit} = ${montantRemise} FCFA`;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  GET                                                                        */
+/* -------------------------------------------------------------------------- */
+
+export async function GET(request: NextRequest) {
+  const supabase = await getSupabaseServer();
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !userData.user) {
+    return NextResponse.json(
+      { success: false, error: "Non authentifié" },
+      { status: 401 }
+    );
+  }
+
+  const { data: me } = await supabase
+    .from("personnel")
+    .select("id, actif, statut_compte")
+    .eq("user_id", userData.user.id)
+    .maybeSingle();
+
+  if (!me) {
+    return NextResponse.json(
+      { success: false, error: "Accès refusé — personnel introuvable" },
+      { status: 403 }
+    );
+  }
+  if (me.actif !== true || me.statut_compte !== "actif") {
+    return NextResponse.json(
+      { success: false, error: "Accès refusé — compte inactif" },
+      { status: 403 }
+    );
+  }
+
+  // Pas de paramètre de requête pour cette route — on ignore request.nextUrl
+  void request;
+
+  const { data: commandes, error: cmdErr } = await supabase
+    .from("commandes")
+    .select(
+      `
+      id,
+      numero_commande,
+      statut,
+      statut_paiement,
+      montant_total,
+      remise_type,
+      remise_valeur,
+      montant_remise,
+      date_pret_prevue,
+      created_at,
+      client:clients(nom_complet)
+      `
+    )
+    .order("created_at", { ascending: false })
+    .limit(1000);
+
+  if (cmdErr) {
+    console.error("[api/admin/rapports/commandes] Erreur SELECT:", cmdErr);
+    return NextResponse.json(
+      { success: false, error: "Erreur lors de la récupération des commandes" },
+      { status: 500 }
+    );
+  }
+
+  const rows: Record<string, unknown>[] = (commandes ?? []).map((cmdRaw) => {
+    const cmd = cmdRaw as unknown as CommandeRow;
+    return {
+      numero_ticket: cmd.numero_commande ?? "",
+      client: cmd.client?.nom_complet ?? "—",
+      date_creation: formatDateOnly(cmd.created_at),
+      date_retrait_prevue: cmd.date_pret_prevue
+        ? formatDateOnly(cmd.date_pret_prevue)
+        : "—",
+      statut: STATUT_COMMANDE_LABELS[cmd.statut] ?? cmd.statut ?? "—",
+      statut_paiement:
+        STATUT_PAIEMENT_LABELS[cmd.statut_paiement] ?? cmd.statut_paiement ?? "—",
+      montant_total: Math.trunc(cmd.montant_total ?? 0),
+      remise_appliquee: buildRemiseLabel(cmd),
+    };
+  });
+
+  return NextResponse.json({ success: true, data: rows });
+}
