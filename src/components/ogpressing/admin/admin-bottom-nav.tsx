@@ -107,8 +107,8 @@ export function AdminBottomNav() {
             >
               <span
                 className={cn(
-                  "-mt-6 flex size-14 items-center justify-center rounded-full border-4 border-card bg-primary text-primary-foreground shadow-lg transition-transform",
-                  "hover:-translate-y-1 hover:scale-105 active:scale-95",
+                  "-mt-6 flex size-14 items-center justify-center rounded-full border-4 border-card bg-gradient-primary text-primary-foreground shadow-lg transition-transform duration-fast ease-smooth animate-pulse-glow motion-reduce:animate-none",
+                  "hover:-translate-y-1 hover:scale-105 active:scale-95 motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100",
                   active && "ring-2 ring-primary/40 ring-offset-2 ring-offset-card"
                 )}
               >
@@ -137,8 +137,8 @@ export function AdminBottomNav() {
           >
             <item.icon
               className={cn(
-                "size-5 transition-colors",
-                active ? "text-primary" : "text-muted-foreground"
+                "size-5 transition-all duration-fast ease-smooth",
+                active ? "text-primary scale-110 motion-reduce:scale-100" : "text-muted-foreground"
               )}
             />
             <span

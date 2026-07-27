@@ -4406,3 +4406,131 @@ Stage Summary:
     "https://api.supabase.com/v1/projects/yqaitafigfxlrprrouhr/api-keys"
 - Le code PRS-KLJ8-MYYA (plan Pro) est VALIDE et fonctionne. L'utilisateur peut maintenant
   saisir ce code sur /activation → passage à l'étape 2 (création du compte pressing).
+
+---
+Task ID: EXPLORE-LOT16
+Agent: explore (sub-agent)
+Task: Audit complet de l'état UI avant implémentation du LOT 16 (UI embellishment lot).
+
+Work Log:
+- Lecture tailwind.config.ts + globals.css + postcss.config.mjs + components.json + package.json.
+- Inventaire complet de src/components/ui/ (48 fichiers shadcn/ui) et lecture intégrale des 18 composants clés demandés (button, input, textarea, select, checkbox, switch, radio-group, tabs, dialog, alert-dialog, sheet, popover, toast, toaster, sonner, badge, card, skeleton, progress, label).
+- Lecture des composants shared/ (StatusBadge, BottomNav, Sidebar, EmptyState, QRScanner, barrel index.ts).
+- Lecture des composants ogpressing/ critiques (StatCard, Stepper du wizard commande, Reveal, Toasters, DashboardLayout, AdminShell, AdminBottomNav, PersonnelShell, SuperAdminShell, SubscriptionBanner, PublicHeader, DashboardShortcuts, barrel index.ts).
+- Lecture du hook useToast.ts.
+- Lecture de layout.tsx (root) + 4 layouts de route group ((admin), (personnel), (super-admin), (public)).
+- Recherche exhaustive : 41 fichiers importent `sonner` ; 124 appels `toast.{success,error,info,warning,loading}` ; 2 fichiers utilisent `useToast` shadcn (hook + toaster.tsx) — sonner est le système dominant.
+- Recherche framer-motion : 0 fichier source ne l'importe (pourtant installé v12.23.2). Aucune utilisation de `motion.` ou `AnimatePresence`.
+- Recherche prefers-reduced-motion : déjà géré globalement dans globals.css (media query) + géré dans Reveal.tsx via useSyncExternalStore.
+- Pas de répertoire src/lib/motion/.
+
+Stage Summary:
+Voir le rapport final complet fourni à l'utilisateur (rapport structuré ci-dessous dans la réponse). Points-clés pour LOT 16 :
+- framer-motion v12.23.2 est déjà installé mais JAMAIS utilisé → disponible immédiatement pour LOT 16 sans ajout de dépendance.
+- tailwindcss-animate v1.0.7 + tw-animate-css v1.3.5 sont actifs (plugin + import CSS), fournissant déjà animate-in/out, fade-in/out, zoom-in/out, slide-in/from-*. Aucune keyframe custom ni easing custom n'est défini dans tailwind.config.ts (uniquement le bloc colors + borderRadius + plugins).
+- Palette design system complète en CSS variables oklch (primary bleu #2563EB, secondary vert #10B981, warning ambra #F59E0B, danger rouge #EF4444) → alias `bg-warning`, `text-danger`, etc. fonctionnels.
+- Button n'a pas de variante `warning` ni `success` (uniquement default/destructive/outline/secondary/ghost/link) — ajout possible via cva.
+- Badge n'a pas de variante `warning` ni `success` non plus.
+- shadcn/ui style = "new-york", lucide icons, CSS variables enabled, neutral base color.
+- Toasts : système DUAL (shadcn/ui Toast + Sonner) cohabitent via <Toasters /> lazy-loaded dans le root layout. Sonner est utilisé dans 41 fichiers ; shadcn Toast n'est utilisé que par toaster.tsx lui-même (le hook useToast n'est appelé nulle part hors toaster.tsx) → on peut considérer sonner comme le SEUL système réellement actif.
+- Reveal.tsx (composant fade-in au scroll via IntersectionObserver shared singleton) existe déjà et gère prefers-reduced-motion — c'est le point d'entrée existant pour les animations d'apparition.
+- StatCard, Stepper, StatusBadge, DashboardShortcuts, AdminBottomNav sont déjà stylés avec hover/transition/translate — pas d'animations d'entrée.
+- Aucune page n'a d'animation d'entrée ou de transition entre états.
+- Layouts de route group : tous Server Components qui fetchent Supabase puis délèguent à un *Shell client (AdminShell, PersonnelShell, SuperAdminShell) qui enveloppe DashboardLayout. Pas de motion wrapper dans les layouts.
+
+---
+Task ID: LOT-16-EMBELLISSEMENT-UI
+Agent: main
+Task: LOT 16 — Embellissement UI : animations, micro-interactions et effets de couleur (7 prompts)
+
+Work Log:
+- Exploration préalable (Task EXPLORE-LOT16) : audit complet de l'existant — tailwind.config.ts, globals.css, tous les composants UI shadcn, composants shared/ogpressing, usage toast (sonner dominant, 41 fichiers/124 appels), framer-motion installé mais 0 usage, prefers-reduced-motion déjà géré globalement dans globals.css.
+
+- **PROMPT 16.1 — Fondations** :
+  * globals.css : ajout échelles de couleurs -50/-100/-400/-600/-700 pour primary, secondary, warning, danger (oklch, :root + .dark) + enregistrement dans @theme inline pour génération utilities Tailwind
+  * globals.css : ajout tokens d'animation (--ease-smooth, --ease-bounce-subtle) + 7 keyframes (ogp-ripple, ogp-shake, ogp-shimmer, ogp-pulse-glow, ogp-pop, ogp-fade-in-down, ogp-pulse-border) exposées comme utilities animate-*
+  * globals.css : ajout classes utilitaires .bg-gradient-primary/secondary/warning/danger, .glow-primary/secondary/warning/danger, .shimmer
+  * tailwind.config.ts : ajout transitionDuration (fast/base/slow) + transitionTimingFunction (smooth/bounce-subtle)
+  * Création src/lib/motion/variants.ts : fadeIn, fadeInUp, fadeInDown, scaleIn, slideInRight/Left/Bottom/Top, staggerContainer, staggerItem, makeStaggerContainer(), shake, pop + transitions/easings exportés
+  * Création src/lib/motion/hooks.ts : usePrefersReducedMotion() (useSyncExternalStore + MediaQueryList singleton) + useReducedMotionProps()
+
+- **PROMPT 16.2 — Boutons dynamiques** :
+  * button.tsx : ajout "use client" (nécessaire pour useState ripple), variant `warning` (bg-gradient-warning), tous variants colorés utilisent bg-gradient-* + hover:-translate-y-px + hover:shadow-md + active:scale-[0.98], transition-all duration-fast ease-smooth
+  * Ajout prop `loading` (spinner Loader2 + largeur stable via span invisible + disabled)
+  * Ajout prop `ripple` (effet onde circulaire au clic via span animé animate-ripple, nettoyage auto après 650ms)
+  * Gestion asChild sécurisée (Slot exige 1 seul enfant → ripple/spinner désactivés quand asChild=true)
+  * motion-reduce:active:scale-100 + motion-reduce:transition-none pour accessibilité
+
+- **PROMPT 16.3 — Formulaires vivants** :
+  * input.tsx : transition-all duration-fast ease-smooth + focus-visible:glow-primary (halo doux) + aria-invalid:animate-shake (secousse erreur) + motion-reduce
+  * textarea.tsx : mêmes améliorations que Input
+  * checkbox.tsx : transition-all duration-fast ease-smooth + indicator data-[state=checked]:animate-pop (scale 1→1.15→1 au cochage)
+  * switch.tsx : thumb transition-transform duration-fast ease-smooth + data-[state=checked]:scale-110 (léger pop au basculement)
+
+- **PROMPT 16.4 — Onglets et navigation** :
+  * tabs.tsx : TabsTrigger transition-all duration-fast ease-smooth + data-[state=active]:font-semibold + hover:text-foreground ; TabsContent data-[state=active]:animate-in fade-in-0 slide-in-from-bottom-1 duration-200 (fondu + glissement à chaque changement d'onglet) + motion-reduce
+  * dashboard-layout.tsx : nav items actifs = bg-primary/10 text-primary font-semibold + barre verticale gauche (before:absolute before:w-1 before:bg-primary before:rounded-full) + hover:translate-x-0.5 (léger décalage) ; badge actif = bg-primary/20 text-primary
+  * admin-bottom-nav.tsx : FAB "Nouvelle commande" = bg-gradient-primary + animate-pulse-glow (pulsation glow discrète 2.5s) + hover:-translate-y-1 hover:scale-105 active:scale-95 ; items normaux actifs = text-primary scale-110
+
+- **PROMPT 16.5 — Dialogues animés** :
+  * dialog.tsx : overlay backdrop-blur-sm ajouté (effet de flou professionnel) ; animations existantes conservées (fade-in + zoom-in-95 au open, inverse au close, duration-200)
+
+- **PROMPT 16.6 — Toasts dynamiques** :
+  * sonner.tsx : rewrite complet avec CSS variables par type (--success/error/warning/info-bg/text/border mappées sur les nuances -50/-700 de notre design system) + toastOptions.classNames (bordure gauche 4px colorée, rounded-md, shadow-lg, closeButton au hover desktop)
+  * globals.css : règles [data-sonner-toast] par type (success=secondary, error=danger+shake, warning=warning, info=primary) + barre de progression animée (::after, animation scaleX 1→0 sur --toast-duration) + reduced-motion (désactive shake + barre statique)
+  * ⚠️ Les 124 appels toast.success/error/warning/info existants n'ont PAS été modifiés — le styling s'applique automatiquement via les CSS variables
+
+- **PROMPT 16.7 — Cards, badges, skeleton, progress** :
+  * card.tsx : transition-all duration-base ease-smooth ajouté (pour hover effects cohérents)
+  * badge.tsx : ajout variants `success` (bg-secondary/10 text-secondary) + `warning` (bg-warning/10 text-warning-700) + `danger` (bg-danger/10 text-danger) ; transition-all duration-fast ease-smooth
+  * skeleton.tsx : shimmer (classe .shimmer avec dégradé qui se déplace en boucle via ogp-shimmer) + fallback motion-reduce:animate-pulse
+  * progress.tsx : transition-transform duration-slow ease-smooth (barre fluide 400ms)
+  * stat-card.tsx : animate-in fade-in-0 slide-in-from-bottom-2 duration-300 fill-both + prop `delay` pour stagger échelonné + hover:shadow-md hover:-translate-y-px + motion-reduce
+
+- Vérifications :
+  * `bun run lint` → EXIT_CODE=0, 0 errors, 0 warnings ✅
+  * `bunx tsc --noEmit` → 0 erreur sur fichiers LOT 16 (erreurs pré-existantes uniquement) ✅
+  * dev.log : GET / → 200, GET /login → 200, GET /activation → 200 ✅
+  * agent-browser : login + landing pages rendent sans erreur console ni page error ✅
+  * Bug fixé en cours : Button avec useState (ripple) nécessitait "use client" + asChild (Slot) exige 1 seul enfant → ripple/spinner désactivés quand asChild=true
+
+Stage Summary:
+- 17 fichiers modifiés/créés :
+  * globals.css (couleurs, keyframes, gradients, glow, shimmer, sonner toast CSS)
+  * tailwind.config.ts (transitionDuration, transitionTimingFunction)
+  * src/lib/motion/variants.ts (CRÉÉ — 15+ variants Framer Motion)
+  * src/lib/motion/hooks.ts (CRÉÉ — usePrefersReducedMotion + useReducedMotionProps)
+  * button.tsx (gradient, hover/active/loading/ripple, warning variant, "use client")
+  * input.tsx (focus halo, error shake)
+  * textarea.tsx (focus halo, error shake)
+  * checkbox.tsx (pop animation au cochage)
+  * switch.tsx (scale au basculement)
+  * tabs.tsx (transition smooth + content fade-in)
+  * dialog.tsx (backdrop-blur overlay)
+  * badge.tsx (success/warning/danger variants + transition)
+  * card.tsx (transition-all pour hover)
+  * skeleton.tsx (shimmer au lieu de pulse)
+  * progress.tsx (transition fluide duration-slow)
+  * sonner.tsx (4 variantes colorées + progress bar)
+  * stat-card.tsx (stagger animation + hover + delay prop)
+  * dashboard-layout.tsx (sidebar active gradient + left bar + hover translate)
+  * admin-bottom-nav.tsx (FAB gradient + pulse-glow + active scale)
+
+- Cohérence garantie par :
+  * Tokens centralisés dans globals.css (--ease-smooth, duration-fast/base/slow) + tailwind.config.ts
+  * Variants Framer Motion réutilisables dans src/lib/motion/variants.ts
+  * usePrefersReducedMotion() pour accessibilité (toutes animations ont motion-reduce: ou reduced-motion fallback)
+  * Palette -50/-100/-400/-600/-700 cohérente pour dégradés et états hover/active
+  * Aucune durée d'animation codée en dur : tout utilise duration-fast/base/slow ou les tokens CSS
+
+- Composants non couverts (futur prompt complémentaire possible) :
+  * Stepper du wizard commande (animations de transition entre étapes avec slideInRight/Left)
+  * Popover (déjà animé via tw-animate-css, pourrait être affiné avec framer-motion)
+  * AlertDialog (icône d'avertissement animée à l'apparition)
+  * Sheet (déjà animé, pourrait être affiné)
+  * Listes (commandes, clients, personnel) — stagger fade-in au chargement
+  * Count-up animé des valeurs numériques dans StatCard
+  * StatusBadge — pulsation discrète pour alertes critiques (stock bas, solde impayé)
+  * Page transitions (layout-level) avec AnimatePresence sur les route groups
+
+- Lint : 0/0 ✅ | TypeScript : 0 erreur sur fichiers LOT 16 ✅ | Runtime : 3 pages testées 200 ✅ | agent-browser : 0 erreur ✅

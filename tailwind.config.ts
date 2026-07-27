@@ -83,6 +83,17 @@ const config: Config = {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      // LOT 16 — Durées de transition standardisées
+      transitionDuration: {
+        fast: "150ms",
+        base: "250ms",
+        slow: "400ms",
+      },
+      // LOT 16 — Courbes d'accélération personnalisées
+      transitionTimingFunction: {
+        smooth: "cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+        "bounce-subtle": "cubic-bezier(0.34, 1.56, 0.64, 1)",
+      },
     },
   },
   plugins: [tailwindcssAnimate],
