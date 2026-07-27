@@ -22,7 +22,17 @@ import { RapportExportButton } from "../rapports/rapport-export-button";
 
 const PAGE_SIZE = 20;
 
-export function ClientsPage() {
+interface ClientsPageProps {
+  /** Base path for navigation links. Defaults to "/admin".
+   *  Set to "/personnel/receptionniste" (or other role) for personnel variants. */
+  basePath?: string;
+  /** When true, hides the "Nouveau client" button + export buttons (read-only mode
+   *  for Caissier/Comptable who can view clients but not create them).
+   *  Actually, Caissier/Comptable CAN see exports — used to disable "Nouveau client" only. */
+  readOnly?: boolean;
+}
+
+export function ClientsPage({ basePath = "/admin", readOnly = false }: ClientsPageProps = {}) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [impayesOnly, setImpayesOnly] = useState(false);
@@ -106,7 +116,7 @@ export function ClientsPage() {
             size="sm"
             label="Exporter les impayés"
           />
-          <NewClientDialog onCreate={fetchClients} />
+          {!readOnly && <NewClientDialog onCreate={fetchClients} />}
         </div>
       </div>
 
@@ -119,7 +129,7 @@ export function ClientsPage() {
       />
 
       {/* Liste */}
-      <ClientsList clients={clients} loading={loading} />
+      <ClientsList clients={clients} loading={loading} basePath={basePath} />
 
       {/* Pagination */}
       {!loading && clients.length > 0 && (

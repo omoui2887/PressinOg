@@ -18,6 +18,7 @@ import {
   Inbox,
   CreditCard,
   Building2,
+  Shirt,
 } from "lucide-react";
 import {
   DashboardLayout,
@@ -49,6 +50,11 @@ const NAV_ITEMS: DashboardNavItem[] = [
     href: "/super-admin/abonnements",
     label: "Abonnements",
     icon: CreditCard,
+  },
+  {
+    href: "/super-admin/catalogue",
+    label: "Catalogue",
+    icon: Shirt,
   },
 ];
 

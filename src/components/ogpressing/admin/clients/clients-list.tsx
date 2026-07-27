@@ -46,6 +46,9 @@ export interface ClientEnrichi {
 interface ClientsListProps {
   clients: ClientEnrichi[];
   loading?: boolean;
+  /** Base path for client detail links. Defaults to "/admin" (admin space).
+   *  Set to "/personnel/receptionniste" (or other role) for personnel variants. */
+  basePath?: string;
 }
 
 function formatFCFA(value: number): string {
@@ -73,7 +76,7 @@ function ImpayeBadge({ solde }: { solde: number }) {
   );
 }
 
-export function ClientsList({ clients, loading }: ClientsListProps) {
+export function ClientsList({ clients, loading, basePath = "/admin" }: ClientsListProps) {
   if (loading) {
     return (
       <div className="space-y-3">
@@ -132,7 +135,7 @@ export function ClientsList({ clients, loading }: ClientsListProps) {
               >
                 <td className="px-4 py-3">
                   <Link
-                    href={`/admin/clients/${client.id}`}
+                    href={`${basePath}/clients/${client.id}`}
                     className="flex flex-col"
                   >
                     <span className="font-medium text-foreground group-hover:text-primary">
@@ -165,7 +168,7 @@ export function ClientsList({ clients, loading }: ClientsListProps) {
                 </td>
                 <td className="px-4 py-3 text-right">
                   <Link
-                    href={`/admin/clients/${client.id}`}
+                    href={`${basePath}/clients/${client.id}`}
                     className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
                   >
                     Voir
@@ -183,7 +186,7 @@ export function ClientsList({ clients, loading }: ClientsListProps) {
         {clients.map((client) => (
           <li key={client.id}>
             <Link
-              href={`/admin/clients/${client.id}`}
+              href={`${basePath}/clients/${client.id}`}
               className="block rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 active:bg-accent"
             >
               <div className="flex items-start justify-between gap-3">

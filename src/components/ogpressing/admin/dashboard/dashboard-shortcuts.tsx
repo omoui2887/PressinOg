@@ -39,7 +39,13 @@ interface CommandesLookupResponse {
   error?: string;
 }
 
-export function DashboardShortcuts() {
+interface DashboardShortcutsProps {
+  /** Base path for navigation links. Defaults to "/admin".
+   *  Set to "/personnel/receptionniste" (or other role) for personnel variants. */
+  basePath?: string;
+}
+
+export function DashboardShortcuts({ basePath = "/admin" }: DashboardShortcutsProps = {}) {
   const [scannerOpen, setScannerOpen] = useState(false);
 
   /**
@@ -66,7 +72,7 @@ export function DashboardShortcuts() {
     if (commandeId) {
       // Redirige en confiance : RLS bloque la page détail si la commande
       // n'appartient pas au pressing.
-      window.location.href = `/admin/commandes/${commandeId}`;
+      window.location.href = `${basePath}/commandes/${commandeId}`;
       return;
     }
 
@@ -88,7 +94,7 @@ export function DashboardShortcuts() {
     }
 
     if (commandeId) {
-      window.location.href = `/admin/commandes/${commandeId}`;
+      window.location.href = `${basePath}/commandes/${commandeId}`;
     } else {
       toast.error("Commande introuvable", {
         description:
@@ -102,7 +108,7 @@ export function DashboardShortcuts() {
       <div className="grid gap-4 sm:grid-cols-3">
         {/* 1. Nouvelle commande — mis en avant (couleur primary) */}
         <a
-          href="/admin/commandes/nouvelle"
+          href={`${basePath}/commandes/nouvelle`}
           className="group focus:outline-none"
           aria-label="Nouvelle commande"
         >

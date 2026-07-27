@@ -306,32 +306,130 @@ export default function ActivationPage() {
     }
 
     setCodeLoading(true);
-    try {
-      const res = await fetch("/api/public/activation/verify-code", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: codeValue }),
-      });
-      const data = await res.json();
 
-      if (!res.ok || !data.success) {
-        // On affiche tel quel le message renvoyé par l'API (déjà en français,
-        // inclut le numéro WhatsApp pour les codes invalides/expirés).
-        setCodeError(data.error ?? "Ce code n'est pas valide ou a expiré.");
-        return;
+    /**
+     * Appelle l'API verify-code avec timeout (20 s) et parsing défensif.
+     *
+     * Améliorations vs. l'ancienne version :
+     *  - `res.text()` + `JSON.parse()` au lieu de `res.json()` → gère le cas
+     *    où le serveur (ou un proxy intermédiaire) renvoie du HTML au lieu de
+     *    JSON (page d'erreur 500 Next.js, 502/504 gateway, etc.). Sans cela,
+     *    `res.json()` jette une SyntaxError qui atterrit dans le `catch` avec
+     *    un message générique inutilisable.
+     *  - AbortController (20 s) → évite un fetch qui pend indéfiniment si le
+     *    proxy externe coupe la connexion sans réponse.
+     *  - Vérification que `data.data.code_id` existe avant d'y accéder.
+     *  - Chaque erreur est loggée via `console.error` avec son contexte pour
+     *    permettre le diagnostic depuis la console navigateur.
+     *  - Les erreurs transitoires (timeout, réseau, 5xx, HTML) sont marquées
+     *    `transient = true` pour déclencher un retry automatique.
+     */
+    const callVerifyApi = async (code: string) => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20_000);
+
+      try {
+        const res = await fetch("/api/public/activation/verify-code", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code }),
+          signal: controller.signal,
+        });
+
+        // Lecture texte puis parse JSON — gère le cas où le serveur renvoie
+        // du HTML (page d'erreur 500 Next.js) au lieu de JSON.
+        const text = await res.text();
+        let data: {
+          success?: boolean;
+          error?: string;
+          data?: { code_id?: string; plan?: string };
+        };
+        try {
+          data = JSON.parse(text);
+        } catch {
+          console.error("[activation] Réponse non-JSON du serveur:", {
+            status: res.status,
+            body: text.substring(0, 300),
+          });
+          const err = new Error(
+            res.status >= 500
+              ? "Le serveur rencontre un problème temporaire. Réessayez dans quelques instants."
+              : "Réponse inattendue du serveur. Réessayez."
+          ) as Error & { transient?: boolean };
+          err.transient = true;
+          throw err;
+        }
+
+        if (!res.ok || !data.success) {
+          // Erreur métier (code invalide/expiré/utilisé) — message FR de l'API,
+          // inclut le numéro WhatsApp pour les codes invalides/expirés.
+          throw new Error(
+            data.error ?? "Ce code n'est pas valide ou a expiré."
+          );
+        }
+
+        if (!data.data || !data.data.code_id) {
+          console.error("[activation] Réponse succès sans data.code_id:", data);
+          throw new Error(
+            "Réponse invalide du serveur. Réessayez dans quelques instants."
+          );
+        }
+
+        return {
+          code_id: data.data.code_id,
+          plan: data.data.plan as PlanAbonnement,
+        };
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    };
+
+    try {
+      let result: { code_id: string; plan: PlanAbonnement };
+      try {
+        result = await callVerifyApi(codeValue);
+      } catch (err) {
+        // Retry une seule fois pour les erreurs transitoires (timeout,
+        // réseau coupé, 5xx, HTML au lieu de JSON) — typiquement un proxy
+        // externe qui timeout sur la 1ʳᵉ compilation de la route (~1,7 s).
+        // On NE retry PAS les erreurs métier (code invalide/expiré/utilisé)
+        // car retenter ne changerait rien.
+        const isTransient =
+          err instanceof Error &&
+          (err.name === "AbortError" ||
+            err.name === "TypeError" ||
+            (err as { transient?: boolean }).transient === true);
+
+        if (!isTransient) throw err;
+
+        console.warn(
+          "[activation] Erreur transitoire, nouvelle tentative dans 1,5 s…",
+          err
+        );
+        await new Promise((r) => setTimeout(r, 1500));
+        result = await callVerifyApi(codeValue);
       }
 
       // Code valide → on mémorise et passe à l'étape 2
       setVerified({
         code: codeValue,
-        code_id: data.data.code_id,
-        plan: data.data.plan as PlanAbonnement,
+        code_id: result.code_id,
+        plan: result.plan,
       });
       setStep(2);
-    } catch {
-      setCodeError(
-        "Impossible de vérifier le code pour le moment. Réessayez dans quelques instants."
-      );
+    } catch (err) {
+      console.error("[activation] Échec vérification code d'activation:", err);
+      if (err instanceof Error && err.name === "AbortError") {
+        setCodeError(
+          "La vérification prend trop de temps. Vérifiez votre connexion internet et réessayez."
+        );
+      } else if (err instanceof Error && err.message) {
+        setCodeError(err.message);
+      } else {
+        setCodeError(
+          "Impossible de vérifier le code pour le moment. Réessayez dans quelques instants."
+        );
+      }
     } finally {
       setCodeLoading(false);
     }
@@ -352,6 +450,11 @@ export default function ActivationPage() {
     // Concaténation nom + prénom → nom_complet (colonne unique en DB)
     const nomComplet = `${values.prenom_responsable} ${values.nom_responsable}`.trim();
 
+    // Timeout 30 s (la création de compte implique plusieurs INSERTs Supabase
+    // + auth.admin.createUser, donc potentiellement plus longue que verify-code).
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
     try {
       const res = await fetch("/api/public/activation", {
         method: "POST",
@@ -366,8 +469,27 @@ export default function ActivationPage() {
           ville: values.ville,
           commune: values.commune ?? "",
         }),
+        signal: controller.signal,
       });
-      const data = await res.json();
+
+      // Lecture texte puis parse JSON — gère le cas où le serveur renvoie
+      // du HTML (page d'erreur 500) au lieu de JSON (cf. handleVerifyCode).
+      const text = await res.text();
+      let data: { success?: boolean; error?: string };
+      try {
+        data = JSON.parse(text);
+      } catch {
+        console.error("[activation] Réponse non-JSON du serveur (étape 2):", {
+          status: res.status,
+          body: text.substring(0, 300),
+        });
+        setSubmitError(
+          res.status >= 500
+            ? "Le serveur rencontre un problème temporaire. Réessayez dans quelques instants."
+            : "Réponse inattendue du serveur. Réessayez."
+        );
+        return;
+      }
 
       if (!res.ok || !data.success) {
         const errMsg: string = data.error ?? "Activation impossible.";
@@ -414,11 +536,19 @@ export default function ActivationPage() {
       // window.location.href (et non router.push) pour forcer le rechargement
       // complet et initialiser correctement la session côté serveur.
       window.location.href = "/admin/dashboard";
-    } catch {
-      setSubmitError(
-        "Une erreur inattendue est survenue. Veuillez réessayer dans quelques instants."
-      );
+    } catch (err) {
+      console.error("[activation] Erreur lors de la création du compte:", err);
+      if (err instanceof Error && err.name === "AbortError") {
+        setSubmitError(
+          "La création du compte prend trop de temps. Vérifiez votre connexion et réessayez."
+        );
+      } else {
+        setSubmitError(
+          "Une erreur de connexion est survenue. Vérifiez votre connexion internet et réessayez."
+        );
+      }
     } finally {
+      clearTimeout(timeoutId);
       setSubmitLoading(false);
     }
   }

@@ -551,7 +551,10 @@ export interface Database {
           id: string;
           commande_id: string;
           service_id: string | null;
+          // ⚠️ Renommé en type_vetement_legacy par la migration 014 (LOT 15.1).
+          // Conservé pour compatibilité historique mais non utilisé par le code métier.
           type_vetement: TypeVetement | null;
+          type_vetement_legacy: TypeVetement | null;
           description: string | null;
           quantite: number;
           prix_unitaire: number;
@@ -564,6 +567,7 @@ export interface Database {
           commande_id: string;
           service_id?: string | null;
           type_vetement?: TypeVetement | null;
+          type_vetement_legacy?: TypeVetement | null;
           description?: string | null;
           quantite?: number;
           prix_unitaire: number;
@@ -576,6 +580,7 @@ export interface Database {
           commande_id?: string;
           service_id?: string | null;
           type_vetement?: TypeVetement | null;
+          type_vetement_legacy?: TypeVetement | null;
           description?: string | null;
           quantite?: number;
           prix_unitaire?: number;
@@ -592,7 +597,11 @@ export interface Database {
           commande_id: string;
           commande_ligne_id: string | null;
           qr_code: string | null;
+          // ⚠️ Renommé en type_vetement_legacy par la migration 014 (LOT 15.1).
           type_vetement: TypeVetement | null;
+          type_vetement_legacy: TypeVetement | null;
+          // ⚠️ Ajouté par la migration 014 : FK vers catalogue_articles(id). NOT NULL.
+          catalogue_article_id: string;
           couleur: CouleurVetement | null;
           etat: EtatVetement | null;
           statut: StatutArticle;
@@ -607,6 +616,8 @@ export interface Database {
           commande_ligne_id?: string | null;
           qr_code?: string | null;
           type_vetement?: TypeVetement | null;
+          type_vetement_legacy?: TypeVetement | null;
+          catalogue_article_id: string;
           couleur?: CouleurVetement | null;
           etat?: EtatVetement | null;
           statut?: StatutArticle;
@@ -621,6 +632,8 @@ export interface Database {
           commande_ligne_id?: string | null;
           qr_code?: string | null;
           type_vetement?: TypeVetement | null;
+          type_vetement_legacy?: TypeVetement | null;
+          catalogue_article_id?: string;
           couleur?: CouleurVetement | null;
           etat?: EtatVetement | null;
           statut?: StatutArticle;
@@ -878,6 +891,43 @@ export interface Database {
           enregistre_par?: string | null;
           methode_paiement?: MethodePaiement | null;
           reference?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+
+      /* 18. catalogue_articles (LOT 15.1) */
+      catalogue_articles: {
+        Row: {
+          id: string;
+          slug: string;
+          nom: string;
+          categorie: string;
+          icone_url: string;
+          actif: boolean;
+          ordre_affichage: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          slug: string;
+          nom: string;
+          categorie: string;
+          icone_url: string;
+          actif?: boolean;
+          ordre_affichage?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          slug?: string;
+          nom?: string;
+          categorie?: string;
+          icone_url?: string;
+          actif?: boolean;
+          ordre_affichage?: number;
           created_at?: string;
           updated_at?: string;
         };

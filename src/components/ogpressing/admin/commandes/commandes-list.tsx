@@ -41,9 +41,12 @@ import {
 interface CommandesListProps {
   commandes: CommandeListItem[];
   loading?: boolean;
+  /** Base path for commande detail links. Defaults to "/admin".
+   *  Set to "/personnel/receptionniste" (or other role) for personnel variants. */
+  basePath?: string;
 }
 
-export function CommandesList({ commandes, loading }: CommandesListProps) {
+export function CommandesList({ commandes, loading, basePath = "/admin" }: CommandesListProps) {
   if (loading) {
     return (
       <div className="space-y-3">
@@ -105,7 +108,7 @@ export function CommandesList({ commandes, loading }: CommandesListProps) {
               >
                 <td className="px-4 py-3">
                   <Link
-                    href={`/admin/commandes/${cmd.id}`}
+                    href={`${basePath}/commandes/${cmd.id}`}
                     className="font-mono text-xs font-medium text-foreground group-hover:text-primary"
                   >
                     {cmd.numero_commande}
@@ -113,7 +116,7 @@ export function CommandesList({ commandes, loading }: CommandesListProps) {
                 </td>
                 <td className="px-4 py-3">
                   <Link
-                    href={`/admin/commandes/${cmd.id}`}
+                    href={`${basePath}/commandes/${cmd.id}`}
                     className="flex flex-col"
                   >
                     <span className="font-medium text-foreground group-hover:text-primary">
@@ -154,7 +157,7 @@ export function CommandesList({ commandes, loading }: CommandesListProps) {
                 </td>
                 <td className="px-4 py-3 text-right">
                   <Link
-                    href={`/admin/commandes/${cmd.id}`}
+                    href={`${basePath}/commandes/${cmd.id}`}
                     className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
                   >
                     Voir
@@ -172,7 +175,7 @@ export function CommandesList({ commandes, loading }: CommandesListProps) {
         {commandes.map((cmd) => (
           <li key={cmd.id}>
             <Link
-              href={`/admin/commandes/${cmd.id}`}
+              href={`${basePath}/commandes/${cmd.id}`}
               className="block rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 active:bg-accent"
             >
               <div className="flex items-start justify-between gap-3">

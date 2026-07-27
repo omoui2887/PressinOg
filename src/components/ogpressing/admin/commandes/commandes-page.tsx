@@ -33,7 +33,13 @@ import type {
 
 const PAGE_SIZE = 20;
 
-export function CommandesPage() {
+interface CommandesPageProps {
+  /** Base path for navigation. Defaults to "/admin".
+   *  Used for commande detail links and QR scanner redirect. */
+  basePath?: string;
+}
+
+export function CommandesPage({ basePath = "/admin" }: CommandesPageProps = {}) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [statut, setStatut] = useState("");
@@ -132,7 +138,7 @@ export function CommandesPage() {
       // Vérifie l'existence via l'API liste (q vide, on ne peut pas filtrer
       // par id directement). On redirige en confiance : RLS bloque la page
       // détail si la commande n'appartient pas au pressing.
-      window.location.href = `/admin/commandes/${commandeId}`;
+      window.location.href = `${basePath}/commandes/${commandeId}`;
       return;
     }
 
@@ -154,7 +160,7 @@ export function CommandesPage() {
     }
 
     if (commandeId) {
-      window.location.href = `/admin/commandes/${commandeId}`;
+      window.location.href = `${basePath}/commandes/${commandeId}`;
     } else {
       toast.error("Commande introuvable", {
         description:
@@ -199,7 +205,7 @@ export function CommandesPage() {
       />
 
       {/* Liste */}
-      <CommandesList commandes={commandes} loading={loading} />
+      <CommandesList commandes={commandes} loading={loading} basePath={basePath} />
 
       {/* Pagination */}
       {!loading && commandes.length > 0 && (

@@ -24,7 +24,6 @@ import type {
   EtatVetement,
   MethodePaiement,
   RemiseType,
-  TypeVetement,
 } from "@/lib/types/database.types";
 
 // ============================================================
@@ -83,16 +82,22 @@ export interface ClientInfo {
  * Article enregistré dans la commande (Étape 2).
  *
  * Schéma aligné sur la table `articles_vetements` côté DB (champs
- * `type_vetement`, `couleur`, `couleur_libre`, `etat`,
+ * `catalogue_article_id`, `couleur`, `couleur_libre`, `etat`,
  * `description_etat`) + la table `commande_lignes` (`service_id`,
  * `prix_unitaire`, `quantite`). L'id est local (UUID généré côté
  * client) : il sert de clé React dans la liste d'articles avant
  * soumission finale à l'API.
  *
- * Le `service_nom` et `prix_unitaire` sont dénormalisés depuis la
- * table `services` au moment de l'ajout (snapshot) pour ne pas avoir
- * à refetch le service lors de l'affichage ultérieur (récap,
- * étiquettes).
+ * Depuis le LOT 15 (migration 014), l'ancien champ `type_vetement`
+ * (ENUM figé à 7 valeurs) est remplacé par `catalogue_article_id`
+ * (FK vers la table `catalogue_articles` qui contient 33+ articles
+ * illustrés). Le `catalogue_article_nom`, `catalogue_article_slug`
+ * et `catalogue_article_icone_url` sont dénormalisés au moment de la
+ * sélection (snapshot) pour ne pas avoir à refetch lors de l'affichage
+ * ultérieur (récap, étiquettes, ticket imprimable).
+ *
+ * Le `service_nom` et `prix_unitaire` sont également dénormalisés depuis
+ * la table `services` au moment de l'ajout (snapshot).
  */
 export interface ArticleInfo {
   /** UUID local (clé React). Sert aussi d'id temporaire avant INSERT. */
@@ -101,8 +106,14 @@ export interface ArticleInfo {
   service_id: string;
   /** Libellé du service au moment de l'ajout (snapshot). */
   service_nom: string;
-  /** Type de vêtement (enum DB). */
-  type_vetement: TypeVetement;
+  /** FK vers `catalogue_articles.id` (LOT 15). */
+  catalogue_article_id: string;
+  /** Nom du catalogue au moment de la sélection (snapshot, LOT 15). */
+  catalogue_article_nom: string;
+  /** Slug du catalogue au moment de la sélection (snapshot, LOT 15). */
+  catalogue_article_slug: string;
+  /** URL de l'icône du catalogue (snapshot, LOT 15). */
+  catalogue_article_icone_url: string;
   /** Couleur dominante (enum DB). */
   couleur: CouleurVetement;
   /** Texte libre obligatoire si `couleur === "autre"`. */
