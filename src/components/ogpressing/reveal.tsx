@@ -9,10 +9,15 @@
  *
  * L'animation ne se joue qu'une seule fois (utile pour les landing pages).
  * Respecte prefers-reduced-motion.
+ *
+ * 🚀 PERF : Utilise un IntersectionObserver SHARED (singleton) pour tous les
+ * Reveal de la page, au lieu d'un observer par instance. Sur la landing page
+ * (15+ Reveal), cela réduit de 15→1 le nombre d'observers actifs, ce qui
+ * allège le garbage collector et améliore les performances de scroll.
  */
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 interface RevealProps {
@@ -25,6 +30,66 @@ interface RevealProps {
   as?: "div" | "section" | "li" | "article";
 }
 
+/* ----------------------- Shared IntersectionObserver ----------------------- */
+
+interface RevealEntry {
+  node: Element;
+  setVisible: (v: boolean) => void;
+}
+
+/** Registre global des éléments observés (1 observer pour toute la page). */
+let observerInstance: IntersectionObserver | null = null;
+const registry = new Map<Element, RevealEntry>();
+
+function getSharedObserver(): IntersectionObserver {
+  if (observerInstance) return observerInstance;
+
+  observerInstance = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          const reg = registry.get(entry.target);
+          if (reg) {
+            reg.setVisible(true);
+            // Une fois révélé, on désenregistre l'élément (animation unique).
+            registry.delete(entry.target);
+            observerInstance?.unobserve(entry.target);
+          }
+        }
+      });
+    },
+    { threshold: 0.12, rootMargin: "0px 0px -40px 0px" }
+  );
+
+  return observerInstance;
+}
+
+function registerReveal(node: Element, setVisible: (v: boolean) => void): () => void {
+  const observer = getSharedObserver();
+  registry.set(node, { node, setVisible });
+  observer.observe(node);
+  return () => {
+    registry.delete(node);
+    observer.unobserve(node);
+  };
+}
+
+/* ----------------------- Prefers-reduced-motion store ----------------------- */
+// Détecte prefers-reduced-motion une seule fois (pas de re-render au scroll).
+
+function subscribeReducedMotion(callback: () => void): () => void {
+  if (typeof window === "undefined" || !window.matchMedia) return () => {};
+  const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+  mq.addEventListener("change", callback);
+  return () => mq.removeEventListener("change", callback);
+}
+function getReducedMotionSnapshot(): boolean {
+  if (typeof window === "undefined" || !window.matchMedia) return false;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/* ----------------------- Composant ----------------------- */
+
 export function Reveal({
   children,
   delay = 0,
@@ -33,41 +98,39 @@ export function Reveal({
 }: RevealProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
+  // SSR-safe : false côté serveur, valeur réelle côté client.
+  const reducedMotion = useSyncExternalStore(
+    subscribeReducedMotion,
+    getReducedMotionSnapshot,
+    () => false
+  );
 
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
 
-    // Note : les utilisateurs avec "prefers-reduced-motion" sont gérés
-    // automatiquement par les variantes `motion-reduce:*` du className
-    // (opacity-100 + translate-y-0 + transition-none). L'observer reste
-    // actif pour tous, mais l'animation est désactivée côté CSS si besoin.
+    // Si l'utilisateur préfère les animations réduites, on n'observe pas
+    // (le rendu utilise `reducedMotion` pour afficher immédiatement).
+    if (reducedMotion) {
+      return;
+    }
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            setVisible(true);
-            observer.unobserve(entry.target);
-          }
-        });
-      },
-      { threshold: 0.12, rootMargin: "0px 0px -40px 0px" }
-    );
+    return registerReveal(node, setVisible);
+  }, [reducedMotion]);
 
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
+  // État visuel effectif : visible OU reducedMotion (toujours visible sans anim).
+  const isShown = visible || reducedMotion;
 
   return (
     <Tag
       ref={ref as never}
-      style={{ transitionDelay: `${delay}ms` }}
+      style={{ transitionDelay: isShown && !reducedMotion ? `${delay}ms` : undefined }}
       className={cn(
-        "transition-all duration-700 ease-out will-change-transform motion-reduce:transition-none",
-        visible
+        "transition-all duration-700 ease-out will-change-transform",
+        !reducedMotion && "motion-reduce:transition-none",
+        isShown
           ? "translate-y-0 opacity-100"
-          : "translate-y-6 opacity-0 motion-reduce:translate-y-0 motion-reduce:opacity-100",
+          : "translate-y-6 opacity-0",
         className
       )}
     >
