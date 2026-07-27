@@ -74,12 +74,21 @@ interface ClientDetailPageProps {
   client: ClientDetail;
   commandes: CommandeListItem[];
   paiements: Paiement[];
+  /** Base path for navigation links. Defaults to "/admin".
+   *  For personnel variants, set to "/personnel/receptionniste" (or other role).
+   *  Links are constructed as `${basePath}/clients/{id}`, `${basePath}/commandes/{id}`, etc. */
+  basePath?: string;
+  /** When true, hides the "Modifier" buttons and "Nouvelle commande" button (read-only mode
+   *  for Caissier who can view but not edit). Default: false. */
+  readOnly?: boolean;
 }
 
 export function ClientDetailPage({
   client,
   commandes,
   paiements,
+  basePath = "/admin",
+  readOnly = false,
 }: ClientDetailPageProps) {
   // État local du client — mis à jour après chaque édition réussie.
   const [currentClient, setCurrentClient] = useState<ClientDetail>(client);
@@ -119,7 +128,7 @@ export function ClientDetailPage({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" asChild aria-label="Retour">
-            <Link href="/admin/clients">
+            <Link href={`${basePath}/clients`}>
               <ArrowLeft className="size-5" />
             </Link>
           </Button>
@@ -135,16 +144,18 @@ export function ClientDetailPage({
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <Button asChild>
             <Link
-              href={`/admin/commandes/nouvelle?client_id=${currentClient.id}`}
+              href={`${basePath}/commandes/nouvelle?client_id=${currentClient.id}`}
             >
               <Plus className="size-4" />
               Nouvelle commande
             </Link>
           </Button>
-          <Button variant="outline" onClick={() => setEditInfoOpen(true)}>
-            <Pencil className="size-4" />
-            Modifier
-          </Button>
+          {!readOnly && (
+            <Button variant="outline" onClick={() => setEditInfoOpen(true)}>
+              <Pencil className="size-4" />
+              Modifier
+            </Button>
+          )}
         </div>
       </div>
 
@@ -174,14 +185,16 @@ export function ClientDetailPage({
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
                 <CardTitle className="text-base">Coordonnées</CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setEditInfoOpen(true)}
-                >
-                  <Pencil className="size-3.5" />
-                  Modifier
-                </Button>
+                {!readOnly && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEditInfoOpen(true)}
+                  >
+                    <Pencil className="size-3.5" />
+                    Modifier
+                  </Button>
+                )}
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
                 <div className="flex items-center gap-3">
@@ -280,14 +293,16 @@ export function ClientDetailPage({
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
                 <CardTitle className="text-base">Préférences de lavage</CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setEditPrefsOpen(true)}
-                >
-                  <Pencil className="size-3.5" />
-                  Modifier
-                </Button>
+                {!readOnly && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEditPrefsOpen(true)}
+                  >
+                    <Pencil className="size-3.5" />
+                    Modifier
+                  </Button>
+                )}
               </CardHeader>
               <CardContent>
                 {!hasPreferences(currentClient.preferences_lavage) ? (
@@ -324,14 +339,16 @@ export function ClientDetailPage({
                   <StickyNote className="size-4 text-muted-foreground" />
                   Notes
                 </CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setEditNotesOpen(true)}
-                >
-                  <Pencil className="size-3.5" />
-                  Modifier
-                </Button>
+                {!readOnly && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEditNotesOpen(true)}
+                  >
+                    <Pencil className="size-3.5" />
+                    Modifier
+                  </Button>
+                )}
               </CardHeader>
               <CardContent>
                 {currentClient.notes ? (
@@ -376,7 +393,7 @@ export function ClientDetailPage({
                   </p>
                   <Button asChild className="mt-4" size="sm">
                     <Link
-                      href={`/admin/commandes/nouvelle?client_id=${currentClient.id}`}
+                      href={`${basePath}/commandes/nouvelle?client_id=${currentClient.id}`}
                     >
                       <Plus className="size-4" />
                       Créer la première commande
@@ -418,7 +435,7 @@ export function ClientDetailPage({
                           >
                             <td className="px-4 py-3">
                               <Link
-                                href={`/admin/commandes/${cmd.id}`}
+                                href={`${basePath}/commandes/${cmd.id}`}
                                 className="font-mono text-xs text-foreground group-hover:text-primary"
                               >
                                 {cmd.numero_commande}
@@ -453,7 +470,7 @@ export function ClientDetailPage({
                             </td>
                             <td className="px-4 py-3 text-right">
                               <Link
-                                href={`/admin/commandes/${cmd.id}`}
+                                href={`${basePath}/commandes/${cmd.id}`}
                                 className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
                               >
                                 Voir
@@ -471,7 +488,7 @@ export function ClientDetailPage({
                     {commandes.map((cmd) => (
                       <li key={cmd.id}>
                         <Link
-                          href={`/admin/commandes/${cmd.id}`}
+                          href={`${basePath}/commandes/${cmd.id}`}
                           className="block rounded-lg border bg-card p-3 text-sm transition-colors hover:bg-accent/50 active:bg-accent"
                         >
                           <div className="flex items-center justify-between">
@@ -582,7 +599,7 @@ export function ClientDetailPage({
                             </td>
                             <td className="px-4 py-3">
                               <Link
-                                href={`/admin/commandes/${p.commande_id}`}
+                                href={`${basePath}/commandes/${p.commande_id}`}
                                 className="font-mono text-xs text-foreground group-hover:text-primary"
                               >
                                 {commandeNumeroMap.get(p.commande_id) ??
@@ -637,7 +654,7 @@ export function ClientDetailPage({
                     {paiements.map((p) => (
                       <li key={p.id}>
                         <Link
-                          href={`/admin/commandes/${p.commande_id}`}
+                          href={`${basePath}/commandes/${p.commande_id}`}
                           className="block rounded-lg border bg-card p-3 text-sm transition-colors hover:bg-accent/50 active:bg-accent"
                         >
                           <div className="flex items-center justify-between gap-2">

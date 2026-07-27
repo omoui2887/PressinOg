@@ -90,7 +90,7 @@ async function fetchClientForWizard(id: string): Promise<ClientInfo | null> {
   }
 }
 
-export function CommandeWizard() {
+export function CommandeWizard({ basePath = "/admin" }: { basePath?: string } = {}) {
   const [state, dispatch] = useReducer(wizardReducer, initialState);
   // Pré-sélection client : true pendant le fetch du `?client_id=<id>`.
   const [preselecting, setPreselecting] = useState(false);
@@ -143,7 +143,7 @@ export function CommandeWizard() {
       {/* Header : titre + retour commandes */}
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" asChild aria-label="Retour aux commandes">
-          <Link href="/admin/commandes">
+          <Link href={`${basePath}/commandes`}>
             <ArrowLeft className="size-5" />
           </Link>
         </Button>

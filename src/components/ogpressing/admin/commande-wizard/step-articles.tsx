@@ -36,11 +36,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import {
   Minus,
   Package,
   Pencil,
   Plus,
+  Shirt,
   Trash2,
   X,
 } from "lucide-react";
@@ -57,13 +59,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { ArticleCatalogPicker } from "@/components/shared/article-catalog-picker";
 import { formatFCFA } from "@/lib/utils/format";
 import type {
   CouleurVetement,
   EtatVetement,
-  TypeVetement,
 } from "@/lib/types/database.types";
+import type { CatalogueArticle } from "@/lib/catalogue/catalogue-articles";
 
 import {
   COULEUR_LABELS,
@@ -71,7 +80,6 @@ import {
   ETAT_ICONS,
   ETAT_LABELS,
   ETAT_VARIANT,
-  TYPE_VETEMENT_LABELS,
 } from "./article-labels";
 import type { ArticleInfo, StepProps } from "./state";
 
@@ -89,9 +97,18 @@ interface ServiceItem {
   actif: boolean;
 }
 
+/** Article du catalogue sélectionné dans le picker (snapshot local). */
+interface SelectedCatalogueArticle {
+  id: string;
+  slug: string;
+  nom: string;
+  icone_url: string;
+}
+
 /** État local du formulaire d'ajout / édition d'article. */
 interface ArticleFormState {
-  type_vetement: TypeVetement;
+  /** Article du catalogue sélectionné (LOT 15). Null tant que non choisi. */
+  catalogue_article: SelectedCatalogueArticle | null;
   couleur: CouleurVetement;
   couleur_libre: string;
   etat: EtatVetement;
@@ -104,7 +121,6 @@ interface ArticleFormState {
 // Constantes dérivées des labels
 // ============================================================
 
-const TYPE_VETEMENT_VALUES = Object.keys(TYPE_VETEMENT_LABELS) as TypeVetement[];
 const COULEUR_VALUES = Object.keys(COULEUR_LABELS) as CouleurVetement[];
 const ETAT_VALUES = Object.keys(ETAT_LABELS) as EtatVetement[];
 
@@ -132,8 +148,8 @@ function CouleurSwatch({
 }
 
 /**
- * Génère un libellé lisible "Type Couleur" pour un article. Si la
- * couleur est "autre" et que `couleur_libre` est renseigné, on
+ * Génère un libellé lisible "Nom du catalogue Couleur" pour un article.
+ * Si la couleur est "autre" et que `couleur_libre` est renseigné, on
  * affiche le texte libre à la place du label "Autre".
  */
 function articleLabel(a: ArticleInfo): string {
@@ -141,7 +157,39 @@ function articleLabel(a: ArticleInfo): string {
     a.couleur === "autre" && a.couleur_libre
       ? a.couleur_libre
       : COULEUR_LABELS[a.couleur];
-  return `${TYPE_VETEMENT_LABELS[a.type_vetement]} ${couleurTxt}`;
+  return `${a.catalogue_article_nom} ${couleurTxt}`;
+}
+
+/**
+ * Affiche l'illustration d'un article du catalogue avec un fallback
+ * sur l'icône lucide `Shirt` si l'image ne charge pas. Utilisé dans
+ * le formulaire (carte de sélection) et dans la liste des articles.
+ */
+function ArticleIcon({
+  src,
+  alt,
+  className,
+}: {
+  src: string;
+  alt: string;
+  className?: string;
+}) {
+  const [errored, setErrored] = useState(false);
+  if (errored || !src) {
+    return <Shirt className={`text-muted-foreground ${className ?? ""}`} aria-hidden />;
+  }
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      width={48}
+      height={48}
+      loading="lazy"
+      unoptimized
+      onError={() => setErrored(true)}
+      className={className}
+    />
+  );
 }
 
 /**
@@ -168,11 +216,14 @@ export function StepArticles({ state, dispatch }: StepProps) {
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [servicesLoading, setServicesLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Dialog de sélection visuelle de l'article du catalogue (LOT 15.2).
+  const [pickerOpen, setPickerOpen] = useState(false);
 
-  // Défauts pré-sélectionnés pour saisie rapide (chemise / blanc / bon
-  // = cas le plus fréquent en pressing).
+  // Défauts pré-sélectionnés pour saisie rapide (blanc / bon = cas le
+  // plus fréquent en pressing). L'article du catalogue est laissé null
+  // tant que l'utilisateur ne l'a pas choisi via le picker visuel.
   const [form, setForm] = useState<ArticleFormState>({
-    type_vetement: "chemise",
+    catalogue_article: null,
     couleur: "blanc",
     couleur_libre: "",
     etat: "bon",
@@ -245,6 +296,11 @@ export function StepArticles({ state, dispatch }: StepProps) {
       toast.error("Sélectionnez un service");
       return;
     }
+    if (!form.catalogue_article) {
+      toast.error("Sélectionnez un article du catalogue");
+      setPickerOpen(true);
+      return;
+    }
     if (form.couleur === "autre" && !form.couleur_libre.trim()) {
       toast.error("Précisez la couleur (champ « Autre »)");
       return;
@@ -253,7 +309,10 @@ export function StepArticles({ state, dispatch }: StepProps) {
       id: editingId ?? genArticleId(),
       service_id: svc.id,
       service_nom: svc.nom,
-      type_vetement: form.type_vetement,
+      catalogue_article_id: form.catalogue_article.id,
+      catalogue_article_nom: form.catalogue_article.nom,
+      catalogue_article_slug: form.catalogue_article.slug,
+      catalogue_article_icone_url: form.catalogue_article.icone_url,
       couleur: form.couleur,
       couleur_libre:
         form.couleur === "autre" ? form.couleur_libre.trim() : undefined,
@@ -269,8 +328,8 @@ export function StepArticles({ state, dispatch }: StepProps) {
       dispatch({ type: "ADD_ARTICLE", article });
       toast.success("Article ajouté");
     }
-    // Reset du formulaire en conservant service_id + type_vetement pour
-    // permettre une saisie rapide d'articles similaires successifs.
+    // Reset du formulaire en conservant service_id + catalogue_article
+    // pour permettre une saisie rapide d'articles similaires successifs.
     setForm((f) => ({
       ...f,
       couleur: "blanc",
@@ -284,7 +343,12 @@ export function StepArticles({ state, dispatch }: StepProps) {
 
   function handleEdit(article: ArticleInfo) {
     setForm({
-      type_vetement: article.type_vetement,
+      catalogue_article: {
+        id: article.catalogue_article_id,
+        slug: article.catalogue_article_slug,
+        nom: article.catalogue_article_nom,
+        icone_url: article.catalogue_article_icone_url,
+      },
       couleur: article.couleur,
       couleur_libre: article.couleur_libre ?? "",
       etat: article.etat,
@@ -304,6 +368,7 @@ export function StepArticles({ state, dispatch }: StepProps) {
     setEditingId(null);
     setForm((f) => ({
       ...f,
+      catalogue_article: null,
       couleur: "blanc",
       couleur_libre: "",
       etat: "bon",
@@ -319,8 +384,27 @@ export function StepArticles({ state, dispatch }: StepProps) {
     toast.success("Article supprimé");
   }
 
+  // Sélection d'un article via le picker visuel (LOT 15.2).
+  // Met à jour le form.catalogue_article avec le snapshot (id, slug,
+  // nom, icone_url) puis ferme le Dialog.
+  function handleSelectCatalogueArticle(article: CatalogueArticle) {
+    setForm((f) => ({
+      ...f,
+      catalogue_article: {
+        id: article.id,
+        slug: article.slug,
+        nom: article.nom,
+        icone_url: article.icone_url,
+      },
+    }));
+    setPickerOpen(false);
+  }
+
   // --- Conditions d'activation du bouton Ajouter/Modifier ---
-  const canSubmit = Boolean(selectedService) && form.quantite >= 1;
+  const canSubmit =
+    Boolean(selectedService) &&
+    Boolean(form.catalogue_article) &&
+    form.quantite >= 1;
 
   return (
     <div className="space-y-5">
@@ -355,29 +439,61 @@ export function StepArticles({ state, dispatch }: StepProps) {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          {/* --- Type de vêtement --- */}
-          <div className="space-y-1.5">
-            <Label htmlFor="art-type">Type de vêtement</Label>
-            <Select
-              value={form.type_vetement}
-              onValueChange={(v) =>
-                setForm((f) => ({
-                  ...f,
-                  type_vetement: v as TypeVetement,
-                }))
-              }
+          {/* --- Article du catalogue (sélection visuelle, LOT 15) --- */}
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="art-catalogue">Article</Label>
+            <button
+              type="button"
+              id="art-catalogue"
+              onClick={() => setPickerOpen(true)}
+              className={`flex w-full items-center gap-3 rounded-md border bg-background p-3 text-left transition-colors hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-primary/30 ${
+                form.catalogue_article
+                  ? "border-primary/40 ring-1 ring-primary/20"
+                  : "border-input"
+              }`}
+              aria-haspopup="dialog"
+              aria-expanded={pickerOpen}
             >
-              <SelectTrigger id="art-type" className="w-full">
-                <SelectValue placeholder="Sélectionnez un type" />
-              </SelectTrigger>
-              <SelectContent>
-                {TYPE_VETEMENT_VALUES.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {TYPE_VETEMENT_LABELS[t]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              {form.catalogue_article ? (
+                <>
+                  <span className="flex size-12 shrink-0 items-center justify-center rounded-md bg-muted/40">
+                    <ArticleIcon
+                      src={form.catalogue_article.icone_url}
+                      alt={form.catalogue_article.nom}
+                      className="size-10 object-contain"
+                    />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-foreground">
+                      {form.catalogue_article.nom}
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      {form.catalogue_article.slug}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-xs font-medium text-primary">
+                    Changer
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="flex size-12 shrink-0 items-center justify-center rounded-md bg-muted/40">
+                    <Shirt className="size-6 text-muted-foreground" aria-hidden />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium text-foreground">
+                      Choisir un article
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      33 articles illustrés disponibles
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-xs font-medium text-primary">
+                    Ouvrir
+                  </span>
+                </>
+              )}
+            </button>
           </div>
 
           {/* --- Couleur --- */}
@@ -631,37 +747,47 @@ export function StepArticles({ state, dispatch }: StepProps) {
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1 space-y-1">
-                      {/* Ligne 1 : type + couleur + état */}
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium text-foreground">
-                          {articleLabel(article)}
-                        </span>
-                        <CouleurSwatch couleur={article.couleur} />
-                        <StatusBadge
-                          status={article.etat}
-                          label={`${ETAT_ICONS[article.etat]} ${ETAT_LABELS[article.etat]}`}
-                          variant={ETAT_VARIANT[article.etat]}
+                    <div className="flex min-w-0 flex-1 gap-3">
+                      {/* Illustration du catalogue (LOT 15) */}
+                      <span className="flex size-12 shrink-0 items-center justify-center rounded-md bg-muted/40">
+                        <ArticleIcon
+                          src={article.catalogue_article_icone_url}
+                          alt={article.catalogue_article_nom}
+                          className="size-10 object-contain"
                         />
+                      </span>
+                      <div className="min-w-0 flex-1 space-y-1">
+                        {/* Ligne 1 : nom du catalogue + couleur + état */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium text-foreground">
+                            {articleLabel(article)}
+                          </span>
+                          <CouleurSwatch couleur={article.couleur} />
+                          <StatusBadge
+                            status={article.etat}
+                            label={`${ETAT_ICONS[article.etat]} ${ETAT_LABELS[article.etat]}`}
+                            variant={ETAT_VARIANT[article.etat]}
+                          />
+                        </div>
+                        {/* Ligne 2 : service + quantité + sous-total */}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                          <span>{article.service_nom}</span>
+                          <span className="text-foreground">
+                            × {article.quantite}
+                          </span>
+                          <span className="font-semibold text-foreground">
+                            {formatFCFA(
+                              article.prix_unitaire * article.quantite
+                            )}
+                          </span>
+                        </div>
+                        {/* Ligne 3 : réserves (si présentes) */}
+                        {article.description_etat && (
+                          <p className="text-xs italic text-muted-foreground">
+                            📝 {article.description_etat}
+                          </p>
+                        )}
                       </div>
-                      {/* Ligne 2 : service + quantité + sous-total */}
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                        <span>{article.service_nom}</span>
-                        <span className="text-foreground">
-                          × {article.quantite}
-                        </span>
-                        <span className="font-semibold text-foreground">
-                          {formatFCFA(
-                            article.prix_unitaire * article.quantite
-                          )}
-                        </span>
-                      </div>
-                      {/* Ligne 3 : réserves (si présentes) */}
-                      {article.description_etat && (
-                        <p className="text-xs italic text-muted-foreground">
-                          📝 {article.description_etat}
-                        </p>
-                      )}
                     </div>
 
                     {/* Actions éditer / supprimer */}

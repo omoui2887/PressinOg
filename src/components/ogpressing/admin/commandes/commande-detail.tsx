@@ -74,6 +74,10 @@ import {
 
 interface CommandeDetailProps {
   commande: CommandeDetailData;
+  /** Base path for navigation links. Defaults to "/admin".
+   *  Links are constructed as `${basePath}/commandes` (back) and
+   *  `${basePath}/clients/{id}` (client detail). */
+  basePath?: string;
 }
 
 /** Options du Select de statut article (7 valeurs de l'enum). */
@@ -87,7 +91,7 @@ const STATUT_ARTICLE_OPTIONS = [
   { value: "livre", label: "Livré" },
 ];
 
-export function CommandeDetail({ commande }: CommandeDetailProps) {
+export function CommandeDetail({ commande, basePath = "/admin" }: CommandeDetailProps) {
   // Copie locale des articles pour refléter les mises à jour de statut
   // sans devoir refetch toute la commande.
   const [articles, setArticles] = useState(commande.articles);
@@ -156,7 +160,7 @@ export function CommandeDetail({ commande }: CommandeDetailProps) {
             asChild
             aria-label="Retour à la liste"
           >
-            <Link href="/admin/commandes">
+            <Link href={`${basePath}/commandes`}>
               <ArrowLeft className="size-5" />
             </Link>
           </Button>
@@ -222,7 +226,7 @@ export function CommandeDetail({ commande }: CommandeDetailProps) {
               <>
                 <div className="flex items-center justify-between gap-2">
                   <Link
-                    href={`/admin/clients/${commande.client.id}`}
+                    href={`${basePath}/clients/${commande.client.id}`}
                     className="font-medium text-foreground hover:text-primary hover:underline"
                   >
                     {commande.client.nom_complet}

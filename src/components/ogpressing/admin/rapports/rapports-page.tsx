@@ -69,7 +69,15 @@ const EMPTY_DATA: RapportsDataResponse = {
   remises_appliquees: [],
 };
 
-export function RapportsPage() {
+export function RapportsPage({
+  /** Affiche la section "Exports Excel (.xlsx)" (défaut: true).
+   *  Mettre à false pour les rôles en lecture seule sans export (ex : Manager
+   *  en attente de confirmation de la matrice de permissions, Comptable garde
+   *  les exports). */
+  showExports = true,
+}: {
+  showExports?: boolean;
+} = {}) {
   const [periode, setPeriode] = useState<PeriodeRapport>("aujourdhui");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
@@ -137,8 +145,10 @@ export function RapportsPage() {
         />
       </Card>
 
-      {/* Exports Excel */}
-      {(() => {
+      {/* Exports Excel — masqués si showExports=false (Manager en attente
+          confirmation, Comptable les garde) */}
+      {showExports &&
+        (() => {
         // Calcule la date/mois pour les exports basés sur la période courante
         const periodeCfg = computePeriode(periode, customStart, customEnd);
         const exportDate = periodeCfg.start.slice(0, 10); // YYYY-MM-DD
