@@ -4534,3 +4534,29 @@ Stage Summary:
   * Page transitions (layout-level) avec AnimatePresence sur les route groups
 
 - Lint : 0/0 ✅ | TypeScript : 0 erreur sur fichiers LOT 16 ✅ | Runtime : 3 pages testées 200 ✅ | agent-browser : 0 erreur ✅
+
+---
+Task ID: FIX-PREVIEW-BLANK
+Agent: main
+Task: Corriger le panneau de prévisualisation qui n'affichait rien.
+
+Work Log:
+- Diagnostic : le dev server (port 3000) n'était PAS en cours d'exécution. `curl localhost:3000` → HTTP 000 (connection refused). Aucun processus `next dev`/`dev-keeper` actif.
+- Cause racine : le sandbox tue tout l'arbre de processus d'une commande bash tool à sa sortie. Les méthodes `setsid + nohup + disown` seules ne suffisaient pas — le serveur mourait entre chaque commande.
+- Vérification que le code de la page est correct (pas un problème de blank page) :
+  - `src/app/(public)/page.tsx` importe HeroSection, ProblemSolutionSection, FeaturesSection, PricingSection, TestimonialsSection, InscriptionSection depuis `@/components/ogpressing/landing` (tous présents).
+  - `src/app/layout.tsx` + `(public)/layout.tsx` corrects (sticky footer pattern `min-h-screen flex flex-col`).
+  - HTML rendu = 396 211 octets, marqueurs présents : Hero (101), OgPressing (20), Fonctionnalités (4), Tarifs (4), Inscription (3). Aucune erreur dans dev.log.
+- Solution : lancement du dev server via le pattern **double-fork** `( setsid bash -c 'exec bun run dev ...' & )` qui détache réellement le processus (re-parenting vers PID 1 / caddy). Le serveur survit désormais entre les commandes bash.
+- Lancement également du `dev-keeper.ts` via le même pattern double-fork pour redémarrer automatiquement le dev server s'il plante.
+- Vérification E2E avec agent-browser :
+  - Page title : « OgPressing — Gestion professionnelle de pressings »
+  - Aucune erreur runtime/hydration.
+  - Snapshot confirme : header (nav Avant/Après, Fonctionnalités, Tarifs, Témoignages, Se connecter, S'inscrire), hero H1 « La gestion de votre pressing, simplifiée », mockup dashboard (Commandes du jour 38, Recette 142 500 FCFA, En production 23), footer (contentinfo) présent.
+  - Screenshot sauvegardé : `/home/z/my-project/screenshots/preview-landing.png` (77 Ko).
+- Routes vérifiées (HTTP 200) : `/`, `/login`, `/activation`.
+
+Stage Summary:
+- Le panneau de prévisualisation affichait vide UNIQUEMENT parce que le dev server n'était pas en vie — le code de la landing page était correct.
+- Fix appliqué : double-fork detach `( setsid bash -c 'exec ...' & )` pour `bun run dev` + `dev-keeper.ts`. Le serveur persiste maintenant entre les commandes et se relance auto en cas de crash.
+- La landing page OgPressing se rend correctement (hero, fonctionnalités, tarifs, témoignages, inscription, footer sticky).
