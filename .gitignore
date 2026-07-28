@@ -30,8 +30,12 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files (real secrets — never commit)
 .env*
+# Exceptions: template files for other developers ARE committed
+!.env.example
+!.env.local.example
+!.env.production.example
 
 # vercel
 .vercel
@@ -50,7 +54,14 @@ test
 prompt
 
 server.log
+
 # Skills directory
 /skills/
-# Local env (real secrets)
-.env.local
+
+# Private user uploads (PRD, specs, screenshots) — never commit
+/upload/
+/screenshots/
+/agent-ctx/
+
+# Tool result artifacts
+tool-results/

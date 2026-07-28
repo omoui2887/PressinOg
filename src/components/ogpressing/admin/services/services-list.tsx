@@ -13,12 +13,13 @@
  */
 "use client";
 
-import { Tag, Pencil } from "lucide-react";
+import { Sparkles, Pencil } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
 import {
   Table,
   TableBody,
@@ -65,17 +66,11 @@ export function ServicesList({
 
   if (services.length === 0) {
     return (
-      <Card className="flex flex-col items-center justify-center gap-3 p-12 text-center">
-        <span className="flex size-14 items-center justify-center rounded-full bg-muted">
-          <Tag className="size-7 text-muted-foreground" />
-        </span>
-        <div>
-          <p className="font-semibold text-foreground">Aucun service configuré</p>
-          <p className="text-sm text-muted-foreground">
-            Cliquez sur « Ajouter un service » pour commencer.
-          </p>
-        </div>
-      </Card>
+      <EmptyState
+        icon={Sparkles}
+        title="Aucun service"
+        description="Aucun service configuré. Ajoutez votre premier service."
+      />
     );
   }
 

@@ -36,6 +36,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Loader2, Send, CheckCircle2, AlertCircle } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -199,9 +200,28 @@ export function InscriptionForm() {
       reset();
       setSubmitted(true);
     } catch (err) {
-      setSubmitError(
-        err instanceof Error ? err.message : "Erreur inconnue. Réessayez."
-      );
+      // Pattern d'erreur : réseau vs métier (API FR) vs inconnu.
+      // On n'expose JAMAIS error.stack, JSON.stringify(error) ou codes SQL/Supabase.
+      let message: string;
+      if (
+        err instanceof TypeError &&
+        err.message.includes("fetch")
+      ) {
+        message = "Erreur réseau. Vérifiez votre connexion internet.";
+      } else if (
+        err instanceof Error &&
+        err.name === "NetworkError"
+      ) {
+        message = "Erreur réseau. Vérifiez votre connexion internet.";
+      } else if (err instanceof Error && err.message) {
+        // Message français renvoyé par l'API (erreur métier connue).
+        message = err.message;
+      } else {
+        console.error("[inscription] Erreur inattendue :", err);
+        message = "Une erreur est survenue. Veuillez réessayer.";
+      }
+      setSubmitError(message);
+      toast.error(message);
     }
   }
 

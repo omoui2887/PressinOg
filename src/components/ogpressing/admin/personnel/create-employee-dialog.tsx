@@ -221,8 +221,27 @@ export function CreateEmployeeDialog({
           : "Invitation envoyée"
       );
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Erreur inattendue";
-      toast.error(msg);
+      // Pattern d'erreur : réseau vs métier (API FR) vs inconnu.
+      // On n'expose JAMAIS error.stack, JSON.stringify(error) ou codes SQL/Supabase.
+      let message: string;
+      if (
+        err instanceof TypeError &&
+        err.message.includes("fetch")
+      ) {
+        message = "Erreur réseau. Vérifiez votre connexion internet.";
+      } else if (
+        err instanceof Error &&
+        err.name === "NetworkError"
+      ) {
+        message = "Erreur réseau. Vérifiez votre connexion internet.";
+      } else if (err instanceof Error && err.message) {
+        // Message français renvoyé par l'API (erreur métier connue).
+        message = err.message;
+      } else {
+        console.error("[create-employee] Erreur inattendue :", err);
+        message = "Une erreur est survenue. Veuillez réessayer.";
+      }
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }

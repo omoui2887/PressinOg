@@ -4560,3 +4560,51 @@ Stage Summary:
 - Le panneau de prévisualisation affichait vide UNIQUEMENT parce que le dev server n'était pas en vie — le code de la landing page était correct.
 - Fix appliqué : double-fork detach `( setsid bash -c 'exec ...' & )` pour `bun run dev` + `dev-keeper.ts`. Le serveur persiste maintenant entre les commandes et se relance auto en cas de crash.
 - La landing page OgPressing se rend correctement (hero, fonctionnalités, tarifs, témoignages, inscription, footer sticky).
+
+---
+Task ID: 14.2-REAPPLY
+Agent: general-purpose (LOT 14.2 re-apply after filter-repo)
+Task: Re-apply EmptyState + French error message modifications lost during git history purge
+
+Work Log:
+- Lecture du worklog.md : la section Task 14.2 n'était plus présente (perdue lors du git-filter-repo purge car non committée). Le blueprint a été reconstitué à partir des instructions de la tâche 14.2-REAPPLY (liste exacte des 9 listes + 7 formulaires + pattern d'erreur réseau/métier/inconnu).
+- Lecture du composant partagé `src/components/shared/empty-state.tsx` pour confirmer l'API : props `icon?: LucideIcon` (default Inbox), `title: string`, `description?: string`, `action?: ReactNode`, `compact?: boolean`, `className?`. Composant de présentation (pas de "use client"). Déjà exporté depuis `@/components/shared` barrel.
+
+- **SECTION A — EmptyState sur 9 listes** (remplacement des empty-states inline par `<EmptyState>` du shared, avec icône Lucide contextuelle + titre + description FR spec) :
+  1. `src/components/ogpressing/admin/commandes/commandes-list.tsx` → icône `ClipboardList`, "Aucune commande" / "Aucune commande n'a été trouvée. Cliquez sur « Nouvelle commande » pour en créer une." (import `Package` remplacé par `ClipboardList`, import `EmptyState` ajouté)
+  2. `src/components/ogpressing/admin/clients/clients-list.tsx` → icône `Users`, "Aucun client" / "Aucun client enregistré pour le moment." (import `Package` remplacé par `Users`)
+  3. `src/components/ogpressing/admin/personnel/personnel-list.tsx` → icône `UserCog` (conservée), "Aucun employé" / "Aucun membre du personnel n'a été ajouté." (import `EmptyState` ajouté, `UserCog` déjà présent)
+  4. `src/components/ogpressing/admin/stock/stock-list.tsx` → icône `PackageOpen`, "Aucun article en stock" / "Le stock de biodétergents est vide." (import `Package` remplacé par `PackageOpen`, `EmptyState` ajouté)
+  5. `src/components/ogpressing/admin/services/services-list.tsx` → icône `Sparkles`, "Aucun service" / "Aucun service configuré. Ajoutez votre premier service." (import `Tag` remplacé par `Sparkles`)
+  6. `src/components/ogpressing/super-admin/pressings/pressings-table.tsx` → icône `Store`, "Aucun pressing" / "Aucun pressing enregistré." (import `Building2` remplacé par `Store`, `Package` conservé car utilisé dans la vue mobile)
+  7. `src/components/ogpressing/super-admin/abonnements/abonnements-table.tsx` → icône `CreditCard`, "Aucun abonnement" / "Aucun abonnement actif." (import `Package` remplacé par `CreditCard`, `Building2` conservé car utilisé dans la vue mobile)
+  8. `src/components/ogpressing/super-admin/demandes/demandes-table.tsx` → icône `Inbox` (conservée), "Aucune demande" / "Aucune demande d'inscription en attente."
+  9. `src/components/ogpressing/super-admin/catalogue/catalogue-page.tsx` → icône `Tags`, "Aucun article dans le catalogue" / "Ajoutez votre premier article pour démarrer le catalogue global." + `action` bouton « Ajouter un article » (`Package` remplacé par `Tags`, `EmptyState` ajouté, `Card` conservé pour CatalogueCard + CatalogueErrorState)
+
+- **SECTION B — Gestion d'erreurs FR sur 7 formulaires** (pattern réseau vs métier vs inconnu, via `toast.error()`, jamais `error.stack` / `JSON.stringify` / codes SQL) :
+  * Pattern appliqué dans chaque catch :
+    - `error instanceof TypeError && error.message.includes("fetch")` → "Erreur réseau. Vérifiez votre connexion internet."
+    - `error instanceof Error && error.name === "NetworkError"` → "Erreur réseau. Vérifiez votre connexion internet."
+    - `error instanceof Error && error.message` → message métier FR (renvoyé par l'API) affiché tel quel
+    - sinon → `console.error("[context] Erreur inattendue :", err)` + "Une erreur est survenue. Veuillez réessayer."
+  1. `src/components/ogpressing/landing/inscription-form.tsx` — catch existant refactorisé avec le pattern + ajout `toast` depuis sonner (l'erreur inline via `setSubmitError` est conservée pour le UX existant, ET `toast.error(message)` est appelé pour satisfaire le spec)
+  2. `src/app/(public)/login/page.tsx` — `onSubmit` entièrement wrappé dans `try/catch` (couvre `signInWithPassword` + les requêtes `super_admins` / `personnel`). `setGlobalError` conservé pour les erreurs métier existantes (auth incorrect, compte désactivé, compte non reconnu). Le catch gère réseau/métier/inconnu et alimente à la fois `setGlobalError` et `toast.error`.
+  3. `src/components/ogpressing/admin/commande-wizard/step-confirmation.tsx` — catch du POST /api/admin/commandes refactorisé : `setErrorMsg(message)` (affiché dans la phase error) + `toast.error(message)`. L'ancien toast générique "Erreur lors de la création de la commande" est supprimé au profit du message contextualisé.
+  4. `src/components/ogpressing/admin/personnel/create-employee-dialog.tsx` — catch du POST /api/admin/personnel refactorisé (anciennement `msg = err instanceof Error ? err.message : "Erreur inattendue"`).
+  5. `src/components/ogpressing/admin/personnel/edit-employee-dialog.tsx` — catch du PATCH /api/admin/personnel/[id] refactorisé (même ancien pattern).
+  6. `src/components/ogpressing/admin/services/add-service-dialog.tsx` — catch du POST /api/admin/services refactorisé (anciennement `toast.error("Échec de la création", { description: ... })`).
+  7. `src/components/ogpressing/admin/services/edit-service-dialog.tsx` — catch du PATCH /api/admin/services/[id] refactorisé (anciennement `toast.error("Échec de la modification", { description: ... })`).
+
+- **Vérifications** :
+  * `bun run lint` → EXIT_CODE=0, 0 errors, 0 warnings ✅
+  * Vérifications post-édition : aucun import inutilisé (Package, Building2, Tag retirés des imports là où ils n'étaient utilisés que dans l'empty-state inline ; UserCog, Inbox, Card, Package conservés là où ils sont utilisés ailleurs dans le fichier)
+  * Vérification qu'aucun empty-state inline résiduel avec `Package className="size-7"` ou `Building2 className="size-7"` ne subsiste dans les 9 fichiers → OK
+  * Les handlers internes de `abonnements-table.tsx` (`changerPlan`, `suspendre`) n'étaient PAS dans la liste des 7 formulaires à modifier — laissés intacts (leur pattern ancien `err instanceof Error ? err.message : "Erreur inattendue"` est conservé, hors scope LOT 14.2).
+
+Stage Summary:
+- 16 fichiers re-modifiés (9 listes + 7 formulaires) :
+  * Listes : commandes-list.tsx, clients-list.tsx, personnel-list.tsx, stock-list.tsx, services-list.tsx, pressings-table.tsx, abonnements-table.tsx, demandes-table.tsx, catalogue-page.tsx
+  * Formulaires : inscription-form.tsx, login/page.tsx, step-confirmation.tsx, create-employee-dialog.tsx, edit-employee-dialog.tsx, add-service-dialog.tsx, edit-service-dialog.tsx
+- Aucun fichier n'a nécessité de re-création (les `not-found.tsx`, `error.tsx`, `loading.tsx` existaient déjà et n'ont pas été touchés).
+- Lint : 0/0 ✅ | TypeScript : aucune nouvelle erreur introduite (lint ESLint englobe les règles @typescript-eslint).
+- Aucune modification n'a été impossible à ré-appliquer : toutes les 16 cibles ont pu être éditées proprement.

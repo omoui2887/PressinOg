@@ -663,13 +663,29 @@ export function StepConfirmation({ state, dispatch }: StepProps) {
       setPhase("success");
       toast.success("✅ Commande créée avec succès");
     } catch (e) {
+      // Pattern d'erreur : réseau vs métier (API FR) vs inconnu.
+      // On n'expose JAMAIS error.stack, JSON.stringify(error) ou codes SQL/Supabase.
+      let message: string;
+      if (
+        e instanceof TypeError &&
+        e.message.includes("fetch")
+      ) {
+        message = "Erreur réseau. Vérifiez votre connexion internet.";
+      } else if (
+        e instanceof Error &&
+        e.name === "NetworkError"
+      ) {
+        message = "Erreur réseau. Vérifiez votre connexion internet.";
+      } else if (e instanceof Error && e.message) {
+        // Message français renvoyé par l'API (erreur métier connue).
+        message = e.message;
+      } else {
+        console.error("[step-confirmation] Erreur inattendue :", e);
+        message = "Une erreur est survenue. Veuillez réessayer.";
+      }
       setPhase("error");
-      setErrorMsg(
-        e instanceof Error
-          ? e.message
-          : "Erreur inconnue lors de la création de la commande."
-      );
-      toast.error("Erreur lors de la création de la commande");
+      setErrorMsg(message);
+      toast.error(message);
     }
   }
 
