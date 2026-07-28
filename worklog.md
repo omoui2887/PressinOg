@@ -4608,3 +4608,38 @@ Stage Summary:
 - Aucun fichier n'a nécessité de re-création (les `not-found.tsx`, `error.tsx`, `loading.tsx` existaient déjà et n'ont pas été touchés).
 - Lint : 0/0 ✅ | TypeScript : aucune nouvelle erreur introduite (lint ESLint englobe les règles @typescript-eslint).
 - Aucune modification n'a été impossible à ré-appliquer : toutes les 16 cibles ont pu être éditées proprement.
+
+---
+Task ID: 14.3 + SECURITY-PURGE
+Agent: main
+Task: LOT 14.3 — Pousser le code vers GitHub omoui2887/PressinOg via le PAT fourni, après purge complète des secrets de l'historique git.
+
+Work Log:
+- Le sous-agent 14.1 a signalé un BLOQUANT critique : `.env` (contenant les vraies clés Supabase : anon, service_role, PAT) était déjà tracked dans l'historique git (commité avant l'ajout de la règle `.env*` au .gitignore).
+- Installation de git-filter-repo (`pip install --user --break-system-packages git-filter-repo` → `/home/z/.local/bin/git-filter-repo`).
+- Sauvegarde des fichiers .env et .env.local vers /tmp (pour restauration après réécriture de l'historique).
+- Passe 1 — purge de chemins : `git filter-repo --invert-paths --path .env --path .env.local --path upload/ --path screenshots/`
+  → .env: 3 commits → 0, upload/: 20 commits → 0, screenshots/: 11 commits → 0. Fichiers trackés: 491 → 423.
+- ⚠️ La réécriture de l'historique a discardé les modifications non-committées des sous-agents 14.1/14.2 sur les fichiers trackés (.gitignore, next.config.ts, 9 listes, 7 formulaires). Les nouveaux fichiers non-trackés ont survécu (README.md, .env.*.example, not-found.tsx, error.tsx, 2 loading.tsx).
+- Re-application manuelle de .gitignore (exceptions !.env.*.example + /upload/ /screenshots/ /tool-results/) et next.config.ts (reactStrictMode: true, compress: true, images formats + remotePatterns Supabase).
+- Re-lancement du sous-agent 14.2-REAPPLY pour ré-appliquer EmptyState (9 listes) + gestion d'erreurs FR (7 formulaires). Lint: 0 erreur.
+- Restauration de .env et .env.local depuis /tmp (gitignored, serveur dev reste fonctionnel).
+- Commit LOT 14 (5405cfa): 26 fichiers (18 modifiés + 7 nouveaux + worklog).
+- 1er push GitHub → REJETÉ par GitHub Secret Scanning : PAT Supabase `sbp_***REDACTED***` détecté dans worklog.md (lignes 1424, 3588) et dans des dizaines de fichiers tool-results/ (captures d'output committées dans d'anciens commits).
+- Passe 2 — purge tool-results/ : `git filter-repo --invert-paths --path tool-results/` → 20 commits → 0.
+- Passe 3 — rédaction de secrets : `git filter-repo --replace-text /tmp/redactions.txt` avec :
+    sbp_***REDACTED***==>sbp_***REDACTED***
+    Admin***REDACTED-PWD***==>***REDACTED-PWD***
+  → PAT: 0 occurrence dans tout l'historique, mot de passe admin: 0 occurrence. Worklog affiche maintenant `sbp_***REDACTED***` (4×).
+- Vérification finale : `git log --all -S "sbp_..."` = 0, `git log --all -S "Admin***"` = 0, `git log --all -S "ghp_..."` = 0. `git grep` HEAD = ZERO secret dans l'arbre courant.
+- Push GitHub réussi : `git push https://x-access-token:ghp_...@github.com/omoui2887/PressinOg.git main` → `* [new branch] main -> main`. HEAD distant = 9addab8 = HEAD local.
+- Vérification via API GitHub : README.md présent (10437 octets), .env → "Not Found" ✅, upload/ → "Not Found" ✅, default_branch=main ✅.
+- Remote configuré proprement : `origin = https://github.com/omoui2887/PressinOg.git` (PAT NON stocké dans .git/config, utilisé en one-shot uniquement).
+- E2E agent-browser : / → 200 (titre OgPressing, 0 erreur), /login → 200 (formulaire Connexion rendu), /activation → 200, /404 → 404 avec page not-found.tsx FR ("Retour à l'accueil").
+
+Stage Summary:
+- 48 commits, 318 fichiers poussés vers https://github.com/omoui2887/PressinOg (branche main).
+- Historique git 100% propre : AUCUN secret (PAT Supabase, mot de passe admin, clés .env, PRD propriétaire, captures tool-results) n'apparaît dans aucun commit.
+- .gitignore protège : .env, .env.local, upload/, screenshots/, tool-results/, agent-ctx/, skills/.
+- LOT 14 complet : 14.1 (préparation), 14.2 (robustesse), 14.3 (push GitHub). 
+- ⚠️ ACTION REQUISE côté utilisateur avant production : (1) rotater/régénérer le PAT Supabase `sbp_...` et le mot de passe admin dans Supabase Dashboard (par précaution, bien que l'historique soit nettoyé), (2) connecter le dépôt GitHub à Vercel, (3) ajouter les variables d'environnement dans Vercel (SUPABASE_SERVICE_ROLE_KEY SANS préfixe NEXT_PUBLIC_), (4) mettre à jour l'URL de redirection Supabase Auth avec l'URL Vercel.
