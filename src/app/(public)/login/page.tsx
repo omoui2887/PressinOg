@@ -155,92 +155,117 @@ export default function LoginPage() {
     setGlobalError("");
     const supabase = getSupabaseBrowser();
 
-    // 1. Authentification Supabase
-    const { data, error: authError } = await supabase.auth.signInWithPassword({
-      email: values.email.trim().toLowerCase(),
-      password: values.password,
-    });
+    try {
+      // 1. Authentification Supabase
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email: values.email.trim().toLowerCase(),
+        password: values.password,
+      });
 
-    if (authError || !data.user) {
-      // Message clair, sans jargon technique (ex : ne pas exposer "Invalid login credentials")
-      setGlobalError("Email ou mot de passe incorrect.");
-      return;
-    }
+      if (authError || !data.user) {
+        // Message clair, sans jargon technique (ex : ne pas exposer "Invalid login credentials")
+        setGlobalError("Email ou mot de passe incorrect.");
+        return;
+      }
 
-    const userId = data.user.id;
+      const userId = data.user.id;
 
-    // 2. Déterminer le rôle pour la redirection.
-    //    RLS : l'utilisateur peut lire sa propre ligne dans super_admins / personnel.
-    //    On lance les 2 requêtes en parallèle pour réduire la latence.
-    const [superAdminRes, personnelRes] = await Promise.all([
-      supabase
-        .from("super_admins")
-        .select("id")
-        .eq("user_id", userId)
-        .eq("actif", true)
-        .maybeSingle(),
-      supabase
-        .from("personnel")
-        .select(
-          "id, role, actif, statut_compte, mot_de_passe_temporaire"
-        )
-        .eq("user_id", userId)
-        .maybeSingle(),
-    ]);
+      // 2. Déterminer le rôle pour la redirection.
+      //    RLS : l'utilisateur peut lire sa propre ligne dans super_admins / personnel.
+      //    On lance les 2 requêtes en parallèle pour réduire la latence.
+      const [superAdminRes, personnelRes] = await Promise.all([
+        supabase
+          .from("super_admins")
+          .select("id")
+          .eq("user_id", userId)
+          .eq("actif", true)
+          .maybeSingle(),
+        supabase
+          .from("personnel")
+          .select(
+            "id, role, actif, statut_compte, mot_de_passe_temporaire"
+          )
+          .eq("user_id", userId)
+          .maybeSingle(),
+      ]);
 
-    // 2.a Super Admin actif
-    if (superAdminRes.data) {
-      toast.success("Bienvenue, Super Admin !");
-      // Hard navigation via window.location.assign (et non router.push) :
-      // garantit que le middleware voie le cookie de session fraîchement
-      // posé (évite les race conditions Supabase + Next.js App Router) et
-      // contourne le blocage cross-origin des fetchs RSC dans le preview
-      // iframe. On utilise .assign() plutôt que `window.location.href = ...`
-      // pour satisfaire la règle ESLint react-hooks/immutability.
-      window.location.assign("/super-admin/dashboard");
-      return;
-    }
+      // 2.a Super Admin actif
+      if (superAdminRes.data) {
+        toast.success("Bienvenue, Super Admin !");
+        // Hard navigation via window.location.assign (et non router.push) :
+        // garantit que le middleware voie le cookie de session fraîchement
+        // posé (évite les race conditions Supabase + Next.js App Router) et
+        // contourne le blocage cross-origin des fetchs RSC dans le preview
+        // iframe. On utilise .assign() plutôt que `window.location.href = ...`
+        // pour satisfaire la règle ESLint react-hooks/immutability.
+        window.location.assign("/super-admin/dashboard");
+        return;
+      }
 
-    // 2.b Personnel
-    const personnel: PersonnelRow | null = personnelRes.data as
-      | PersonnelRow
-      | null;
+      // 2.b Personnel
+      const personnel: PersonnelRow | null = personnelRes.data as
+        | PersonnelRow
+        | null;
 
-    if (personnel) {
-      // Compte désactivé → on déconnecte et on bloque
+      if (personnel) {
+        // Compte désactivé → on déconnecte et on bloque
+        if (
+          personnel.actif === false ||
+          personnel.statut_compte === "desactive"
+        ) {
+          await supabase.auth.signOut();
+          setGlobalError(
+            "Votre compte a été désactivé, contactez votre administrateur."
+          );
+          return;
+        }
+
+        // Mot de passe temporaire → changement obligatoire avant dashboard
+        if (personnel.mot_de_passe_temporaire === true) {
+          toast.info(
+            "Pour votre première connexion, veuillez changer votre mot de passe."
+          );
+          window.location.assign("/personnel/changer-mot-de-passe");
+          return;
+        }
+
+        // Redirection selon le rôle
+        const target = dashboardForRole(personnel.role);
+        toast.success("Connexion réussie !");
+        // Hard navigation — voir commentaire ci-dessus (super admin).
+        window.location.assign(target);
+        return;
+      }
+
+      // 3. Aucune correspondance — compte auth mais pas de ligne métier.
+      await supabase.auth.signOut();
+      setGlobalError(
+        "Compte non reconnu, contactez votre administrateur."
+      );
+    } catch (err) {
+      // Pattern d'erreur : réseau vs métier (API FR) vs inconnu.
+      // On n'expose JAMAIS error.stack, JSON.stringify(error) ou codes SQL/Supabase.
+      let message: string;
       if (
-        personnel.actif === false ||
-        personnel.statut_compte === "desactive"
+        err instanceof TypeError &&
+        err.message.includes("fetch")
       ) {
-        await supabase.auth.signOut();
-        setGlobalError(
-          "Votre compte a été désactivé, contactez votre administrateur."
-        );
-        return;
+        message = "Erreur réseau. Vérifiez votre connexion internet.";
+      } else if (
+        err instanceof Error &&
+        err.name === "NetworkError"
+      ) {
+        message = "Erreur réseau. Vérifiez votre connexion internet.";
+      } else if (err instanceof Error && err.message) {
+        // Message français renvoyé par l'API (erreur métier connue).
+        message = err.message;
+      } else {
+        console.error("[login] Erreur inattendue :", err);
+        message = "Une erreur est survenue. Veuillez réessayer.";
       }
-
-      // Mot de passe temporaire → changement obligatoire avant dashboard
-      if (personnel.mot_de_passe_temporaire === true) {
-        toast.info(
-          "Pour votre première connexion, veuillez changer votre mot de passe."
-        );
-        window.location.assign("/personnel/changer-mot-de-passe");
-        return;
-      }
-
-      // Redirection selon le rôle
-      const target = dashboardForRole(personnel.role);
-      toast.success("Connexion réussie !");
-      // Hard navigation — voir commentaire ci-dessus (super admin).
-      window.location.assign(target);
-      return;
+      setGlobalError(message);
+      toast.error(message);
     }
-
-    // 3. Aucune correspondance — compte auth mais pas de ligne métier.
-    await supabase.auth.signOut();
-    setGlobalError(
-      "Compte non reconnu, contactez votre administrateur."
-    );
   }
 
   /* -------------------- Rendu -------------------- */

@@ -110,9 +110,27 @@ export function AddServiceDialog({
       onOpenChange(false);
       onCreated?.();
     } catch (err) {
-      toast.error("Échec de la création", {
-        description: err instanceof Error ? err.message : "Erreur inconnue",
-      });
+      // Pattern d'erreur : réseau vs métier (API FR) vs inconnu.
+      // On n'expose JAMAIS error.stack, JSON.stringify(error) ou codes SQL/Supabase.
+      let message: string;
+      if (
+        err instanceof TypeError &&
+        err.message.includes("fetch")
+      ) {
+        message = "Erreur réseau. Vérifiez votre connexion internet.";
+      } else if (
+        err instanceof Error &&
+        err.name === "NetworkError"
+      ) {
+        message = "Erreur réseau. Vérifiez votre connexion internet.";
+      } else if (err instanceof Error && err.message) {
+        // Message français renvoyé par l'API (erreur métier connue).
+        message = err.message;
+      } else {
+        console.error("[add-service] Erreur inattendue :", err);
+        message = "Une erreur est survenue. Veuillez réessayer.";
+      }
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }

@@ -15,6 +15,7 @@
 
 import { Phone, Mail, UserCog, CalendarDays } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
 import {
   type Employe,
   RoleBadge,
@@ -42,15 +43,11 @@ export function PersonnelList({ employes, loading, onUpdated }: PersonnelListPro
 
   if (employes.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
-        <span className="flex size-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
-          <UserCog className="size-7" />
-        </span>
-        <p className="mt-3 font-medium text-foreground">Aucun employé trouvé</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Modifiez vos filtres ou ajoutez un nouvel employé.
-        </p>
-      </div>
+      <EmptyState
+        icon={UserCog}
+        title="Aucun employé"
+        description="Aucun membre du personnel n'a été ajouté."
+      />
     );
   }
 

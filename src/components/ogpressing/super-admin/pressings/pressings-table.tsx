@@ -15,7 +15,7 @@
 "use client";
 
 import {
-  Building2,
+  Store,
   MapPin,
   CalendarDays,
   Users,
@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/shared/empty-state";
 import {
   PlanBadge,
   StatutPressingBadge,
@@ -62,15 +63,11 @@ export function PressingsTable({ pressings, loading, onSelect }: PressingsTableP
 
   if (pressings.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
-        <span className="flex size-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
-          <Building2 className="size-7" />
-        </span>
-        <p className="mt-3 font-medium text-foreground">Aucun pressing trouvé</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Modifiez votre recherche pour afficher d&apos;autres pressings.
-        </p>
-      </div>
+      <EmptyState
+        icon={Store}
+        title="Aucun pressing"
+        description="Aucun pressing enregistré."
+      />
     );
   }
 

@@ -14,6 +14,7 @@ import { CalendarDays, Phone, MapPin, Inbox, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/shared";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
 import {
   STATUT_LABELS,
   STATUT_VARIANTS,
@@ -43,18 +44,11 @@ export function DemandesTable({
 
   if (demandes.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
-        <span className="flex size-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
-          <Inbox className="size-7" />
-        </span>
-        <p className="mt-3 font-medium text-foreground">
-          Aucune demande trouvée
-        </p>
-        <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-          Modifiez vos filtres ou patientez — les nouvelles demandes déposées
-          sur la landing page apparaîtront ici.
-        </p>
-      </div>
+      <EmptyState
+        icon={Inbox}
+        title="Aucune demande"
+        description="Aucune demande d'inscription en attente."
+      />
     );
   }
 

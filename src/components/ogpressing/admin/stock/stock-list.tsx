@@ -10,10 +10,11 @@
  */
 "use client";
 
-import { Package, AlertTriangle } from "lucide-react";
+import { PackageOpen, AlertTriangle } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
 import {
   Table,
   TableBody,
@@ -54,17 +55,11 @@ export function StockList({ produits, loading, onMouvement, onEdit }: StockListP
 
   if (produits.length === 0) {
     return (
-      <Card className="flex flex-col items-center justify-center gap-3 p-12 text-center">
-        <span className="flex size-14 items-center justify-center rounded-full bg-muted">
-          <Package className="size-7 text-muted-foreground" />
-        </span>
-        <div>
-          <p className="font-semibold text-foreground">Aucun produit en stock</p>
-          <p className="text-sm text-muted-foreground">
-            Cliquez sur « Ajouter un produit » pour commencer à suivre vos biodétergents.
-          </p>
-        </div>
-      </Card>
+      <EmptyState
+        icon={PackageOpen}
+        title="Aucun article en stock"
+        description="Le stock de biodétergents est vide."
+      />
     );
   }
 

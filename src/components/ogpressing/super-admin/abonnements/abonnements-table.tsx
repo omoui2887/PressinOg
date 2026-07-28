@@ -33,11 +33,12 @@ import {
   CalendarX,
   Wallet,
   MapPin,
-  Package,
+  CreditCard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -354,18 +355,11 @@ export function AbonnementsTable({
 
   if (abonnements.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
-        <span className="flex size-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
-          <Package className="size-7" />
-        </span>
-        <p className="mt-3 font-medium text-foreground">
-          Aucun abonnement trouvé
-        </p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Modifiez vos filtres ou attendez qu&apos;un pressing active son
-          abonnement.
-        </p>
-      </div>
+      <EmptyState
+        icon={CreditCard}
+        title="Aucun abonnement"
+        description="Aucun abonnement actif."
+      />
     );
   }
 

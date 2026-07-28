@@ -23,11 +23,12 @@ import {
   ArrowRight,
   Calendar,
   Clock,
-  Package,
+  ClipboardList,
   Phone,
   User,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { formatFCFA, formatDateOnly } from "@/lib/utils/format";
 import {
@@ -59,17 +60,11 @@ export function CommandesList({ commandes, loading, basePath = "/admin" }: Comma
 
   if (commandes.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
-        <span className="flex size-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
-          <Package className="size-7" />
-        </span>
-        <p className="mt-3 font-medium text-foreground">
-          Aucune commande trouvée
-        </p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Modifiez votre recherche ou créez une nouvelle commande.
-        </p>
-      </div>
+      <EmptyState
+        icon={ClipboardList}
+        title="Aucune commande"
+        description="Aucune commande n'a été trouvée. Cliquez sur « Nouvelle commande » pour en créer une."
+      />
     );
   }
 

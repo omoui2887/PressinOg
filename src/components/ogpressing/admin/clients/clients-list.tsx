@@ -22,10 +22,11 @@ import {
   ShoppingBag,
   MapPin,
   Phone,
-  Package,
+  Users,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
 import { cn } from "@/lib/utils";
 
 export interface ClientEnrichi {
@@ -89,15 +90,11 @@ export function ClientsList({ clients, loading, basePath = "/admin" }: ClientsLi
 
   if (clients.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
-        <span className="flex size-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
-          <Package className="size-7" />
-        </span>
-        <p className="mt-3 font-medium text-foreground">Aucun client trouvé</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Modifiez votre recherche ou ajoutez un nouveau client.
-        </p>
-      </div>
+      <EmptyState
+        icon={Users}
+        title="Aucun client"
+        description="Aucun client enregistré pour le moment."
+      />
     );
   }
 

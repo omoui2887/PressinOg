@@ -33,7 +33,7 @@ import {
   Shirt,
   Plus,
   Pencil,
-  Package,
+  Tags,
   RefreshCw,
   AlertCircle,
 } from "lucide-react";
@@ -43,6 +43,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
 import { cn } from "@/lib/utils";
 import { getIconForCategorie } from "@/lib/catalogue/catalogue-articles";
 import {
@@ -422,20 +423,16 @@ function CatalogueErrorState({
 
 function CatalogueEmptyState({ onAdd }: { onAdd: () => void }) {
   return (
-    <Card className="flex flex-col items-center justify-center gap-3 p-12 text-center">
-      <span className="flex size-14 items-center justify-center rounded-full bg-muted">
-        <Package className="size-7 text-muted-foreground" />
-      </span>
-      <div>
-        <p className="font-semibold text-foreground">Aucun article au catalogue</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Ajoutez votre premier article pour démarrer le catalogue global.
-        </p>
-      </div>
-      <Button onClick={onAdd} className="gap-2">
-        <Plus className="size-4" />
-        Ajouter un article
-      </Button>
-    </Card>
+    <EmptyState
+      icon={Tags}
+      title="Aucun article dans le catalogue"
+      description="Ajoutez votre premier article pour démarrer le catalogue global."
+      action={
+        <Button onClick={onAdd} className="gap-2">
+          <Plus className="size-4" />
+          Ajouter un article
+        </Button>
+      }
+    />
   );
 }
