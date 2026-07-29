@@ -4662,3 +4662,26 @@ Stage Summary:
 - Codebase : déjà conforme ("OgPressing" partout), aucune modification de code nécessaire.
 - Base de données : pressing "OPRESSING" (id 9899bda9-...) renommé en "OgPressing" en production Supabase. L'utilisateur verra "OgPressing" dans la sidebar/topbar admin après reconnexion/refresh.
 - Reste un pressing nommé "OGOUPRESS" (id ab3c353b-...) — non modifié car hors du vocable demandé ; à signaler à l'utilisateur s'il veut aussi le renommer.
+
+---
+Task ID: REC-NOUVELLE-1
+Agent: main (orchestrator)
+Task: Compte réceptionniste — "Nouvelle commande" redirige vers le tableau de bord. Diagnostiquer + corriger.
+
+Work Log:
+- Analyse du code local : la route /personnel/receptionniste/commandes/nouvelle/page.tsx existe et rend <CommandeWizard basePath="/personnel/receptionniste" /> SANS redirection. Le middleware (src/lib/supabase/middleware.ts) laisse passer un receptionniste vers /personnel/receptionniste/* (roleFromUrl === roleInfo.role). Le wizard (commande-wizard.tsx) et StepClient ne redirigent pas vers le dashboard. → Le code local est correct.
+- Vérification git : `git remote -v` vide → AUCUN remote configuré. Le code local n'était jamais poussé vers GitHub (source de déploiement Vercel). HEAD local = 832b935 (2026-07-29), GitHub main = 9256926f19de (2026-07-28). Histories non-relatives (réécriture d'historique avec messages UUID).
+- GitHub API (PAT ghp_...) : vérifié que /personnel/receptionniste/commandes/nouvelle/page.tsx ABSENT de GitHub main pré-push (HTTP 404).
+- Inspection du code OLD déployé (commit 9256926f19de) : la structure utilisait un segment DYNAMIQUE /personnel/[role]/commandes/nouvelle/page.tsx. Ce fichier contenait `redirect("/admin/commandes/nouvelle")` pour les non-managers. → RACINE DU BUG : le receptionniste cliquait "Nouvelle commande" → l'ancienne page dynamique le redirigeait vers /admin/commandes/nouvelle → le middleware voyait un receptionniste sur /admin/* → redirect vers /personnel/receptionniste/dashboard?error=acces_refuse → "retour au tableau de bord".
+- Vérification sécurité avant push : .env/.env.local/.env.production gitignorés ; aucun secret (PAT/sbp_/clés) dans les fichiers trackés ; fichiers clés receptionniste trackés.
+- Push : `git remote add origin https://<PAT>@github.com/omoui2887/PressinOg.git` + `git push --force origin main` (histories non-relatives → force nécessaire). Résultat : 9256926...832b935 main -> main (forced update).
+- Nettoyage : `git remote set-url origin https://github.com/omoui2887/PressinOg.git` (PAT retiré de .git/config).
+- Vérification déploiement Vercel : GitHub commit status sur 832b935 → "Vercel: success — Deployment has completed" (après ~45s).
+- Vérification route déployée : curl https://pressin-og.vercel.app/personnel/receptionniste/commandes/nouvelle → HTTP 307 redirect vers /login?next=... (comportement IDENTIQUE au dashboard receptionniste pour un user non-auth → la route existe et est protégée correctement). Avant le fix, cette route n'existait pas dans le build déployé.
+- Vérification API : POST /api/admin/commandes utilise getSupabaseServer() (anon + JWT, RLS) — PAS getSupabaseAdmin() (service_role) → fonctionne sur Vercel sans SUPABASE_SERVICE_ROLE_KEY supplémentaire. Les env vars NEXT_PUBLIC_SUPABASE_URL + NEXT_PUBLIC_SUPABASE_ANON_KEY sont déjà configurées sur Vercel (le dashboard charge des données, l'auth fonctionne).
+
+Stage Summary:
+- RACINE : le code déployé sur Vercel (GitHub 9256926f19de) utilisait une route dynamique /personnel/[role]/commandes/nouvelle qui redirigeait les non-managers vers /admin/commandes/nouvelle → middleware renvoyait le receptionniste sur son dashboard. Le code local (832b935) avait déjà corrigé cela avec des routes explicites par rôle, mais n'était jamais déployé (aucun remote git).
+- CORRECTION : force-push du code local vers GitHub omoui2887/PressinOg (main). Vercel a rebuildé avec succès. La route /personnel/receptionniste/commandes/nouvelle existe maintenant dans le build déployé et rend le wizard <CommandeWizard> directement (sans redirection).
+- Le receptionniste peut maintenant cliquer "Nouvelle commande" et accéder au wizard de création (4 étapes : client → articles → récap → confirmation QR).
+- Action requise côté utilisateur : aucune. Recharger la page pressin-og.vercel.app (hard refresh Ctrl+Shift+R pour vider le cache navigateur) puis tester "Nouvelle commande" en étant connecté en réceptionniste.
