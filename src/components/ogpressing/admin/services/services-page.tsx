@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { ServicesList } from "./services-list";
 import { AddServiceDialog } from "./add-service-dialog";
 import { EditServiceDialog } from "./edit-service-dialog";
+import { DeleteServiceDialog } from "./delete-service-dialog";
 import type { ServiceItem } from "./services-helpers";
 
 export function ServicesPage() {
@@ -34,6 +35,7 @@ export function ServicesPage() {
   // États dialogs
   const [addOpen, setAddOpen] = useState(false);
   const [editService, setEditService] = useState<ServiceItem | null>(null);
+  const [deleteService, setDeleteService] = useState<ServiceItem | null>(null);
 
   const fetchServices = useCallback(async () => {
     setLoading(true);
@@ -124,6 +126,7 @@ export function ServicesPage() {
         loading={loading}
         onToggle={handleToggle}
         onEdit={(s) => setEditService(s)}
+        onDelete={(s) => setDeleteService(s)}
       />
 
       {/* Dialogs */}
@@ -138,6 +141,12 @@ export function ServicesPage() {
         open={editService !== null}
         onOpenChange={(o) => !o && setEditService(null)}
         onUpdated={fetchServices}
+      />
+      <DeleteServiceDialog
+        service={deleteService}
+        open={deleteService !== null}
+        onOpenChange={(o) => !o && setDeleteService(null)}
+        onDeleted={fetchServices}
       />
     </div>
   );

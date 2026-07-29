@@ -8,12 +8,17 @@
  *   - Mobile : cards par service
  *
  * Groupes dans l'ordre défini par TYPES_SERVICES (Lavage, Repassage, Nettoyage
- * à sec, Détachage, Blanchisserie). Chaque groupe a un en-tête avec le label
- * + badge + compteur.
+ * à sec, Détachage, Blanchisserie). Chaque groupe a un en-tête avec l'icône
+ * + label + badge + compteur.
+ *
+ * Actions par service :
+ *   - Switch activer/désactiver (optimistic via parent)
+ *   - Bouton "Modifier" (ouvre EditServiceDialog)
+ *   - Bouton "Supprimer" (ouvre DeleteServiceDialog — LOT 11.1+)
  */
 "use client";
 
-import { Sparkles, Pencil } from "lucide-react";
+import { Sparkles, Pencil, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,6 +38,7 @@ import { formatFCFA } from "@/lib/utils/format";
 import {
   TYPES_SERVICES,
   typeServiceBadgeClass,
+  typeServiceIcon,
   typeServiceLabel,
   type ServiceItem,
 } from "./services-helpers";
@@ -42,6 +48,7 @@ interface ServicesListProps {
   loading: boolean;
   onToggle: (s: ServiceItem) => void;
   onEdit: (s: ServiceItem) => void;
+  onDelete: (s: ServiceItem) => void;
 }
 
 export function ServicesList({
@@ -49,6 +56,7 @@ export function ServicesList({
   loading,
   onToggle,
   onEdit,
+  onDelete,
 }: ServicesListProps) {
   if (loading) {
     return (
@@ -87,129 +95,158 @@ export function ServicesList({
 
   return (
     <div className="space-y-6">
-      {grouped.map(({ type, items }) => (
-        <section key={type.value} className="space-y-3">
-          {/* En-tête du groupe */}
-          <div className="flex items-center gap-2">
-            <Badge
-              variant="outline"
-              className={cn("font-medium", type.badgeClass)}
-            >
-              {type.label}
-            </Badge>
-            <span className="text-sm text-muted-foreground">
-              {items.length} service{items.length > 1 ? "s" : ""}
-            </span>
-          </div>
-
-          {/* Vue desktop : tableau */}
-          <div className="hidden overflow-hidden rounded-lg border md:block">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/50">
-                  <TableHead className="w-[40%]">Nom</TableHead>
-                  <TableHead className="text-right">Prix unitaire</TableHead>
-                  <TableHead className="text-center">Statut</TableHead>
-                  <TableHead className="w-32 text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((s) => (
-                  <TableRow
-                    key={s.id}
-                    className={cn(!s.actif && "bg-muted/30 opacity-70")}
-                  >
-                    <TableCell className="font-medium text-foreground">
-                      {s.nom}
-                    </TableCell>
-                    <TableCell className="text-right font-semibold tabular-nums">
-                      {formatFCFA(s.prix)}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <div className="inline-flex items-center gap-2">
-                        <Switch
-                          checked={s.actif}
-                          onCheckedChange={() => onToggle(s)}
-                          aria-label="Activer/désactiver"
-                        />
-                        <span
-                          className={cn(
-                            "text-xs font-medium",
-                            s.actif
-                              ? "text-secondary"
-                              : "text-muted-foreground"
-                          )}
-                        >
-                          {s.actif ? "Actif" : "Inactif"}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onEdit(s)}
-                      >
-                        <Pencil className="size-4" />
-                        Modifier
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Vue mobile : cards */}
-          <div className="space-y-3 md:hidden">
-            {items.map((s) => (
-              <Card
-                key={s.id}
-                className={cn(
-                  "p-4",
-                  !s.actif && "bg-muted/30 opacity-70"
-                )}
+      {grouped.map(({ type, items }) => {
+        const TypeIcon = type.icon;
+        return (
+          <section key={type.value} className="space-y-3">
+            {/* En-tête du groupe */}
+            <div className="flex items-center gap-2">
+              <span
+                className="flex size-7 items-center justify-center rounded-md bg-muted"
+                aria-hidden
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-foreground">{s.nom}</p>
-                    <p className="mt-0.5 text-lg font-bold tabular-nums text-foreground">
-                      {formatFCFA(s.prix)}
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-3 flex items-center justify-between border-t pt-3">
-                  <div className="inline-flex items-center gap-2">
-                    <Switch
-                      checked={s.actif}
-                      onCheckedChange={() => onToggle(s)}
-                      aria-label="Activer/désactiver"
-                    />
-                    <span
-                      className={cn(
-                        "text-xs font-medium",
-                        s.actif
-                          ? "text-secondary"
-                          : "text-muted-foreground"
-                      )}
+                <TypeIcon className="size-4 text-muted-foreground" />
+              </span>
+              <Badge
+                variant="outline"
+                className={cn("font-medium", type.badgeClass)}
+              >
+                {type.label}
+              </Badge>
+              <span className="text-sm text-muted-foreground">
+                {items.length} service{items.length > 1 ? "s" : ""}
+              </span>
+            </div>
+
+            {/* Vue desktop : tableau */}
+            <div className="hidden overflow-hidden rounded-lg border md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead className="w-[40%]">Nom</TableHead>
+                    <TableHead className="text-right">Prix unitaire</TableHead>
+                    <TableHead className="text-center">Statut</TableHead>
+                    <TableHead className="w-48 text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.map((s) => (
+                    <TableRow
+                      key={s.id}
+                      className={cn(!s.actif && "bg-muted/30 opacity-70")}
                     >
-                      {s.actif ? "Actif" : "Inactif"}
-                    </span>
+                      <TableCell className="font-medium text-foreground">
+                        {s.nom}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold tabular-nums">
+                        {formatFCFA(s.prix)}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <div className="inline-flex items-center gap-2">
+                          <Switch
+                            checked={s.actif}
+                            onCheckedChange={() => onToggle(s)}
+                            aria-label="Activer/désactiver"
+                          />
+                          <span
+                            className={cn(
+                              "text-xs font-medium",
+                              s.actif
+                                ? "text-secondary"
+                                : "text-muted-foreground"
+                            )}
+                          >
+                            {s.actif ? "Actif" : "Inactif"}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="inline-flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onEdit(s)}
+                          >
+                            <Pencil className="size-4" />
+                            Modifier
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-danger hover:bg-danger/10 hover:text-danger"
+                            aria-label={`Supprimer ${s.nom}`}
+                            onClick={() => onDelete(s)}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Vue mobile : cards */}
+            <div className="space-y-3 md:hidden">
+              {items.map((s) => (
+                <Card
+                  key={s.id}
+                  className={cn(
+                    "p-4",
+                    !s.actif && "bg-muted/30 opacity-70"
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-foreground">{s.nom}</p>
+                      <p className="mt-0.5 text-lg font-bold tabular-nums text-foreground">
+                        {formatFCFA(s.prix)}
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-danger hover:bg-danger/10 hover:text-danger"
+                      aria-label={`Supprimer ${s.nom}`}
+                      onClick={() => onDelete(s)}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => onEdit(s)}
-                  >
-                    <Pencil className="size-4" />
-                    Modifier
-                  </Button>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </section>
-      ))}
+                  <div className="mt-3 flex items-center justify-between border-t pt-3">
+                    <div className="inline-flex items-center gap-2">
+                      <Switch
+                        checked={s.actif}
+                        onCheckedChange={() => onToggle(s)}
+                        aria-label="Activer/désactiver"
+                      />
+                      <span
+                        className={cn(
+                          "text-xs font-medium",
+                          s.actif
+                            ? "text-secondary"
+                            : "text-muted-foreground"
+                        )}
+                      >
+                        {s.actif ? "Actif" : "Inactif"}
+                      </span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onEdit(s)}
+                    >
+                      <Pencil className="size-4" />
+                      Modifier
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </section>
+        );
+      })}
 
       {/* Orphelins (type inconnu — sécurité, ne devrait pas arriver) */}
       {orphelins.length > 0 && (
@@ -238,24 +275,32 @@ export function ServicesList({
           <div className="hidden overflow-hidden rounded-lg border md:block">
             <Table>
               <TableBody>
-                {orphelins.map((s) => (
-                  <TableRow key={s.id}>
-                    <TableCell className="font-medium">{s.nom}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatFCFA(s.prix)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onEdit(s)}
-                      >
-                        <Pencil className="size-4" />
-                        Modifier
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {orphelins.map((s) => {
+                  const OrphanIcon = typeServiceIcon(s.type);
+                  return (
+                    <TableRow key={s.id}>
+                      <TableCell className="font-medium">
+                        <span className="inline-flex items-center gap-2">
+                          <OrphanIcon className="size-4 text-muted-foreground" />
+                          {s.nom}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatFCFA(s.prix)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onEdit(s)}
+                        >
+                          <Pencil className="size-4" />
+                          Modifier
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

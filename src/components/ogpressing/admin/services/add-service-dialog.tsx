@@ -6,6 +6,20 @@
  * Au submit : POST /api/admin/services
  *   { nom, type, prix }
  *
+ * 🎨 ILLUSTRATIONS (LOT 11.1+) : chaque option du Select "Type" affiche
+ *    l'icône Lucide associée (cf. TYPES_SERVICES.icon) pour une cohérence
+ *    visuelle avec la liste des services et le wizard de commande.
+ *
+ * ⚠️ COMPORTEMENT "allTaken" (LOT 11.1+) : lorsque les 5 types de service
+ *    sont déjà configurés (contrainte DB UNIQUE(pressing_id, type)), on
+ *    affiche le formulaire AVEC une note d'information en haut (au lieu
+ *    d'un écran bloquant "Fermer"). Toutes les options du Select "Type"
+ *    sont désactivées (marquées "(déjà configuré)"), donc l'utilisateur
+ *    ne peut pas soumettre le formulaire — il comprend qu'il doit d'abord
+ *    supprimer un service existant pour libérer un type. Le bouton
+ *    "Ajouter le service" reste désactivé tant qu'aucun type n'est
+ *    sélectionnable.
+ *
  * Référence pattern : stock/add-product-dialog.tsx (RHF + zod + shadcn Form).
  */
 "use client";
@@ -14,7 +28,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2 } from "lucide-react";
+import { Info, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -154,28 +168,25 @@ export function AddServiceDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {allTaken ? (
-          <>
-            <div className="rounded-md border border-warning/30 bg-warning/5 p-4 text-sm text-foreground">
+        {/* Note informative quand tous les types sont déjà configurés.
+            On affiche le formulaire quand même (plutôt qu'un écran bloquant)
+            pour une UX cohérente : l'utilisateur voit la structure et
+            comprend qu'il doit libérer un type en supprimant un service. */}
+        {allTaken && (
+          <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 p-3 text-sm">
+            <Info className="mt-0.5 size-4 shrink-0 text-warning" />
+            <div className="text-foreground">
               <p className="font-medium">
                 Les 5 types de service sont déjà configurés.
               </p>
-              <p className="mt-1 text-muted-foreground">
-                Modifiez un service existant pour ajuster son nom ou son prix,
-                ou désactivez-le si nécessaire.
+              <p className="mt-0.5 text-muted-foreground">
+                Supprimez un service existant pour libérer un type, ou
+                modifiez-le pour ajuster son nom ou son prix.
               </p>
             </div>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-              >
-                Fermer
-              </Button>
-            </DialogFooter>
-          </>
-        ) : (
+          </div>
+        )}
+
         <Form {...form}>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             {/* Nom */}
@@ -213,14 +224,18 @@ export function AddServiceDialog({
                     <SelectContent>
                       {TYPES_SERVICES.map((t) => {
                         const taken = usedSet.has(t.value);
+                        const Icon = t.icon;
                         return (
                           <SelectItem
                             key={t.value}
                             value={t.value}
                             disabled={taken}
                           >
-                            {t.label}
-                            {taken && " (déjà configuré)"}
+                            <span className="inline-flex items-center gap-2">
+                              <Icon className="size-4" />
+                              {t.label}
+                              {taken && " (déjà configuré)"}
+                            </span>
                           </SelectItem>
                         );
                       })}
@@ -266,7 +281,15 @@ export function AddServiceDialog({
               >
                 Annuler
               </Button>
-              <Button type="submit" disabled={submitting}>
+              <Button
+                type="submit"
+                disabled={submitting || allTaken}
+                title={
+                  allTaken
+                    ? "Tous les types sont déjà configurés. Supprimez un service existant pour en créer un nouveau."
+                    : undefined
+                }
+              >
                 {submitting ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />
@@ -279,7 +302,6 @@ export function AddServiceDialog({
             </DialogFooter>
           </form>
         </Form>
-        )}
       </DialogContent>
     </Dialog>
   );
