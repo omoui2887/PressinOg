@@ -4685,3 +4685,51 @@ Stage Summary:
 - CORRECTION : force-push du code local vers GitHub omoui2887/PressinOg (main). Vercel a rebuildé avec succès. La route /personnel/receptionniste/commandes/nouvelle existe maintenant dans le build déployé et rend le wizard <CommandeWizard> directement (sans redirection).
 - Le receptionniste peut maintenant cliquer "Nouvelle commande" et accéder au wizard de création (4 étapes : client → articles → récap → confirmation QR).
 - Action requise côté utilisateur : aucune. Recharger la page pressin-og.vercel.app (hard refresh Ctrl+Shift+R pour vider le cache navigateur) puis tester "Nouvelle commande" en étant connecté en réceptionniste.
+
+---
+Task ID: SVC-1
+Agent: main
+Task: Réglage du problème de services (ajout/suppression/modification) + association d'illustrations (icônes) aux types de service + correction des anomalies UI des services.
+
+Work Log:
+- Diagnostic via captures d'écran (VLM) :
+  - Capture 1 : le dialogue "Ajouter un service" affichait un écran BLOQUANT "Les 5 types de service sont déjà configurés" avec juste un bouton Fermer → impossible d'ajouter/supprimer.
+  - Capture 2 : la liste /admin/services affichait 4 groupes (Lavage, Repassage, Nettoyage à sec, Détachage) sans icônes, avec juste un bouton "Modifier" (pas de suppression).
+- Ajout de la méthode DELETE à `/api/admin/services/[id]/route.ts` :
+  - Vérification préventive : compte les `commande_lignes` référencant le service (via `service_id`).
+  - Si count > 0 → HTTP 409 avec message clair invitant à désactiver plutôt que supprimer (préserve l'historique des commandes).
+  - Intercepte aussi le code PostgreSQL 23503 (foreign_key_violation) en fallback.
+- Ajout d'icônes Lucide illustratives aux 5 types de service dans `services-helpers.tsx` :
+  - lavage → Droplets, repassage → Wind, nettoyage_sec → Sparkles, detachage → SprayCan, blanchisserie → Shirt.
+  - Nouvelle fonction helper `typeServiceIcon(value)` retournant le composant icône.
+- Création de `delete-service-dialog.tsx` (AlertDialog de confirmation) :
+  - Affiche le nom + badge type + prix du service à supprimer.
+  - Note informative : si des commandes référencent le service, la suppression sera refusée → désactiver plutôt.
+  - Bouton "Supprimer définitivement" en rouge (danger).
+- Mise à jour de `services-list.tsx` :
+  - Ajout d'un bouton "Supprimer" (icône Trash2) à côté de "Modifier" dans la colonne Actions (desktop + mobile).
+  - Affichage de l'icône du type de service dans l'en-tête de chaque groupe (pastille carrée grise + icône Lucide).
+  - Nouvelle prop `onDelete` transmise au parent.
+- Mise à jour de `services-page.tsx` :
+  - Ajout de l'état `deleteService` + rendu du `<DeleteServiceDialog>`.
+  - Transmission de `onDelete={(s) => setDeleteService(s)}` au `<ServicesList>`.
+- Amélioration de `add-service-dialog.tsx` :
+  - Remplacement de l'écran bloquant "allTaken" par une note informative EN HAUT du formulaire (le formulaire reste visible).
+  - Le bouton "Ajouter le service" est désactivé quand `allTaken` (avec tooltip explicatif).
+  - Les options du Select "Type" affichent désormais l'icône Lucide du type + "(déjà configuré)" si pris.
+- Mise à jour de `edit-service-dialog.tsx` :
+  - Le badge "Type" (lecture seule) affiche désormais l'icône Lucide correspondante devant le label.
+- Mise à jour de `step-articles.tsx` (wizard commande, Étape 2) :
+  - Le dropdown "Service appliqué" affiche l'icône Lucide du type devant chaque option "{nom} — {prix FCFA}".
+  - Ajout d'un état visuel explicite quand `services.length === 0` : encart warning avec lien vers /admin/services (au lieu d'un dropdown vide désactivé).
+  - Ajout de l'astérisque rouge `*` sur les labels "Article" et "Service appliqué" (champs obligatoires).
+  - Spinner de chargement visible pendant le fetch des services.
+- Lint OK (`bun run lint` — 0 erreur). Dev server compile sans erreur.
+
+Stage Summary:
+- ✅ Ajout : le bouton "Ajouter un service" ouvre toujours le formulaire complet (plus d'écran bloquant). Les types déjà configurés sont désactivés dans le dropdown avec mention "(déjà configuré)".
+- ✅ Suppression : nouveau bouton "Supprimer" (icône poubelle) sur chaque service, avec dialogue de confirmation AlertDialog. L'API refuse la suppression si des commandes référencent le service (409) et invite à désactiver.
+- ✅ Modification : inchangé (déjà fonctionnel via EditServiceDialog), mais le badge type affiche désormais l'icône.
+- ✅ Illustrations : chaque type de service a une icône Lucide (Droplets/Wind/Sparkles/SprayCan/Shirt) visible dans la liste, les dialogues, et le wizard commande.
+- ✅ Anomalie wizard : l'étape 2 affiche désormais un encart warning clair avec lien vers /admin/services quand aucun service n'est configuré (au lieu d'un dropdown vide silencieux).
+- Artifacts modifiés : `api/admin/services/[id]/route.ts`, `services-helpers.tsx`, `services-list.tsx`, `services-page.tsx`, `add-service-dialog.tsx`, `edit-service-dialog.tsx`, `step-articles.tsx`, nouveau `delete-service-dialog.tsx`.

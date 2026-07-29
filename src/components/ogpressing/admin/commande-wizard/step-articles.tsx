@@ -81,6 +81,7 @@ import {
   ETAT_LABELS,
   ETAT_VARIANT,
 } from "./article-labels";
+import { typeServiceIcon } from "@/components/ogpressing/admin/services/services-helpers";
 import type { ArticleInfo, StepProps } from "./state";
 
 // ============================================================
@@ -441,7 +442,9 @@ export function StepArticles({ state, dispatch }: StepProps) {
         <div className="grid gap-4 sm:grid-cols-2">
           {/* --- Article du catalogue (sélection visuelle, LOT 15) --- */}
           <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="art-catalogue">Article</Label>
+            <Label htmlFor="art-catalogue">
+              Article <span className="text-danger">*</span>
+            </Label>
             <button
               type="button"
               id="art-catalogue"
@@ -623,33 +626,56 @@ export function StepArticles({ state, dispatch }: StepProps) {
 
           {/* --- Service appliqué --- */}
           <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="art-service">Service appliqué</Label>
-            <Select
-              value={form.service_id}
-              onValueChange={(v) =>
-                setForm((f) => ({ ...f, service_id: v }))
-              }
-              disabled={servicesLoading || services.length === 0}
-            >
-              <SelectTrigger id="art-service" className="w-full">
-                <SelectValue
-                  placeholder={
-                    servicesLoading
-                      ? "Chargement des services..."
-                      : services.length === 0
-                      ? "Aucun service actif"
-                      : "Sélectionnez un service"
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {services.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.nom} — {formatFCFA(s.prix)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label htmlFor="art-service">
+              Service appliqué <span className="text-danger">*</span>
+            </Label>
+            {servicesLoading ? (
+              <div className="flex h-11 items-center gap-2 rounded-md border border-input bg-muted/30 px-3 text-sm text-muted-foreground">
+                <span className="size-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" />
+                Chargement des services…
+              </div>
+            ) : services.length === 0 ? (
+              <div className="rounded-md border border-warning/40 bg-warning/5 p-3 text-sm">
+                <p className="font-medium text-foreground">
+                  Aucun service actif configuré pour votre pressing.
+                </p>
+                <p className="mt-0.5 text-muted-foreground">
+                  Un responsable (manager) doit configurer au moins un service
+                  dans la page{" "}
+                  <a
+                    href="/admin/services"
+                    className="font-medium text-primary underline underline-offset-2"
+                  >
+                    Services
+                  </a>{" "}
+                  avant de pouvoir enregistrer une commande.
+                </p>
+              </div>
+            ) : (
+              <Select
+                value={form.service_id}
+                onValueChange={(v) =>
+                  setForm((f) => ({ ...f, service_id: v }))
+                }
+              >
+                <SelectTrigger id="art-service" className="w-full">
+                  <SelectValue placeholder="Sélectionnez un service" />
+                </SelectTrigger>
+                <SelectContent>
+                  {services.map((s) => {
+                    const SvcIcon = typeServiceIcon(s.type);
+                    return (
+                      <SelectItem key={s.id} value={s.id}>
+                        <span className="inline-flex items-center gap-2">
+                          <SvcIcon className="size-4 text-muted-foreground" />
+                          {s.nom} — {formatFCFA(s.prix)}
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           {/* --- Réserves / détérioration --- */}

@@ -40,6 +40,7 @@ import {
 import { cn } from "@/lib/utils";
 import {
   typeServiceBadgeClass,
+  typeServiceIcon,
   typeServiceLabel,
   type ServiceItem,
 } from "./services-helpers";
@@ -87,6 +88,8 @@ export function EditServiceDialog({
   }, [service, open, form]);
 
   if (!service) return null;
+
+  const TypeIcon = typeServiceIcon(service.type);
 
   async function onSubmit(values: FormValues) {
     setSubmitting(true);
@@ -150,8 +153,12 @@ export function EditServiceDialog({
           <p className="text-sm font-medium text-foreground">Type</p>
           <Badge
             variant="outline"
-            className={cn("font-medium", typeServiceBadgeClass(service.type))}
+            className={cn(
+              "gap-1.5 font-medium",
+              typeServiceBadgeClass(service.type)
+            )}
           >
+            <TypeIcon className="size-3.5" />
             {typeServiceLabel(service.type)}
           </Badge>
         </div>
