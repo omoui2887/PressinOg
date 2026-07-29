@@ -573,7 +573,11 @@ function printLabels(opts: {
 
 type Phase = "initial" | "loading" | "success" | "error";
 
-export function StepConfirmation({ state, dispatch }: StepProps) {
+export function StepConfirmation({
+  state,
+  dispatch,
+  basePath = "/admin",
+}: StepProps & { basePath?: string }) {
   const [phase, setPhase] = useState<Phase>("initial");
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [detail, setDetail] = useState<CommandeDetail | null>(null);
@@ -1037,7 +1041,7 @@ export function StepConfirmation({ state, dispatch }: StepProps) {
           Nouvelle commande
         </Button>
         <Button asChild variant="outline">
-          <a href="/admin/dashboard">
+          <a href={`${basePath}/dashboard`}>
             <Home className="size-4" />
             Retour au tableau de bord
           </a>

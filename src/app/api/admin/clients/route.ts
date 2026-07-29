@@ -212,7 +212,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Récupère le pressing_id du manager connecté via sa ligne personnel
+  // Récupère le pressing_id du personnel connecté via sa ligne personnel.
+  // Le PRD autorise la création de clients par le manager ET le réceptionniste
+  // (aligné sur le PATCH /api/admin/clients/[id] qui accepte déjà ces 2 rôles).
   const { data: personnel } = await supabase
     .from("personnel")
     .select("pressing_id, role, actif, statut_compte")
@@ -221,12 +223,12 @@ export async function POST(request: NextRequest) {
 
   if (
     !personnel ||
-    personnel.role !== "manager" ||
+    (personnel.role !== "manager" && personnel.role !== "receptionniste") ||
     personnel.actif !== true ||
     personnel.statut_compte !== "actif"
   ) {
     return NextResponse.json(
-      { success: false, error: "Accès refusé — manager requis" },
+      { success: false, error: "Accès refusé — manager ou réceptionniste requis" },
       { status: 403 }
     );
   }

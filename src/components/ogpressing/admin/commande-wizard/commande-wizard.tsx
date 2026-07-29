@@ -190,7 +190,11 @@ export function CommandeWizard({ basePath = "/admin" }: { basePath?: string } = 
               )}
               {state.step === 3 && <StepRecap state={state} dispatch={dispatch} />}
               {state.step === 4 && (
-                <StepConfirmation state={state} dispatch={dispatch} />
+                <StepConfirmation
+                  state={state}
+                  dispatch={dispatch}
+                  basePath={basePath}
+                />
               )}
             </>
           )}
