@@ -5294,3 +5294,50 @@ Stage Summary:
   (7 commits en attente incluant le fix ART-1 + les 5 rôles développés + les correctifs services/caissier)
 - Si le PAT est expiré, l'utilisateur doit en générer un nouveau sur https://github.com/settings/tokens puis :
   `git push https://x-access-token:NEW_PAT@github.com/omoui2887/PressinOg.git main`
+
+---
+Task ID: FIX-ARTICLE-CLICK-V2
+Agent: main
+Task: Correction définitive du bug "je n'arrive pas à choisir un article" + restauration .env.local + vérification end-to-end
+
+Work Log:
+- L'utilisateur a fourni les 3 clés Supabase : clé anon (déjà présente), clé service_role (manquante — placeholder), et un token dashboard sbp_v0_... (non requis pour le runtime).
+- Restauration de `.env.local` : remplacement de `SUPABASE_SERVICE_ROLE_KEY=PLACEHOLDER_SERVICE_ROLE_NOT_AVAILABLE` par la vraie clé service_role JWT fournie par l'utilisateur. Toutes les routes utilisant `getSupabaseAdmin()` (inscription, activation, super-admin) sont désormais fonctionnelles en local.
+- Redémarrage du dev server `bun run dev` pour charger les nouvelles variables d'environnement. Problème de persistance du process résolu en lançant via `(nohup ./node_modules/.bin/next dev -p 3000 >/dev/null 2>dev.log &)` (subshell + nohup) — les méthodes `setsid`/`disown` seules ne suffisaient pas (le process était tué entre appels Bash).
+- Vérification de l'état de la DB via l'API REST Supabase (clé service_role) :
+  * Table `catalogue_articles` : 33 articles actifs (seed OK) ✅
+  * Table `personnel` : 10 lignes (manager, réceptionniste, laveur, caissier) ✅
+  * Table `services` pour le pressing de test (91efa270) : 5 services actifs ✅
+  * Table `clients` pour le pressing de test : 3 clients (Awa Koné, Mamadou Traoré, Fatou Bamba) ✅
+- Reset du mot de passe du compte de test `test-receptionniste@ogpressing.ci` (user_id 111b9a4e) → "Test1234!" via l'Admin API Supabase, pour permettre la vérification Agent Browser end-to-end.
+- DIAGNOSTIC RACINE du bug (via Agent Browser) :
+  * Navigation : /login → connexion test-receptionniste → dashboard réceptionniste → /personnel/receptionniste/commandes/nouvelle → étape 1 (sélection client Awa Koné) → étape 2 (articles).
+  * Sur l'étape 2, clic sur le bouton "Choisir un article" (`button "Article *"`) → ERREUR : "Element is covered by <header.sticky.top-0> at its click point, so the input would land on that element instead."
+  * Le header sticky du `DashboardLayout` (`<header className="sticky top-0 z-30 flex h-16 ...">`, 64px de haut) recouvrait le bouton "Choisir un article" qui est le premier champ du formulaire de l'étape 2. Les clics atterrissaient sur le header au lieu du bouton → le Dialog ne s'ouvrait jamais → l'utilisateur ne pouvait pas choisir d'article.
+  * Confirmation : après un `scroll down 200px`, le clic fonctionnait et le Dialog s'ouvrait avec les 33 articles. Le bug était donc purement un problème de chevauchement sticky-header vs bouton.
+- CORRECTION appliquée dans `src/components/ogpressing/admin/commande-wizard/commande-wizard.tsx` :
+  * Ajout d'un `useRef<HTMLDivElement>` (`wizardTopRef`) sur le bloc d'en-tête du wizard (titre "Nouvelle commande").
+  * Ajout d'un `useEffect` qui déclenche `wizardTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })` à chaque changement de `state.step`.
+  * Ajout de la classe `scroll-mt-24` (scroll-margin-top: 96px) sur ce même en-tête pour dégager le header sticky (64px) + 32px de marge confortable.
+  * Effet : à chaque changement d'étape (1→2, 2→3, etc.), le wizard rescrolle en haut de la zone visible, sous le header sticky. Le bouton "Choisir un article" n'est plus jamais recouvert.
+  * Le fix est dans le composant partagé `CommandeWizard` → bénéfique pour TOUS les rôles (réceptionniste, manager /admin et /personnel/manager, etc.).
+- Vérification post-fix (Agent Browser) :
+  * Rechargement du wizard, sélection client, passage à l'étape 2.
+  * Clic direct sur le bouton "Choisir un article" SANS scroll manuel → le Dialog s'ouvre immédiatement avec les 33 articles ✅
+  * Recherche "chemise" → sélection "Chemises" → fermeture Dialog → bouton "Ajouter l'article" activé ✅
+  * Clic "Ajouter l'article" → article ajouté : "Articles de la commande (1) — Chemises Blanc" ✅
+  * Bouton "Suivant" activé ✅
+  * Aucune erreur runtime dans dev.log ✅
+  * Console browser : uniquement 2 warnings pré-existants (scroll-behavior smooth sur <html>, et DialogContent sans aria-describedby) — non bloquants.
+- `bun run lint` → 0 erreur, 0 warning ✅
+
+Stage Summary:
+- ✅ `.env.local` complètement restauré (clé service_role ajoutée) — toutes les routes (y compris admin/inscription/activation/super-admin) fonctionnent en local.
+- ✅ Bug racine identifié et corrigé : le header sticky (64px) du DashboardLayout recouvrait le bouton "Choisir un article" de l'étape 2 du wizard, interceptant les clics. Fix = scroll-to-top automatique + scroll-margin-top à chaque changement d'étape.
+- ✅ Vérification end-to-end Agent Browser réussie : login → wizard → sélection client → étape articles → ouverture Dialog → choix article → ajout au panier → Suivant activé.
+- ✅ Fix applicable à tous les rôles (composant CommandeWizard partagé).
+- ⚠️ Le compte de test `test-receptionniste@ogpressing.ci` a vu son mot de passe réinitialisé à "Test1234!" pour la vérification. L'utilisateur peut le utiliser pour tester ou le réinitialiser via le dashboard Supabase.
+- Note : le code local contient aussi le fix ART-1 précédent (présence du `<Dialog open={pickerOpen}>`). Le présent fix (FIX-ARTICLE-CLICK-V2) s'ajoute à ART-1 et résout le problème de clic qui persistait même avec le Dialog présent.
+
+Fichier modifié (1) :
+- `src/components/ogpressing/admin/commande-wizard/commande-wizard.tsx` (ajout useRef + useEffect scroll-to-top sur state.step + classe scroll-mt-24 sur l'en-tête)

@@ -26,7 +26,7 @@
  */
 "use client";
 
-import { useCallback, useEffect, useReducer, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Loader2, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
@@ -95,6 +95,25 @@ export function CommandeWizard({ basePath = "/admin" }: { basePath?: string } = 
   // Pré-sélection client : true pendant le fetch du `?client_id=<id>`.
   const [preselecting, setPreselecting] = useState(false);
 
+  // Référence au bloc d'en-tête du wizard (titre "Nouvelle commande").
+  // Utilisé pour rescroller vers le haut à chaque changement d'étape afin
+  // que le contenu de la nouvelle étape ne soit jamais masqué par le header
+  // sticky du DashboardLayout (h-16, z-30). Sans cela, le bouton "Choisir
+  // un article" de l'étape 2 pouvait se retrouver sous le header sticky et
+  // intercepter les clics (bug "je n'arrive pas à choisir un article").
+  const wizardTopRef = useRef<HTMLDivElement>(null);
+
+  // À chaque changement d'étape, on rescrolle l'en-tête du wizard en haut
+  // de la zone visible (sous le header sticky). `scroll-mt-24` (96px) sur
+  // l'en-tête garantit une marge confortable sous le header de 64px (h-16).
+  // `block: "start"` aligne le haut de l'élément avec le haut du scroll.
+  useEffect(() => {
+    wizardTopRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, [state.step]);
+
   /**
    * Lit `?client_id=<id>` dans l'URL au montage et pré-sélectionne le client
    * si présent. Utilise `window.location.search` (pas useSearchParams) pour
@@ -141,7 +160,9 @@ export function CommandeWizard({ basePath = "/admin" }: { basePath?: string } = 
   return (
     <div className="flex min-h-[calc(100dvh-12rem)] flex-col gap-4 md:min-h-[calc(100dvh-7rem)] sm:gap-6">
       {/* Header : titre + retour commandes */}
-      <div className="flex items-center gap-3">
+      {/* scroll-mt-24 (96px) : marge de scroll pour dégager le header sticky
+          du DashboardLayout (h-16 = 64px) lors du scrollIntoView. */}
+      <div ref={wizardTopRef} className="flex items-center gap-3 scroll-mt-24">
         <Button variant="ghost" size="icon" asChild aria-label="Retour aux commandes">
           <Link href={`${basePath}/commandes`}>
             <ArrowLeft className="size-5" />
