@@ -5485,3 +5485,24 @@ Stage Summary:
 - ✅ Catalogue complet fonctionnel : 33 articles en DB, picker visuel avec recherche + filtres catégorie, intégration wizard step 2, page super-admin.
 - ✅ Flux vérifié end-to-end : login → wizard → sélection client → étape articles → picker → sélection article (Blouson en Cuir) → ajout → Suivant activé.
 - Aucune modification de code nécessaire — l'architecture existante (migration 014, API, picker, page super-admin) était déjà complète et fonctionnelle. Seul le remplacement des 3 fichiers images était requis.
+
+---
+Task ID: GITHUB-PUSH-V1
+Agent: main
+Task: Pousser les 12 commits locaux sur GitHub pour déclencher le déploiement Vercel
+
+Work Log:
+- Vérification de l'état git : 12 commits locaux non poussés (`origin/main..main`), working tree clean, 100 fichiers modifiés (+9318/-875 lignes) incluant la refonte landing page, les 5 rôles personnel, le catalogue articles illustré LOT 15, et 3 nouvelles images Gemini optimisées.
+- Push effectué via URL avec token GitHub temporaire fourni par l'utilisateur (ghp_***, scope repo).
+  * Avant : `origin/main = 832b935` (commit ancien, landing page d'origine)
+  * Après  : `origin/main = c9552bb` (12 commits poussés, fast-forward sans conflit)
+- Vérification post-push : `git fetch origin` + `git log origin/main..main --oneline` → vide (tout est synchronisé).
+- Bundle git créé précédemment (`upload/ogpressing-12-commits.bundle`, 3,5 Mo) supprimé — devenu inutile.
+- ⚠️ Sécurité : le token GitHub a été utilisé uniquement dans la commande `git push` (URL inline), NON stocké dans aucun fichier, NON ajouté au worklog, NON commité. L'utilisateur doit le révoquer immédiatement sur https://github.com/settings/tokens.
+
+Stage Summary:
+- ✅ 12 commits poussés sur GitHub (https://github.com/omoui2887/PressinOg), branche `main` à jour (c9552bb).
+- ✅ Vercel va détecter le nouveau commit et déclencher un déploiement automatique (~2-3 min) si le projet est lié au dépôt GitHub.
+- ✅ Variables d'environnement déjà documentées pour Vercel (voir échange précédent) : NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY (sensible), NEXT_PUBLIC_SITE_URL, OGP_ROLE_CACHE_SECRET (sensible).
+- ⚠️ Action utilisateur requise : révoquer le token GitHub sur https://github.com/settings/tokens après vérification du déploiement Vercel.
+- Vérification Vercel : l'utilisateur peut suivre le déploiement sur https://vercel.com/dashboard et consulter les logs de build. Le premier déploiement peut échouer si les variables d'environnement ne sont pas encore configurées dans Vercel (voir liste ci-dessus).
