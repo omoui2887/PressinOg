@@ -5443,3 +5443,45 @@ Stage Summary:
 - Marque : "OgPressing" partout (header, hero visual, testimonials, footer).
 - Wizard step 2 : fonctionnel, plus de warning Radix.
 - Files modified: `public-footer.tsx`, `landing/hero.tsx`, `landing/testimonials.tsx`, `admin/commande-wizard/step-articles.tsx`.
+
+---
+Task ID: CATALOGUE-IMAGES-V2
+Agent: main
+Task: Ajout du catalogue d'articles illustré (LOT 15) — remplacement de 3 illustrations par les versions Gemini générées par l'utilisateur
+
+Work Log:
+- Lecture du spec LOT 15 (`upload/15-catalogue-articles-illustre (1).md`) : 33 articles répartis sur 9 catégories, table `catalogue_articles`, composant `ArticleCatalogPicker`, intégration wizard step 2, page super-admin.
+- Vérification de l'état d'avancement existant :
+  * Migration `014_lot15_catalogue_articles.sql` : ✅ déjà en place (33 articles, RLS, FK, backfill type_vetement_legacy).
+  * Table `catalogue_articles` en DB Supabase : ✅ 33 lignes confirmées via REST API (`content-range: 0-32/33`).
+  * API `/api/public/catalogue-articles` : ✅ déjà en place (GET, auth authenticated, renvoie articles actifs triés).
+  * Composant `ArticleCatalogPicker` : ✅ déjà en place (recherche debouncée 150ms, onglets 9 catégories + dynamiques, grille 3-6 colonnes responsive, fallback icône Shirt, content-visibility auto).
+  * Page `/super-admin/catalogue` : ✅ déjà en place (CataloguePage client component).
+  * Dossier `/public/images/articles/` : ✅ 35 fichiers PNG déjà présents (33 slugs + 2 alias double-s pour le mismatch slug/icone_url triple-s du spec).
+- Analyse VLM des 3 images Gemini uploadées par l'utilisateur (`z-ai vision` CLI, modèle glm-5v-turbo) :
+  * `Gemini_Generated_Image_dnnxztdnnxztdnnx.png` → "Housses de Vêtement (Personnalisées)" → slug `housse-vetement-perso`
+  * `Gemini_Generated_Image_f711owf711owf711.png` → "Blouson en Cuir" → slug `blouson-cuir`
+  * `Gemini_Generated_Image_n13j00n13j00n13j.png` → "Robe" → slug `robe-textile-delicat`
+- ⚠️ Problème de performance identifié : les 3 images Gemini font ~1,9 MB chacune (864x1232 PNG). Si utilisées brutes, le picker (33 images) téléchargerait ~63 MB. Solution : redimensionner à 512x512 PNG avec compression.
+- Redimensionnement via script Node + sharp (déjà installé dans le projet) :
+  * `sharp(src).resize(512, 512, { fit: 'contain', background: white }).png({ compressionLevel: 9, palette: true, quality: 85 })`
+  * Pour `housse-vetement-perso` : écriture aux 2 orthographes (`housse-vetement-perso.png` ET `houssse-vetement-perso.png`) pour maintenir la cohérence avec les alias existants.
+  * Résultat : 3 images de ~120 KB chacune (réduction de 94% vs source 1,9 MB).
+- Vérification end-to-end via Agent Browser (session `verify`, compte test-receptionniste) :
+  1. Login `/login` → dashboard réceptionniste ✅
+  2. Navigation "Nouvelle commande" → wizard étape 1 (Client) ✅
+  3. Recherche client "a" → sélection "Awa Koné" → Suivant activé ✅
+  4. Passage étape 2 (Articles) → bouton "Article *" présent ✅
+  5. Ouverture picker → 33 articles affichés, 10 onglets catégorie ✅
+  6. Screenshot + analyse VLM du picker : les 3 nouvelles illustrations (Blouson en Cuir = veste cuir marron, Robes = robe blanche, Housses Vêtement = housse transparente avec vêtements) s'affichent correctement, AUCUN fallback grey shirt icon sur les 33 articles ✅
+  7. Sélection "Blouson en Cuir" → fermeture picker → bouton "Ajouter l'article" activé ✅
+  8. Ajout article → bouton "Suivant" activé (preuve que l'article est bien enregistré) ✅
+- Lint : `bun run lint` → 0 erreur.
+- Dev server : HTTP 200, aucune erreur runtime liée aux changements.
+
+Stage Summary:
+- ✅ 3 illustrations d'articles remplacées par les versions Gemini fournies par l'utilisateur, optimisées de 1,9 MB → ~120 KB chacune (PNG 512x512, fond blanc, compression level 9).
+- ✅ Fichiers écrasés dans `/public/images/articles/` : `blouson-cuir.png`, `robe-textile-delicat.png`, `housse-vetement-perso.png` (+ alias `houssse-vetement-perso.png`).
+- ✅ Catalogue complet fonctionnel : 33 articles en DB, picker visuel avec recherche + filtres catégorie, intégration wizard step 2, page super-admin.
+- ✅ Flux vérifié end-to-end : login → wizard → sélection client → étape articles → picker → sélection article (Blouson en Cuir) → ajout → Suivant activé.
+- Aucune modification de code nécessaire — l'architecture existante (migration 014, API, picker, page super-admin) était déjà complète et fonctionnelle. Seul le remplacement des 3 fichiers images était requis.
