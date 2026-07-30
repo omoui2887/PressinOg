@@ -38,17 +38,6 @@ export const dynamic = "force-dynamic";
 /*  TYPES & VALIDATION CONSTANTS                                              */
 /* -------------------------------------------------------------------------- */
 
-const TYPE_VETEMENT_VALID = [
-  "chemise",
-  "pantalon",
-  "robe",
-  "costume",
-  "drap",
-  "couverture",
-  "autre",
-] as const;
-type TypeVetementValid = (typeof TYPE_VETEMENT_VALID)[number];
-
 const COULEUR_VALID = [
   "blanc",
   "noir",
@@ -83,7 +72,10 @@ type MethodePaiementValid = (typeof METHODE_PAIEMENT_VALID)[number];
 
 interface ArticleInput {
   service_id: string;
-  type_vetement: TypeVetementValid;
+  /** FK vers catalogue_articles.id (LOT 15 — remplace type_vetement). */
+  catalogue_article_id: string;
+  /** Nom du catalogue (snapshot client, utilisé pour la description lisible). */
+  catalogue_article_nom: string;
   couleur: CouleurValid;
   couleur_libre?: string;
   etat: EtatValid;
@@ -382,15 +374,28 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const typeVetement = a.type_vetement;
-    if (
-      typeof typeVetement !== "string" ||
-      !(TYPE_VETEMENT_VALID as readonly string[]).includes(typeVetement)
-    ) {
+    const catalogueArticleId =
+      typeof a.catalogue_article_id === "string"
+        ? a.catalogue_article_id.trim()
+        : "";
+    if (!catalogueArticleId) {
       return NextResponse.json(
         {
           success: false,
-          error: `Article ${i + 1} : type_vetement invalide`,
+          error: `Article ${i + 1} : catalogue_article_id est requis`,
+        },
+        { status: 400 }
+      );
+    }
+    const catalogueArticleNom =
+      typeof a.catalogue_article_nom === "string"
+        ? a.catalogue_article_nom.trim()
+        : "";
+    if (!catalogueArticleNom) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Article ${i + 1} : catalogue_article_nom est requis`,
         },
         { status: 400 }
       );
@@ -451,7 +456,8 @@ export async function POST(request: NextRequest) {
 
     articles.push({
       service_id: serviceId,
-      type_vetement: typeVetement as TypeVetementValid,
+      catalogue_article_id: catalogueArticleId,
+      catalogue_article_nom: catalogueArticleNom,
       couleur: couleur as CouleurValid,
       couleur_libre: couleurLibre ?? undefined,
       etat: etat as EtatValid,
@@ -602,6 +608,59 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // ---------- 3b. Vérifie que tous les catalogue_article_id existent + actifs ----------
+  // LOT 15 : valide les FK vers catalogue_articles pour éviter d'insérer des
+  // références orphelines. Le catalogue est global (pas de pressing_id).
+  const catalogueIds = Array.from(
+    new Set(articles.map((a) => a.catalogue_article_id))
+  );
+  const { data: catalogueRows, error: catalogueErr } = await supabase
+    .from("catalogue_articles")
+    .select("id, nom, actif")
+    .in("id", catalogueIds);
+
+  if (catalogueErr) {
+    console.error(
+      "[api/admin/commandes] Erreur SELECT catalogue_articles:",
+      catalogueErr
+    );
+    return NextResponse.json(
+      { success: false, error: "Erreur lors de la vérification du catalogue" },
+      { status: 500 }
+    );
+  }
+
+  const catalogueMap = new Map<
+    string,
+    { nom: string; actif: boolean }
+  >();
+  for (const c of catalogueRows ?? []) {
+    catalogueMap.set(c.id, { nom: c.nom, actif: c.actif });
+  }
+  for (let i = 0; i < articles.length; i++) {
+    const cat = catalogueMap.get(articles[i].catalogue_article_id);
+    if (!cat) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Article ${i + 1} : article du catalogue introuvable`,
+        },
+        { status: 400 }
+      );
+    }
+    if (!cat.actif) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Article ${i + 1} : article du catalogue inactif, impossible de l'utiliser`,
+        },
+        { status: 400 }
+      );
+    }
+    // Le nom vérifié côté serveur prime sur le snapshot client (sécurité).
+    articles[i].catalogue_article_nom = cat.nom;
+  }
+
   // ---------- 4. Calcul montant_total_avant_remise ----------
   const montantTotalAvantRemise = articles.reduce(
     (sum, a) => sum + (serviceMap.get(a.service_id)?.prix ?? 0) * a.quantite,
@@ -733,9 +792,10 @@ export async function POST(request: NextRequest) {
     const prixUnitaire = svc.prix;
     const montantLigne = prixUnitaire * article.quantite;
 
-    // Description lisible : "chemise blanc — bon" (+ couleur_libre + description_etat)
+    // Description lisible : "Costumes & Vêtements de Cérémonie blanc — bon"
+    // (utilise le nom du catalogue validé côté serveur, LOT 15)
     const descParts: string[] = [
-      article.type_vetement,
+      article.catalogue_article_nom,
       article.couleur === "autre" && article.couleur_libre
         ? article.couleur_libre
         : article.couleur,
@@ -748,12 +808,15 @@ export async function POST(request: NextRequest) {
     }
     const description = descParts.join(" ");
 
+    // LOT 15 : la colonne `type_vetement` a été renommée `type_vetement_legacy`
+    // par la migration 014. On ne l'insère plus (NULL). L'info article est
+    // portée par `description` (lisible) et par `catalogue_article_id` sur
+    // les articles_vetements individuels (FK).
     const { data: newLigne, error: insertLigneErr } = await supabase
       .from("commande_lignes")
       .insert({
         commande_id: commandeId,
         service_id: article.service_id,
-        type_vetement: article.type_vetement,
         description,
         quantite: article.quantite,
         prix_unitaire: prixUnitaire,
@@ -789,7 +852,7 @@ export async function POST(request: NextRequest) {
         commande_id: commandeId,
         ligne_id: ligneId,
         code_qr: `${shortCommandeId}-${ligneIndex}-${i}`,
-        type_vetement: article.type_vetement,
+        catalogue_article_id: article.catalogue_article_id,
         couleur: article.couleur,
         couleur_libre: article.couleur_libre ?? null,
         etat: article.etat,
