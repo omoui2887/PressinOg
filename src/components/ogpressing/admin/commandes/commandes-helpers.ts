@@ -41,6 +41,14 @@ export interface CommandeListItem {
   montant_paye: number;
   date_reception: string | null;
   date_pret_prevue: string | null;
+  /** Date à laquelle la commande a été livrée (statut "livre"). */
+  date_livraison: string | null;
+  /** Indique si la commande est à livrer chez le client (true) ou à retirer sur place (false). */
+  livraison: boolean | null;
+  /** Adresse de livraison saisie à la commande (si livraison=true). */
+  adresse_livraison: string | null;
+  /** Frais de livraison facturés au client (FCFA). */
+  frais_livraison: number | null;
   created_at: string;
   client: CommandeListClient | null;
 }

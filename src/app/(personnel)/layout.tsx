@@ -2,7 +2,7 @@
  * OgPressing — Layout racine des pages PERSONNEL (LOT 13)
  * -------------------------------------------------------
  * Route group `(personnel)` → dashboards des 7 rôles :
- *   - Manager (redirigé vers /admin/* par le middleware)
+ *   - Manager (UX "admin allégé" sur /personnel/manager/*)
  *   - Réceptionniste, Caissier, Laveur, Repassage, Livreur, Comptable
  *
  * Server Component : fetch côté serveur les infos du personnel connecté
@@ -18,9 +18,9 @@
  *     est une défense en profondeur : il re-vérifie l'auth et redirige
  *     vers /login si l'utilisateur n'est pas connecté.
  *   - RLS isole par pressing_id automatiquement (client anon + JWT).
- *   - Un Manager (role='manager') n'a pas accès aux routes /personnel/* —
- *     le middleware le redirige vers /admin/dashboard. Si on arrive ici
- *     avec role='manager', on redirige aussi par sécurité.
+ *   - Le manager (role='manager') peut accéder à /personnel/manager/* (UX
+ *     allégée) en plus de /admin/* (son interface complète). Les autres
+ *     segments /personnel/{autre-role}/* sont bloqués par le middleware.
  */
 import { redirect } from "next/navigation";
 import { PersonnelShell } from "@/components/ogpressing/personnel/personnel-shell";
@@ -60,14 +60,10 @@ export default async function PersonnelLayout({
     redirect("/login?next=/personnel&error=acces_refuse");
   }
 
-  // Un Manager n'a pas accès aux routes /personnel/* — il est redirigé vers
-  // /admin/dashboard (le middleware le fait aussi, mais on reste prudent).
-  if (personnel.role === "manager") {
-    redirect("/admin/dashboard");
-  }
-
-  // Valide que le rôle est bien l'un des 6 rôles attendus (hors manager).
-  if (!isPersonnelRole(personnel.role) || personnel.role === "manager") {
+  // Valide que le rôle est bien l'un des 7 rôles attendus (manager inclus
+  // depuis MGR-1 — le manager a désormais accès à /personnel/manager/* en
+  // plus de /admin/*).
+  if (!isPersonnelRole(personnel.role)) {
     redirect("/login?next=/personnel&error=acces_refuse");
   }
 

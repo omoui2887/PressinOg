@@ -11,6 +11,10 @@
  *   - Lien vers l'historique des mouvements
  *
  * Données via GET /api/admin/stock (RLS isole par pressing).
+ *
+ * ⚙️ Props `basePath` (défaut "/admin") : transmise au StockFilters pour
+ *    construire le lien "Historique des mouvements" → `${basePath}/stock/mouvements`.
+ *    Permet la réutilisation pour /personnel/manager/* (Task MGR-1).
  */
 "use client";
 
@@ -25,7 +29,12 @@ import { EditProductDialog } from "./edit-product-dialog";
 import { MouvementDialog } from "./mouvement-dialog";
 import type { ProduitStock } from "./stock-helpers";
 
-export function StockPage() {
+interface StockPageProps {
+  /** Base des URLs internes (défaut "/admin"). */
+  basePath?: string;
+}
+
+export function StockPage({ basePath = "/admin" }: StockPageProps = {}) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [produits, setProduits] = useState<ProduitStock[]>([]);
@@ -87,7 +96,11 @@ export function StockPage() {
 
       {/* Filtres */}
       <Card className="p-4">
-        <StockFilters query={query} onQueryChange={setQuery} />
+        <StockFilters
+          query={query}
+          onQueryChange={setQuery}
+          basePath={basePath}
+        />
       </Card>
 
       {/* Liste */}

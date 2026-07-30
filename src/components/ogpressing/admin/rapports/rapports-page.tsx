@@ -75,9 +75,21 @@ export function RapportsPage({
    *  en attente de confirmation de la matrice de permissions, Comptable garde
    *  les exports). */
   showExports = true,
+  /** Base path for internal navigation links. Defaults to "/admin".
+   *  Set to "/personnel/comptable" (or other role) for personnel variants.
+   *  Actuellement utilisé pour les futurs liens de navigation interne — les
+   *  boutons d'export .xlsx restent des appels API (relatifs) et n'utilisent
+   *  pas ce chemin. */
+  basePath = "/admin",
 }: {
   showExports?: boolean;
+  basePath?: string;
 } = {}) {
+  //basePath est réservé pour les futurs liens de navigation interne (back-link
+  // vers le dashboard du rôle, etc.). Pour l'instant aucun lien n'en a besoin
+  // car les boutons d'export .xlsx font des appels API relatifs
+  // (/api/admin/rapports/...) et la sélection de période est inline.
+  void basePath;
   const [periode, setPeriode] = useState<PeriodeRapport>("aujourdhui");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");

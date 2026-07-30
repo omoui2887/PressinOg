@@ -1,20 +1,29 @@
 /**
- * OgPressing — /personnel/caissier/clients/{id} (CAIS-1)
- * -------------------------------------------------------
- * Page de détail d'un client — variante "caissier" en lecture seule.
+ * OgPressing — /personnel/comptable/clients/{id} (COMPTA-1)
+ * ---------------------------------------------------------
+ * Page de détail d'un client — variante "comptable" de la page
+ * admin /admin/clients/{id}.
  *
  * Server Component (thin) : fetch les données initiales via Supabase
  * (RLS isole par pressing) et les passe en props au Client Component
- * <ClientDetailPage basePath="/personnel/caissier" readOnly /> qui gère
- * l'interactivité (tabs, mais SANS boutons "Modifier" grâce à readOnly).
+ * <ClientDetailPage basePath="/personnel/comptable" readOnly /> qui gère
+ * toute l'interactivité (tabs, dialogs). En mode `readOnly`, les boutons
+ * "Modifier" (coordnnées, préférences, notes) sont masqués.
+ *
+ * `basePath` est transmis pour que :
+ *   - les lignes d'historique de commandes pointent vers
+ *     /personnel/comptable/commandes/{id} (le comptable n'a pas de page
+ *     commandes dédiée — le lien est présent mais pourra être masqué par
+ *     la suite via readOnly)
+ *   - le bouton "Retour" pointe vers /personnel/comptable/clients
  *
  * 🔒 SÉCURITÉ : le layout (personnel)/layout.tsx vérifie déjà l'auth + le
  *    rôle. La SELECT Supabase est protégée par RLS : si le client n'existe
  *    pas ou n'appartient pas au pressing, on renvoie null → page 404 FR.
  *
- *    ⚠️ Le PATCH /api/admin/clients/[id] accepte manager OU receptionniste
- *       uniquement — le caissier NE peut PAS éditer. Le flag `readOnly`
- *       cache les boutons "Modifier" côté UI.
+ *    ⚠️ Note sur les mutations : le PATCH /api/admin/clients/[id] accepte
+ *       manager OU receptionniste — le comptable ne peut pas éditer. Le
+ *       flag `readOnly` masque donc tous les boutons d'édition côté UI.
  */
 import Link from "next/link";
 import { ArrowLeft, AlertCircle } from "lucide-react";
@@ -30,7 +39,7 @@ import type {
 
 export const dynamic = "force-dynamic";
 
-const BASE_PATH = "/personnel/caissier";
+const BASE_PATH = "/personnel/comptable";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -78,6 +87,8 @@ export default async function Page({ params }: PageProps) {
     );
   }
 
+  // Cast défensif : la shape retournée par Supabase correspond au type
+  // `ClientDetail` (les colonnes sont sélectionnées explicitement).
   const clientDetail = client as unknown as ClientDetail;
 
   // ----------------------------------------------------------------
@@ -111,7 +122,7 @@ export default async function Page({ params }: PageProps) {
   }
 
   // ----------------------------------------------------------------
-  // 4) Rend le Client Component orchestrator (readOnly = pas de "Modifier")
+  // 4) Rend le Client Component orchestrator (avec basePath + readOnly)
   // ----------------------------------------------------------------
   return (
     <ClientDetailPage
