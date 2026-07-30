@@ -852,6 +852,23 @@ export function StepArticles({ state, dispatch }: StepProps) {
           </div>
         </div>
       )}
+
+      {/* ====================================================== */}
+      {/* DIALOG : SÉLECTEUR VISUEL D'ARTICLE DU CATALOGUE       */}
+      {/* (LOT 15.2)                                             */}
+      {/* ====================================================== */}
+      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Choisir un article</DialogTitle>
+          </DialogHeader>
+          <ArticleCatalogPicker
+            selectedId={form.catalogue_article?.id ?? null}
+            onSelect={handleSelectCatalogueArticle}
+            compact
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
