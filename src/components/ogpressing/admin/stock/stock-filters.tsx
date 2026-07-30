@@ -13,9 +13,16 @@ import Link from "next/link";
 interface StockFiltersProps {
   query: string;
   onQueryChange: (q: string) => void;
+  /** Base des URLs internes (défaut "/admin"). Le lien "Historique des
+   *  mouvements" pointe vers `${basePath}/stock/mouvements`. */
+  basePath?: string;
 }
 
-export function StockFilters({ query, onQueryChange }: StockFiltersProps) {
+export function StockFilters({
+  query,
+  onQueryChange,
+  basePath = "/admin",
+}: StockFiltersProps) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
       <div className="relative flex-1">
@@ -29,7 +36,7 @@ export function StockFilters({ query, onQueryChange }: StockFiltersProps) {
         />
       </div>
       <Button variant="outline" size="sm" asChild className="h-11">
-        <Link href="/admin/stock/mouvements">
+        <Link href={`${basePath}/stock/mouvements`}>
           <History className="mr-2 size-4" />
           Historique des mouvements
         </Link>

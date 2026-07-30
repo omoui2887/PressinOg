@@ -1,21 +1,28 @@
 /**
- * OgPressing — /personnel/comptable/clients (REC-1 placeholder)
- * --------------------------------------------------------------
- * Placeholder pour la liste des clients (vue lecture pour le comptable).
- * Empêche le 404 lorsqu'un comptable clique sur "Clients" dans la nav.
+ * OgPressing — /personnel/comptable/clients (COMPTA-1)
+ * -----------------------------------------------------
+ * Liste des clients du pressing connecté — variante "comptable" en lecture
+ * seule (le comptable consulte les clients, leurs impayés et leur total
+ * dépensé, mais ne peut ni créer ni modifier un client).
+ *
+ * Server Component minimal qui rend le client orchestrator <ClientsPage />
+ * avec `basePath="/personnel/comptable"` et `readOnly` (masque le bouton
+ * "Nouveau client" et les actions de modification).
  *
  * 🔒 SÉCURITÉ : le layout (personnel)/layout.tsx vérifie déjà l'auth + le
- *    rôle (comptable uniquement sur /personnel/comptable/*).
+ *    rôle (comptable uniquement sur /personnel/comptable/*). L'API
+ *    GET /api/admin/clients accepte n'importe quel personnel actif du
+ *    pressing (RLS isole par pressing_id).
+ *
+ *    ⚠️ Le POST /api/admin/clients est réservé manager + receptionniste :
+ *       le comptable ne peut pas créer de client. Le flag `readOnly` cache
+ *       le bouton "Nouveau client" côté UI.
+ *
+ *    ✅ Les exports Excel (clients, impayés) restent accessibles au
+ *       comptable (présents dans <ClientsPage>).
  */
-import { DashboardPlaceholder } from "@/components/ogpressing/dashboard-placeholder";
+import { ClientsPage } from "@/components/ogpressing/admin/clients/clients-page";
 
 export default function ComptableClientsPage() {
-  return (
-    <DashboardPlaceholder
-      title="Clients"
-      roleLabel="Comptable"
-      description="Espace comptable — consultation du fichier clients (impayés, total dépensé)."
-      accent="text-primary"
-    />
-  );
+  return <ClientsPage basePath="/personnel/comptable" readOnly />;
 }

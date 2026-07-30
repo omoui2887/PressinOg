@@ -1,45 +1,44 @@
 /**
- * OgPressing — /personnel/livreur/dashboard (LIV-1)
+ * OgPressing — /personnel/manager/dashboard (MGR-1)
  * -------------------------------------------------
- * Tableau de bord du livreur :
- *   1. Header (titre "Tableau de bord" + sous-titre "Livreur")
- *   2. 4 StatCards :
- *        - À livrer          (Package, warning)    — pret + livraison=true
- *        - En livraison       (Truck, primary)      — en_livraison
- *        - Livrées aujourd'hui (CheckCircle, secondary) — livre + date_livraison du jour
- *        - En attente retrait (Store, primary)      — pret + livraison=false
- *   3. Raccourci : Commandes à livrer (CTA primary → /personnel/livreur/commandes)
- *   4. Tournées en cours : liste des 5 commandes "en_livraison" avec
- *      numéro, client, adresse_livraison, montant
+ * Tableau de bord agrégé du Manager — vue "admin allégé".
  *
- * Client component : fetch des données live au montage via 4 endpoints
+ * Le manager voit un dashboard plus large que le réceptionniste :
+ *   1. Header (titre "Tableau de bord" + sous-titre "Manager")
+ *   2. 4 StatCards : Commandes du jour / Recette du jour / En traitement /
+ *      Clients
+ *   3. 3 raccourcis : Nouvelle commande / Scanner QR / Rapports
+ *   4. Card "Commandes récentes" : 5 dernières (lien détail manager)
+ *
+ * Client component : fetch des données live au montage via plusieurs endpoints
  * en parallèle. États loading (skeletons) + error (alerte + bouton Réessayer).
  *
  * 🔒 SÉCURITÉ : le layout (personnel)/layout.tsx vérifie déjà l'auth + le
- *    rôle (livreur uniquement sur /personnel/livreur/*). Les endpoints
- *    /api/admin/commandes acceptent n'importe quel personnel actif du
- *    pressing. La RLS isole automatiquement par pressing_id.
+ *    rôle. Les endpoints /api/admin/* (commandes, clients, rapports/journalier,
+ *    rapports/paiements) acceptent n'importe quel personnel actif du pressing.
+ *    La RLS isole automatiquement par pressing_id.
  */
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  AlertCircle,
   ArrowRight,
-  CheckCircle,
-  MapPin,
-  Package,
+  BarChart3,
+  Loader,
+  PlusCircle,
+  QrCode,
   ShoppingBag,
-  Store,
-  Truck,
+  Users,
+  Wallet,
+  AlertCircle,
 } from "lucide-react";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
+  CardDescription,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -53,26 +52,35 @@ import {
 import { formatFCFA, formatRelative } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
 
-const BASE_PATH = "/personnel/livreur";
+const BASE_PATH = "/personnel/manager";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
 interface DashboardStats {
-  /** Commandes prêtes avec livraison=true (à livrer chez le client). */
-  aLivrer: number;
-  /** Commandes actuellement en cours de livraison (statut en_livraison). */
-  enLivraison: number;
-  /** Commandes livrées aujourd'hui (statut livre, date_livraison du jour). */
-  livreesAujourdhui: number;
-  /** Commandes prêtes avec livraison=false (retrait sur place). */
-  attenteRetrait: number;
+  /** Nombre de commandes créées aujourd'hui (via /api/admin/rapports/journalier). */
+  commandesDuJour: number;
+  /** Somme des paiements encaissés aujourd'hui (FCFA). */
+  recetteDuJour: number;
+  /** Nombre de commandes "en_traitement" (lavage + repassage en cours). */
+  enTraitement: number;
+  /** Nombre total de clients du pressing. */
+  clientsTotal: number;
 }
 
 interface DashboardData {
   stats: DashboardStats;
-  tournees: CommandeListItem[];
+  recentes: CommandeListItem[];
+}
+
+interface RapportJournalierRow {
+  numero_ticket?: string;
+  montant_total?: number;
+}
+
+interface RapportPaiementRow {
+  montant?: number;
 }
 
 interface CommandesApiResponse {
@@ -82,31 +90,33 @@ interface CommandesApiResponse {
   error?: string;
 }
 
+interface RapportApiResponse<T> {
+  success: boolean;
+  data: T[];
+  error?: string;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-/**
- * Indique si une date ISO tombe "aujourd'hui" (comparaison local, pas UTC).
- * On utilise les composants year/month/date pour éviter les décalages de TZ.
- */
-function isToday(isoDate: string | null | undefined): boolean {
-  if (!isoDate) return false;
-  const d = new Date(isoDate);
-  if (Number.isNaN(d.getTime())) return false;
+/** Retourne les bornes [start, end] UTC du jour courant en ISO strings. */
+function getTodayBounds(): { start: string; end: string } {
   const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
+  const start = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0)
   );
+  const end = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999)
+  );
+  return { start: start.toISOString(), end: end.toISOString() };
 }
 
 /* ------------------------------------------------------------------ */
 /*  Composant                                                          */
 /* ------------------------------------------------------------------ */
 
-export default function LivreurDashboardPage() {
+export default function ManagerDashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -115,63 +125,65 @@ export default function LivreurDashboardPage() {
     setLoading(true);
     setError(null);
     try {
+      const { start, end } = getTodayBounds();
+      const params = new URLSearchParams({ start, end });
+
       // Fetch parallèle :
-      //  1. Commandes "pret"        → sert à calculer aLivrer + attenteRetrait
-      //  2. Commandes "en_livraison" → sert à calculer enLivraison + tournees
-      //  3. Commandes "livre"        → sert à calculer livreesAujourdhui
-      //
-      // On demande pageSize=200 sur "pret" et "livre" pour récupérer un
-      // maximum de lignes et filtrer côté client sur `livraison` (la RLS
-      // ne permet pas de filter booléen directement en PostgREST sans
-      // une requête dédiée). 200 est un plafond raisonnable : un pressing
-      // qui aurait plus de 200 commandes "pret" en même temps est extrêmement
-      // rare. La pagination du dashboard n'est pas nécessaire.
-      const [pretRes, enLivraisonRes, livreRes] = await Promise.all([
-        fetch(`/api/admin/commandes?statut=pret&pageSize=100`, {
+      //  1. Commandes récentes (5 dernières) + total
+      //  2. Commandes "en_traitement" (total seulement — laveur + repasseur actifs)
+      //  3. Total clients (pageSize=1 pour ne récupérer que le count)
+      //  4. Rapport journalier (liste des commandes du jour → count = data.length)
+      //  5. Rapport paiements (somme des paiements du jour → recette)
+      const [
+        recentesRes,
+        enTraitementRes,
+        clientsRes,
+        journalierRes,
+        paiementsRes,
+      ] = await Promise.all([
+        fetch(`/api/admin/commandes?pageSize=5`, { cache: "no-store" }),
+        fetch(`/api/admin/commandes?statut=en_traitement&pageSize=1`, {
           cache: "no-store",
         }),
-        fetch(`/api/admin/commandes?statut=en_livraison&pageSize=50`, {
-          cache: "no-store",
-        }),
-        fetch(`/api/admin/commandes?statut=livre&pageSize=100`, {
+        fetch(`/api/admin/clients?pageSize=1`, { cache: "no-store" }),
+        fetch(`/api/admin/rapports/journalier`, { cache: "no-store" }),
+        fetch(`/api/admin/rapports/paiements?${params.toString()}`, {
           cache: "no-store",
         }),
       ]);
 
-      const pretJson: CommandesApiResponse = await pretRes.json();
-      const enLivraisonJson: CommandesApiResponse = await enLivraisonRes.json();
-      const livreJson: CommandesApiResponse = await livreRes.json();
+      const recentesJson: CommandesApiResponse = await recentesRes.json();
+      const enTraitementJson: CommandesApiResponse =
+        await enTraitementRes.json();
+      const clientsJson: CommandesApiResponse = await clientsRes.json();
+      const journalierJson: RapportApiResponse<RapportJournalierRow> =
+        await journalierRes.json();
+      const paiementsJson: RapportApiResponse<RapportPaiementRow> =
+        await paiementsRes.json();
 
-      if (!pretJson.success) {
+      // Vérifie qu'au moins les endpoints critiques ont répondu OK
+      if (!recentesJson.success) {
         throw new Error(
-          pretJson.error || "Erreur lors de la récupération des commandes"
+          recentesJson.error || "Erreur lors de la récupération des commandes"
         );
       }
 
-      const pretList = pretJson.data ?? [];
-      const enLivraisonList = enLivraisonJson.data ?? [];
-      const livreList = livreJson.data ?? [];
-
-      const aLivrer = pretList.filter((c) => c.livraison === true).length;
-      const attenteRetrait = pretList.filter(
-        (c) => c.livraison !== true
-      ).length;
-      const livreesAujourdhui = livreList.filter((c) =>
-        isToday(c.date_livraison)
-      ).length;
+      const recetteDuJour = (paiementsJson.data ?? []).reduce(
+        (sum, p) => sum + (p.montant ?? 0),
+        0
+      );
 
       setData({
         stats: {
-          aLivrer,
-          enLivraison: enLivraisonList.length,
-          livreesAujourdhui,
-          attenteRetrait,
+          commandesDuJour: (journalierJson.data ?? []).length,
+          recetteDuJour,
+          enTraitement: enTraitementJson.total ?? 0,
+          clientsTotal: clientsJson.total ?? 0,
         },
-        // Tournées en cours = les commandes "en_livraison" (limit 5).
-        tournees: enLivraisonList.slice(0, 5),
+        recentes: recentesJson.data ?? [],
       });
     } catch (err) {
-      console.error("[livreur/dashboard] Erreur fetch:", err);
+      console.error("[manager/dashboard] Erreur fetch:", err);
       if (err instanceof TypeError && err.message.includes("fetch")) {
         setError(
           "Erreur réseau. Vérifiez votre connexion internet puis rechargez la page."
@@ -209,51 +221,77 @@ export default function LivreurDashboardPage() {
     return (
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          label="À livrer"
-          value={data.stats.aLivrer}
-          icon={Package}
-          accent="warning"
-          description="Prêtes chez le client"
+          label="Commandes du jour"
+          value={data.stats.commandesDuJour}
+          icon={ShoppingBag}
+          accent="primary"
+          description="Créées aujourd'hui"
           delay={0}
         />
         <StatCard
-          label="En livraison"
-          value={data.stats.enLivraison}
-          icon={Truck}
-          accent="primary"
-          description="Tournées en cours"
+          label="Recette du jour"
+          value={formatFCFA(data.stats.recetteDuJour)}
+          icon={Wallet}
+          accent="secondary"
+          description="Paiements encaissés"
           delay={60}
         />
         <StatCard
-          label="Livrées aujourd'hui"
-          value={data.stats.livreesAujourdhui}
-          icon={CheckCircle}
-          accent="secondary"
-          description="Terminées ce jour"
+          label="En traitement"
+          value={data.stats.enTraitement}
+          icon={Loader}
+          accent="warning"
+          description="Lavage / repassage en cours"
           delay={120}
         />
         <StatCard
-          label="En attente retrait"
-          value={data.stats.attenteRetrait}
-          icon={Store}
+          label="Clients"
+          value={data.stats.clientsTotal}
+          icon={Users}
           accent="primary"
-          description="Retrait sur place"
+          description="Fichier clients"
           delay={180}
         />
       </div>
     );
   }
 
-  /* ---------------- Sous-composant : Tournées en cours ---------------- */
+  /* ---------------- Sous-composant : Raccourcis ---------------- */
 
-  function renderTournees() {
+  const shortcuts = [
+    {
+      href: `${BASE_PATH}/commandes/nouvelle`,
+      title: "Nouvelle commande",
+      subtitle: "Enregistrer une commande client",
+      icon: PlusCircle,
+      primary: true,
+    },
+    {
+      href: `${BASE_PATH}/scanner-qr`,
+      title: "Scanner QR",
+      subtitle: "Retrouver une commande par QR Code",
+      icon: QrCode,
+      primary: false,
+    },
+    {
+      href: `${BASE_PATH}/rapports`,
+      title: "Rapports",
+      subtitle: "Chiffre d'affaires, paiements, remises",
+      icon: BarChart3,
+      primary: false,
+    },
+  ] as const;
+
+  /* ---------------- Sous-composant : Commandes récentes ---------------- */
+
+  function renderRecentes() {
     return (
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
           <div>
-            <CardTitle className="text-lg">Tournées en cours</CardTitle>
+            <CardTitle className="text-lg">Commandes récentes</CardTitle>
             <CardDescription>
-              Les 5 commandes actuellement en livraison
+              Les 5 dernières commandes enregistrées
             </CardDescription>
           </div>
           <Button asChild variant="outline" size="sm" className="shrink-0">
@@ -266,34 +304,36 @@ export default function LivreurDashboardPage() {
         <CardContent>
           {loading ? (
             <div className="space-y-3">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-16 w-full rounded-lg" />
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-14 w-full rounded-lg" />
               ))}
             </div>
           ) : error || !data ? (
             <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
               Données indisponibles
             </div>
-          ) : data.tournees.length === 0 ? (
+          ) : data.recentes.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/20 py-10 text-center">
-              <Truck className="size-8 text-muted-foreground/50" />
+              <ShoppingBag className="size-8 text-muted-foreground/50" />
               <p className="text-sm font-medium text-foreground">
-                Aucune tournée en cours
+                Aucune commande pour le moment
               </p>
               <p className="max-w-xs text-xs text-muted-foreground">
-                Les commandes que vous démarrerez en livraison apparaîtront ici.
-                Rendez-vous sur « Commandes à livrer » pour démarrer une
-                livraison.
+                Les nouvelles commandes apparaîtront ici. Utilisez le raccourci
+                «&nbsp;Nouvelle commande&nbsp;» pour enregistrer une commande.
               </p>
             </div>
           ) : (
             <ul className="divide-y">
-              {data.tournees.map((c) => (
+              {data.recentes.map((c) => (
                 <li
                   key={c.id}
                   className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <div className="min-w-0 space-y-0.5">
+                  <Link
+                    href={`${BASE_PATH}/commandes/${c.id}`}
+                    className="min-w-0 flex-1 space-y-0.5 transition-colors hover:text-primary"
+                  >
                     <p className="truncate text-sm font-semibold text-foreground">
                       <span className="font-mono text-xs text-muted-foreground">
                         {c.numero_commande ?? "—"}
@@ -305,16 +345,10 @@ export default function LivreurDashboardPage() {
                         </>
                       )}
                     </p>
-                    <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
-                      <MapPin className="size-3 shrink-0" aria-hidden />
-                      <span className="truncate">
-                        {c.adresse_livraison || "Adresse non renseignée"}
-                      </span>
-                    </p>
                     <p className="text-xs text-muted-foreground">
-                      Démarrée {formatRelative(c.created_at)}
+                      {formatRelative(c.created_at)}
                     </p>
-                  </div>
+                  </Link>
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-semibold text-foreground">
                       {formatFCFA(c.montant_total)}
@@ -335,22 +369,6 @@ export default function LivreurDashboardPage() {
     );
   }
 
-  /* ---------------- Sous-composant : Raccourcis ---------------- */
-
-  const shortcuts = useMemo(
-    () =>
-      [
-        {
-          href: `${BASE_PATH}/commandes`,
-          title: "Commandes à livrer",
-          subtitle: "Démarrer ou terminer une livraison",
-          icon: ShoppingBag,
-          primary: true,
-        },
-      ] as const,
-    []
-  );
-
   /* ---------------- Rendu principal ---------------- */
 
   return (
@@ -360,7 +378,7 @@ export default function LivreurDashboardPage() {
         <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
           Tableau de bord
         </h1>
-        <p className="text-muted-foreground">Livreur</p>
+        <p className="text-muted-foreground">Manager</p>
       </div>
 
       {/* 2. Erreur globale (si présente) */}
@@ -393,7 +411,7 @@ export default function LivreurDashboardPage() {
       {/* 4. Raccourcis */}
       <section className="space-y-3">
         <h2 className="text-lg font-semibold text-foreground">Raccourcis</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-3">
           {shortcuts.map((s) => {
             const Icon = s.icon;
             return (
@@ -439,7 +457,9 @@ export default function LivreurDashboardPage() {
                       />
                     </div>
                     <div className="space-y-1">
-                      <p className="text-lg font-bold leading-tight">{s.title}</p>
+                      <p className="text-lg font-bold leading-tight">
+                        {s.title}
+                      </p>
                       <p
                         className={cn(
                           "text-sm",
@@ -459,8 +479,8 @@ export default function LivreurDashboardPage() {
         </div>
       </section>
 
-      {/* 5. Tournées en cours */}
-      {renderTournees()}
+      {/* 5. Commandes récentes */}
+      {renderRecentes()}
     </div>
   );
 }

@@ -1,0 +1,25 @@
+/**
+ * OgPressing — /personnel/manager/commandes/nouvelle (MGR-1)
+ * ---------------------------------------------------------
+ * Wizard de création d'une nouvelle commande pressing — variante "manager"
+ * du wizard admin.
+ *
+ * Server Component minimal qui rend le wizard client (<CommandeWizard />).
+ * Le header (titre + retour), le stepper visuel, le contenu de l'étape
+ * courante et les boutons de navigation sont gérés par le wizard.
+ *
+ * `basePath="/personnel/manager"` est transmis au wizard pour que :
+ *   - le bouton "Retour aux commandes" pointe vers
+ *     /personnel/manager/commandes
+ *   - le lien "Retour au tableau de bord" (étape confirmation succès) pointe
+ *     vers /personnel/manager/dashboard
+ *
+ * 🔒 SÉCURITÉ : le layout (personnel)/layout.tsx vérifie déjà l'auth + le
+ *    rôle. L'API POST /api/admin/commandes accepte n'importe quel personnel
+ *    actif (actif=true, statut_compte='actif'), peu importe le rôle.
+ */
+import { CommandeWizard } from "@/components/ogpressing/admin/commande-wizard/commande-wizard";
+
+export default function ManagerNouvelleCommandePage() {
+  return <CommandeWizard basePath="/personnel/manager" />;
+}

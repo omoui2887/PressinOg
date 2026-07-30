@@ -223,7 +223,7 @@ export async function GET(request: NextRequest) {
   let query = supabase
     .from("commandes")
     .select(
-      "id, numero_commande, statut, statut_paiement, montant_total, montant_paye, date_reception, date_pret_prevue, created_at, client:clients(id, nom_complet, telephone)",
+      "id, numero_commande, statut, statut_paiement, montant_total, montant_paye, date_reception, date_pret_prevue, date_livraison, livraison, adresse_livraison, frais_livraison, created_at, client:clients(id, nom_complet, telephone)",
       { count: "exact" }
     );
 

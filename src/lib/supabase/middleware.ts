@@ -780,10 +780,9 @@ export async function updateSession(
     pathname === "/personnel" ||
     pathname.startsWith("/personnel/")
   ) {
-    // /personnel/* : réservé aux employés (hors manager et super_admin).
-    // Un manager est redirigé vers /admin/dashboard (pas /personnel/manager/
-    // dashboard) — il n'a pas accès aux routes /personnel/*.
-    if (roleInfo.role === "manager" || roleInfo.role === "super_admin") {
+    // /personnel/* : réservé au personnel (tous rôles sauf super_admin).
+    // Un super_admin n'a pas accès aux routes /personnel/* (il a /super-admin/*).
+    if (roleInfo.role === "super_admin") {
       const target = computeDashboardTarget(roleInfo);
       return redirectTo(
         request,
@@ -796,6 +795,12 @@ export async function updateSession(
     // par un personnel ayant CE rôle. Les routes génériques (sans segment
     // de rôle, ex : /personnel/changer-mot-de-passe) restent accessibles à
     // tout personnel authentifié.
+    //
+    // ⚠️ Le manager (role='manager') est un cas particulier : il a accès
+    //    à /admin/* (son dashboard principal) ET à /personnel/manager/*
+    //    (UX "admin allégé" avec navigation personnel). Le check ci-dessous
+    //    autorise le manager sur /personnel/manager/* et le bloque sur tous
+    //    les autres segments /personnel/{autre-role}/*.
     const roleFromUrl = extractPersonnelRoleFromPath(pathname);
     if (roleFromUrl && roleFromUrl !== roleInfo.role) {
       const target = computeDashboardTarget(roleInfo);
