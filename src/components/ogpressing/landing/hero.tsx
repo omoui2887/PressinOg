@@ -1,32 +1,16 @@
 /**
  * OgPressing — Section Hero (landing page)
  * ----------------------------------------
- * Titre accrocheur, sous-titre valeur, CTA "Essayer gratuitement"
- * (scroll vers #inscription), badges de confiance, et mockup dashboard
- * illustratif construit avec lucide-react + Tailwind (pas d'image externe).
+ * Layout deux colonnes (Stitch design) :
+ *   - Gauche : badges, H1, sous-titre, CTA orange "Essayer gratuitement"
+ *   - Droite : carte décorative (icône Shirt + label "PRESSING MANAGER")
+ *
+ * Mobile : les colonnes s'empilent (texte d'abord, visuel ensuite).
  */
 import Link from "next/link";
-import {
-  ArrowRight,
-  ShieldCheck,
-  Smartphone,
-  QrCode,
-  ShoppingBag,
-  TrendingUp,
-  Users,
-  Package,
-  CheckCircle2,
-  Clock,
-} from "lucide-react";
+import { ArrowRight, CheckCircle2, Shirt, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Reveal } from "@/components/ogpressing/reveal";
-
-const TRUST_BADGES = [
-  { icon: "🇨🇮", label: "Conçu pour la Côte d'Ivoire" },
-  { icon: "💰", label: "FCFA & Mobile Money" },
-  { icon: "🎁", label: "Essai 7 jours gratuit" },
-];
 
 export function HeroSection() {
   return (
@@ -46,232 +30,115 @@ export function HeroSection() {
       />
 
       <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8 lg:py-28">
-        <div className="mx-auto max-w-3xl text-center">
-          <Reveal>
-            <Badge variant="secondary" className="mb-6 gap-1.5 px-3 py-1 text-sm">
-              <span aria-hidden>🇨🇮</span> Conçu pour la Côte d&apos;Ivoire
-            </Badge>
-          </Reveal>
-
-          <Reveal delay={80}>
-            <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
-              La gestion de votre pressing,{" "}
-              <span className="text-primary">simplifiée</span>
-            </h1>
-          </Reveal>
-
-          <Reveal delay={160}>
-            <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground sm:text-xl">
-              OgPressing digitalise entièrement votre pressing : point de vente,
-              suivi par article, tickets QR Code, personnel, stock de biodétergents
-              et rapports — tout au même endroit, en français, en FCFA.
-            </p>
-          </Reveal>
-
-          <Reveal delay={240}>
-            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <Button size="lg" asChild className="w-full sm:w-auto">
-                <Link href="#inscription">
-                  Essayer gratuitement <ArrowRight className="size-4" />
-                </Link>
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                asChild
-                className="w-full sm:w-auto"
-              >
-                <Link href="#fonctionnalites">Découvrir les fonctionnalités</Link>
-              </Button>
-            </div>
-          </Reveal>
-
-          {/* Badges de confiance */}
-          <Reveal delay={320}>
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-2 sm:gap-3">
-              {TRUST_BADGES.map((b) => (
-                <span
-                  key={b.label}
-                  className="inline-flex items-center gap-1.5 rounded-full border bg-card/70 px-3 py-1.5 text-xs font-medium text-foreground shadow-sm sm:text-sm"
-                >
-                  <span aria-hidden className="text-base leading-none">
-                    {b.icon}
-                  </span>
-                  {b.label}
+        <div className="grid items-center gap-12 lg:grid-cols-2">
+          {/* ---------- Colonne gauche : texte ---------- */}
+          <div className="text-left">
+            {/* Badges row */}
+            <Reveal>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary/15 px-3 py-1 text-xs font-semibold text-secondary sm:text-sm">
+                  <Target className="size-3.5" aria-hidden />
+                  Conçu pour la Côte d&apos;Ivoire
                 </span>
-              ))}
-            </div>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary sm:text-sm">
+                  FCFA &amp; Mobile Money
+                </span>
+              </div>
+            </Reveal>
+
+            {/* H1 (left-aligned) */}
+            <Reveal delay={80}>
+              <h1 className="mt-6 text-4xl font-bold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
+                La gestion de votre pressing,
+                <br />
+                <span className="text-primary">simplifiée</span>
+              </h1>
+            </Reveal>
+
+            {/* Subtitle */}
+            <Reveal delay={160}>
+              <p className="mt-6 max-w-xl text-base text-muted-foreground sm:text-lg">
+                La solution tout-en-un pour digitaliser votre activité en Côte
+                d&apos;Ivoire. Suivez vos commandes, gérez vos clients et
+                boostez votre rentabilité.
+              </p>
+            </Reveal>
+
+            {/* CTA row */}
+            <Reveal delay={240}>
+              <div className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+                <Button
+                  size="lg"
+                  variant="warning"
+                  asChild
+                  className="w-full sm:w-auto"
+                >
+                  <Link href="#inscription">
+                    Essayer gratuitement <ArrowRight className="size-4" />
+                  </Link>
+                </Button>
+                <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <CheckCircle2 className="size-4 text-secondary" aria-hidden />
+                  Essai 7 jours gratuit
+                </span>
+              </div>
+            </Reveal>
+          </div>
+
+          {/* ---------- Colonne droite : visuel ---------- */}
+          <Reveal delay={200} className="order-last lg:order-none">
+            <HeroVisual />
           </Reveal>
         </div>
-
-        {/* Mockup dashboard */}
-        <Reveal delay={200} className="mx-auto mt-14 max-w-5xl">
-          <HeroMockup />
-        </Reveal>
       </div>
     </section>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/*  Mockup dashboard (purement décoratif, lucide + Tailwind)           */
+/*  Visuel décoratif (carte grise avec icône Shirt + label blanc)      */
 /* ------------------------------------------------------------------ */
 
-function HeroMockup() {
+function HeroVisual() {
   return (
-    <div className="relative rounded-2xl border bg-card p-2 shadow-2xl ring-1 ring-black/5 sm:p-3">
-      {/* Barre de fenêtre */}
-      <div className="flex items-center gap-1.5 px-2 py-1.5">
-        <span className="size-2.5 rounded-full bg-danger/70" />
-        <span className="size-2.5 rounded-full bg-warning/70" />
-        <span className="size-2.5 rounded-full bg-secondary/70" />
-        <span className="ml-3 text-xs text-muted-foreground">
-          app.ogpressing.ci — Tableau de bord
-        </span>
-      </div>
+    <div className="relative mx-auto w-full max-w-md">
+      {/* Carte sombre pour garantir le contraste du texte blanc
+          (le token `muted` est clair en light mode → texte blanc invisible).
+          On utilise `from-foreground to-foreground/70` comme gradient gris foncé. */}
+      <div className="relative aspect-square overflow-hidden rounded-3xl bg-gradient-to-br from-foreground to-foreground/70 shadow-2xl ring-1 ring-black/5">
+        {/* Halo décoratif derrière l'icône */}
+        <div
+          aria-hidden
+          className="absolute left-1/2 top-1/2 size-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/20 blur-3xl"
+        />
 
-      <div className="grid gap-2 rounded-xl bg-muted/40 p-2 sm:grid-cols-3 sm:p-3">
-        {/* Colonne KPIs */}
-        <div className="space-y-2">
-          <KpiCard
-            icon={<ShoppingBag className="size-4" />}
-            label="Commandes du jour"
-            value="38"
-            trend="+12%"
-          />
-          <KpiCard
-            icon={<TrendingUp className="size-4" />}
-            label="Recette du jour"
-            value="142 500 FCFA"
-            trend="+8%"
-          />
-          <KpiCard
-            icon={<Clock className="size-4" />}
-            label="En production"
-            value="23"
-            trend="2 en retard"
-            trendTone="warning"
-          />
-        </div>
+        {/* Contenu centré */}
+        <div className="relative flex h-full flex-col items-center justify-center gap-6 p-8 text-center">
+          {/* Cercle portant l'icône */}
+          <span className="flex size-24 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-4 ring-white/10">
+            <Shirt className="size-12" strokeWidth={1.75} aria-hidden />
+          </span>
 
-        {/* Colonne file de production */}
-        <div className="rounded-lg border bg-background p-3 sm:col-span-1">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-semibold text-foreground">
-              File de production
-            </span>
-            <span className="text-[10px] text-muted-foreground">temps réel</span>
+          <div className="space-y-1.5">
+            <p className="text-lg font-bold uppercase tracking-[0.25em] text-white sm:text-xl">
+              OgPressing
+            </p>
+            <p className="text-xs uppercase tracking-[0.2em] text-white/50 sm:text-sm">
+              Ivory Coast
+            </p>
           </div>
-          <ul className="space-y-1.5">
-            {[
-              { n: "CMD-1042", s: "Repassage", c: "bg-secondary" },
-              { n: "CMD-1041", s: "Lavage", c: "bg-primary" },
-              { n: "CMD-1040", s: "Prêt", c: "bg-secondary" },
-              { n: "CMD-1039", s: "Livraison", c: "bg-warning" },
-            ].map((row) => (
-              <li
-                key={row.n}
-                className="flex items-center justify-between rounded-md bg-muted/60 px-2 py-1.5 text-[11px]"
-              >
-                <span className="flex items-center gap-1.5 font-medium text-foreground">
-                  <span className={`size-1.5 rounded-full ${row.c}`} />
-                  {row.n}
-                </span>
-                <span className="text-muted-foreground">{row.s}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
 
-        {/* Colonne raccourcis + alerte stock */}
-        <div className="space-y-2">
-          <div className="rounded-lg border bg-background p-3">
-            <span className="text-xs font-semibold text-foreground">
-              Raccourcis
-            </span>
-            <div className="mt-2 grid grid-cols-3 gap-1.5">
-              {[
-                <ShoppingBag key="s" className="size-4" />,
-                <Users key="u" className="size-4" />,
-                <Package key="p" className="size-4" />,
-                <QrCode key="q" className="size-4" />,
-                <TrendingUp key="t" className="size-4" />,
-                <ShieldCheck key="sh" className="size-4" />,
-              ].map((icon, i) => (
-                <span
-                  key={i}
-                  className="flex aspect-square items-center justify-center rounded-md bg-primary/10 text-primary"
-                >
-                  {icon}
-                </span>
-              ))}
-            </div>
-          </div>
-          <div className="rounded-lg border border-warning/30 bg-warning/10 p-3">
-            <div className="flex items-start gap-2">
-              <Package className="mt-0.5 size-4 shrink-0 text-warning" />
-              <div>
-                <p className="text-xs font-semibold text-foreground">
-                  Stock bas : Javel 5L
-                </p>
-                <p className="text-[11px] text-muted-foreground">
-                  2 bidons restants — recommandez.
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="rounded-lg border border-secondary/30 bg-secondary/10 p-3">
-            <div className="flex items-start gap-2">
-              <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-secondary" />
-              <div>
-                <p className="text-xs font-semibold text-foreground">
-                  CMD-1038 livrée
-                </p>
-                <p className="text-[11px] text-muted-foreground">
-                  Payé 4 500 FCFA — espèces.
-                </p>
-              </div>
-            </div>
+          {/* Petits points décoratifs en bas */}
+          <div
+            aria-hidden
+            className="absolute bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-1.5"
+          >
+            <span className="size-1.5 rounded-full bg-primary" />
+            <span className="size-1.5 rounded-full bg-secondary" />
+            <span className="size-1.5 rounded-full bg-warning" />
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function KpiCard({
-  icon,
-  label,
-  value,
-  trend,
-  trendTone = "secondary",
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  trend: string;
-  trendTone?: "secondary" | "warning";
-}) {
-  return (
-    <div className="rounded-lg border bg-background p-3">
-      <div className="flex items-center justify-between">
-        <span className="flex size-7 items-center justify-center rounded-md bg-primary/10 text-primary">
-          {icon}
-        </span>
-        <span
-          className={
-            trendTone === "warning"
-              ? "text-[10px] font-medium text-warning"
-              : "text-[10px] font-medium text-secondary"
-          }
-        >
-          {trend}
-        </span>
-      </div>
-      <p className="mt-2 text-base font-bold text-foreground sm:text-lg">
-        {value}
-      </p>
-      <p className="text-[11px] text-muted-foreground">{label}</p>
     </div>
   );
 }

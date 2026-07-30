@@ -28,7 +28,6 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription, SheetC
 import { cn } from "@/lib/utils";
 
 const NAV_LINKS = [
-  { href: "#probleme-solution", label: "Avant / Après" },
   { href: "#fonctionnalites", label: "Fonctionnalités" },
   { href: "#tarifs", label: "Tarifs" },
   { href: "#temoignages", label: "Témoignages" },

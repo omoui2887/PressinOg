@@ -563,10 +563,11 @@ export function InscriptionForm() {
           </div>
         )}
 
-        {/* Bouton submit */}
+        {/* Bouton submit — orange (warning) pour matcher le design Stitch */}
         <Button
           type="submit"
           size="lg"
+          variant="warning"
           className="w-full"
           disabled={isSubmitting}
         >

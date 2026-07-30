@@ -5388,3 +5388,58 @@ Stage Summary:
 Fichiers créés :
 - `scripts/generate-article-icons.ts` (script de génération réutilisable, avec retry/concurrency/skip)
 - `public/images/articles/*.png` (35 fichiers : 33 slugs + 2 alias double-s pour housse-coussin et housse-vetement-perso)
+
+---
+Task ID: LANDING-REDESIGN-V1
+Agent: frontend-styling-expert
+Task: Redesign OgPressing landing page to match Google Stitch design reference (4 screenshots)
+
+Work Log:
+- Lecture du worklog partagé, de globals.css (design tokens), de reveal.tsx (animation API) et des 9 fichiers cibles.
+- Analyse du design system existant : primary=#2563EB (bleu), secondary=#10B981 (vert), warning=#F59E0B (ambre/orange), danger=#EF4444 (rouge). Variants Button disponibles : default / secondary / warning / destructive / outline / ghost / link.
+- Hero : remplacement du layout centré par une grille 2 colonnes (lg:grid-cols-2). Colonne gauche : 2 badges (Target vert + FCFA bleu), H1 left-aligned ("La gestion de votre pressing," + <br> + "simplifiée" en bleu), sous-titre max-w-xl, CTA "Essayer gratuitement" en variant="warning" (orange) avec flèche, et badge inline CheckCircle2 vert + "Essai 7 jours gratuit". Colonne droite : carte décorative aspect-square avec gradient sombre (from-foreground to-foreground/70) — déviation justifiée car le token `muted` est très clair en light mode (oklch(0.97 0 0)) et rendrait le texte blanc invisible. Icône Shirt taille 12 dans un cercle bleu, label "PRESSING MANAGER" blanc uppercase tracking-[0.25em], sous-label "Ivory Coast" en white/50. Points décoratifs colorés en bas. Mobile : colonnes empilées via order-last lg:order-none (texte d'abord, visuel ensuite).
+- ProblemSolution : remplacement du layout "Avant/Après" précédent par 2 cartes côte-à-côte (md:grid-cols-2). Carte "Avant : Le chaos manuel" : bordure + bg-card, icône X rouge dans cercle bg-danger/15, description, et zone d'illustration (gradient gris from-muted to-muted/30 avec BookText grisée grayscale). Carte "Après : Digital & Rapide" : SOLIDE BLEUE (bg-primary text-primary-foreground), icône Check dans cercle bg-primary-foreground/20, description en primary-foreground/80, et zone d'illustration (gradient bleu clair from-primary-foreground/20 to-primary-foreground/5 avec icône Smartphone). Ajout id="probleme-solution" scroll-mt-20.
+- Features : mise à jour du titre ("Tout ce dont votre pressing a besoin") et sous-titre ("Une suite d'outils puissants adaptée à la réalité du terrain ivoirien."). Conservation des 8 cartes (icône carrée bleue size-12 rounded-xl bg-primary/10 text-primary, hover:bg-primary group-hover). Passage scroll-mt-16 → scroll-mt-20.
+- Pricing : nouveau titre ("Des tarifs adaptés à votre croissance") et sous-titre ("Choisissez votre formule. Règlement physique, hors application — aucun paiement en ligne."). Plan Pro : border-2 border-primary shadow-lg ring-1 ring-primary/20 lg:scale-[1.03] + badge "Populaire" en haut. Boutons : Starter="Choisir Starter" (outline), Pro="Essai gratuit Pro" (default), Business="Choisir Business" (outline). Conservation de la logique Zustand (useInscriptionStore, selectPlan) et du message "Plan présélectionné ✓". scroll-mt-20.
+- Testimonials : réduction de 3 à 2 témoignages (Pressing Excellence / Cocody, Clean Riviera / Riviera 3). Citations exactes du spec avec guillemets français « ... » en italique. Quote icon semi-transparent (text-primary/30) en haut, 5 étoiles dorées (Star fill-warning text-warning) à droite. Auteur en font-bold text-primary, localisation en text-sm text-muted-foreground. Layout md:grid-cols-2. scroll-mt-20.
+- InscriptionSection : refonte majeure. Section entière en bg-gradient-to-br from-primary-700 via-primary to-primary-600 (fond bleu foncé) avec py-16 sm:py-24. Grille md:grid-cols-2 gap-12. Colonne gauche : titre "Demandez votre accès" blanc (text-3xl sm:text-4xl font-bold text-white), sous-titre blanc/80, 2 blocs FeatureBlock (MapPin "Accompagnement Local" + ShieldCheck "Données Sécurisées") avec icônes dans cercles bg-white/20. Colonne droite : carte blanche bg-background text-foreground rounded-2xl shadow-2xl p-6 sm:p-8 contenant l'InscriptionForm (lazy-loadé via next/dynamic ssr:false, conservé). Le bloc "Plan présélectionné" est conservé à l'intérieur de la carte. Le skeleton de chargement a sa couleur de bouton ajustée à bg-warning/30 pour refléter le nouveau CTA orange.
+- InscriptionForm : SEUL le bouton submit a été modifié — passage de variant par défaut (bleu gradient) à variant="warning" (orange gradient). Aucun changement aux 11 champs, à la validation Zod, ni à la logique de soumission. Le bouton "Envoyer une autre demande" (état succès) reste en variant="outline".
+- PublicHeader : NAV_LINKS mis à jour pour retirer "Avant / Après" et garder uniquement "Fonctionnalités", "Tarifs", "Témoignages" (#fonctionnalites, #tarifs, #temoignages). Conservation du pattern `mounted` gate (useSyncExternalStore) pour le Sheet mobile afin d'éviter les hydration mismatches sur aria-controls (Radix useId). Conservation du scroll-bg-transparent / bg-background/85 backdrop-blur-md au scroll. Logo, boutons "Se connecter" (ghost) et "S'inscrire" (default → #inscription) intacts.
+- PublicFooter : refonte complète. Fond bg-foreground (sombre) text-background (clair). Grille 3 colonnes (md:grid-cols-3) : (1) Brand "Pressing Manager" + tagline "Solution de gestion digitale pour les pressings et blanchisseries en Côte d'Ivoire. Efficace, Transparente, Moderne.", (2) "Liens Utiles" (titre text-secondary uppercase) avec Mentions légales, Politique de confidentialité, Contact, (3) "Nous contacter" (titre text-secondary) avec ogouromain@gmail.com (Mail icon) et WhatsApp +225 05 76 10 32 77 (MessageCircle icon). Texte muted en text-background/70. Copyright centré en bas : "© 2024 Pressing Manager Ivory Coast. All rights reserved." avec border-top border-background/10.
+- Vérification : `bun run lint` → 0 erreur (sortie vide). `curl http://localhost:3000/` → HTTP 200, 310KB HTML rendu. Vérification de la présence des nouveaux contenus dans le HTML : "Pressing Manager" (3 occurrences), "Pressing Excellence" (2), "Demandez votre accès" (1), "Tout ce dont votre pressing a besoin" (2), "Essayer gratuitement" (2). Le dev.log ne montre qu'une erreur EADDRINUSE (un 2e process Next a tenté de démarrer sur :3000 alors que le serveur principal tourne déjà — non lié à mes changements).
+
+Stage Summary:
+- Files modified: src/components/ogpressing/landing/hero.tsx, problem-solution.tsx, features.tsx, pricing.tsx, testimonials.tsx, inscription-placeholder.tsx, inscription-form.tsx, public-header.tsx, public-footer.tsx (9 fichiers, 0 nouveau fichier créé)
+- Sections redesigned: Hero, ProblemSolution, Features, Pricing, Testimonials, Inscription, Header, Footer
+- Lint result: PASS (0 erreur ESLint/TypeScript)
+- Dev log errors: aucune erreur runtime liée aux changements. Le dev.log existant ne contient qu'une EADDRINUSE (port 3000 déjà occupé par le serveur dev principal — non pertinent).
+- Déviations mineures du spec :
+  1. Hero visual : gradient `from-foreground to-foreground/70` au lieu de `from-muted to-muted/50` car le token `muted` est clair (oklch 0.97) en light mode et rendrait le texte blanc "PRESSING MANAGER" invisible. Le rendu visuel (carte gris foncé) correspond à l'intention du design Stitch.
+  2. Boutons orange (Hero CTA + InscriptionForm submit) : utilisation de `variant="warning"` (qui applique `bg-gradient-warning` warning→warning-600 + text-warning-foreground) plutôt que les classes explicites `bg-warning hover:bg-warning-600 text-warning-foreground`. Raison : le variant default du Button a `bg-gradient-primary` (background-image) qui coexisterait visuellement avec `bg-warning` (background-color) sans être surchargé. Le variant="warning" est sémantiquement plus propre, produit le même rendu orange/ambre, et respecte le design system existant.
+  3. Footer "Liens Utiles" : les liens Mentions légales et Politique de confidentialité pointent vers "#" car les pages légales n'existent pas encore (aucune route /mentions-legales ou /politique-confidentialite). Le lien Contact pointe vers #inscription (le formulaire de contact). À remplacer par les vraies routes quand elles seront créées.
+
+---
+Task ID: LANDING-FINALIZE-V1
+Agent: main
+Task: Finalisation de la refonte de la landing page (cohérence marque) + vérification du wizard step 2
+
+Work Log:
+- Vérification visuelle (Agent Browser + VLM) de toutes les sections refaites par LANDING-REDESIGN-V1 : Hero, ProblemSolution, Features, Pricing, Testimonials, Inscription, Footer — toutes conformes au design Stitch.
+- Correction de la cohérence de marque : remplacé "Pressing Manager" par "OgPressing" dans :
+  * `public-footer.tsx` (logo + copyright "© 2026 OgPressing — Côte d'Ivoire. Tous droits réservés.")
+  * `landing/hero.tsx` (texte "PRESSING MANAGER" → "OgPressing" dans la carte visuelle)
+  * `landing/testimonials.tsx` (citation "Depuis que nous utilisons OgPressing...")
+- Ajout de `DialogDescription` (sr-only) au Dialog du sélecteur d'article dans `step-articles.tsx` pour supprimer le warning Radix "Missing Description" et améliorer l'accessibilité.
+- Vérification end-to-end du wizard step 2 (Agent Browser, compte test-receptionniste) :
+  * Step 1 → sélection client "Adjoua Konan" ✓
+  * Step 2 → ouverture picker → sélection "Chemises" → ajout article ✓
+  * Step 3 → "Récapitulatif, remise et acompte" atteint ✓
+  * Aucune erreur runtime, aucun warning hydration dans la console.
+- Lint OK (`bun run lint` exit 0).
+- Dev server : HTTP 200 sur `/`, aucune erreur dans dev.log (sauf EADDRINUSE attendu car double start).
+
+Stage Summary:
+- Landing page : 100% conforme au design Stitch (4 captures fournies par l'utilisateur).
+- Marque : "OgPressing" partout (header, hero visual, testimonials, footer).
+- Wizard step 2 : fonctionnel, plus de warning Radix.
+- Files modified: `public-footer.tsx`, `landing/hero.tsx`, `landing/testimonials.tsx`, `admin/commande-wizard/step-articles.tsx`.
