@@ -1,0 +1,259 @@
+/**
+ * OgPressing — API /api/personnel/caissier/encaisser (POST) — CAIS-1
+ * ----------------------------------------------------------------
+ * Enregistre un paiement sur une commande existante.
+ *
+ * Body : { commande_id, montant, methode, reference?, notes? }
+ *   - commande_id : UUID de la commande (RLS isole par pressing_id)
+ *   - montant     : entier > 0 en FCFA
+ *   - methode     : "especes" | "mobile_money" | "carte_bancaire"
+ *   - reference   : texte libre optionnel (numéro tx MOMO, 4 derniers chiffres)
+ *   - notes       : texte libre optionnel
+ *
+ * 🔒 SÉCURITÉ :
+ *   - Auth Supabase (JWT) obligatoire
+ *   - Le personnel connecté doit avoir role="caissier", actif=true,
+ *     statut_compte="actif"
+ *   - RLS isole automatiquement par pressing_id : le caissier ne peut
+ *     encaisser que les commandes de son propre pressing
+ *
+ * ⚙️ LOGIQUE :
+ *   1. Fetch la commande par id (RLS filtre par pressing)
+ *   2. Valide montant > 0 et montant + montant_paye ≤ montant_total + 1
+ *      (tolérance de 1 FCFA pour les arrondis, alignée sur la CHECK
+ *      constraint de la table commandes)
+ *   3. Calcule est_acompte = (montant + montant_paye) < montant_total
+ *   4. INSERT dans `paiements` avec enregistre_par = me.id
+ *   5. ⚡ Le trigger `trigger_recalculer_paiement_commande` (migration 005)
+ *      recalcule AUTOMATIQUEMENT commandes.montant_paye et statut_paiement
+ *      → on n'a PAS à mettre à jour la commande manuellement
+ *   6. Re-fetch la commande pour retourner le nouveau solde
+ *
+ * Réponse : { success: true, data: { paiement_id, commande_id, nouveau_montant_paye,
+ *           nouveau_statut_paiement, reste_a_payer, montant_total } }
+ */
+import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseServer } from "@/lib/supabase/server";
+import type { MethodePaiement } from "@/lib/types/database.types";
+
+export const dynamic = "force-dynamic";
+
+const METHODES_VALID: readonly MethodePaiement[] = [
+  "especes",
+  "mobile_money",
+  "carte_bancaire",
+];
+
+interface EncaisserBody {
+  commande_id?: unknown;
+  montant?: unknown;
+  methode?: unknown;
+  reference?: unknown;
+  notes?: unknown;
+}
+
+/** Authentifie le caissier et retourne son row personnel + le client Supabase. */
+async function getConnectedCaissier() {
+  const supabase = await getSupabaseServer();
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !userData.user) {
+    return {
+      error: NextResponse.json(
+        { success: false, error: "Non authentifié" },
+        { status: 401 }
+      ),
+    };
+  }
+  const { data: me } = await supabase
+    .from("personnel")
+    .select("id, pressing_id, role, actif, statut_compte")
+    .eq("user_id", userData.user.id)
+    .maybeSingle();
+
+  if (!me || me.actif !== true || me.statut_compte !== "actif") {
+    return {
+      error: NextResponse.json(
+        { success: false, error: "Compte inactif ou désactivé" },
+        { status: 403 }
+      ),
+    };
+  }
+  if (me.role !== "caissier") {
+    return {
+      error: NextResponse.json(
+        { success: false, error: "Accès refusé — rôle caissier requis" },
+        { status: 403 }
+      ),
+    };
+  }
+  return { me, supabase };
+}
+
+export async function POST(request: NextRequest) {
+  const auth = await getConnectedCaissier();
+  if ("error" in auth) return auth.error;
+  const { me, supabase } = auth;
+
+  let body: EncaisserBody;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { success: false, error: "Corps de requête invalide (JSON attendu)" },
+      { status: 400 }
+    );
+  }
+
+  // --- Validation des champs ---
+  const commandeId =
+    typeof body.commande_id === "string" ? body.commande_id.trim() : "";
+  if (!commandeId) {
+    return NextResponse.json(
+      { success: false, error: "L'identifiant de la commande est obligatoire." },
+      { status: 400 }
+    );
+  }
+
+  const montant =
+    typeof body.montant === "number"
+      ? body.montant
+      : parseInt(String(body.montant ?? "0"), 10);
+  if (!Number.isFinite(montant) || !Number.isInteger(montant) || montant <= 0) {
+    return NextResponse.json(
+      { success: false, error: "Le montant doit être un entier positif (FCFA)." },
+      { status: 400 }
+    );
+  }
+
+  const methode = typeof body.methode === "string" ? body.methode : "";
+  if (!(METHODES_VALID as readonly string[]).includes(methode)) {
+    return NextResponse.json(
+      { success: false, error: "Méthode de paiement invalide." },
+      { status: 400 }
+    );
+  }
+
+  const reference =
+    typeof body.reference === "string" ? body.reference.trim() : null;
+  const notes =
+    typeof body.notes === "string" && body.notes.trim()
+      ? body.notes.trim()
+      : null;
+
+  // --- Fetch de la commande (RLS isole par pressing_id) ---
+  const { data: commande, error: cmdErr } = await supabase
+    .from("commandes")
+    .select("id, montant_total, montant_paye, statut_paiement, statut")
+    .eq("id", commandeId)
+    .maybeSingle();
+
+  if (cmdErr) {
+    console.error("[api/personnel/caissier/encaisser] Erreur SELECT commande:", cmdErr);
+    return NextResponse.json(
+      { success: false, error: "Erreur lors de la récupération de la commande." },
+      { status: 500 }
+    );
+  }
+  if (!commande) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Commande introuvable ou accès refusé.",
+      },
+      { status: 404 }
+    );
+  }
+
+  // --- Validation du solde ---
+  const resteAPayer = commande.montant_total - commande.montant_paye;
+  if (resteAPayer <= 0) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Cette commande est déjà entièrement payée.",
+      },
+      { status: 409 }
+    );
+  }
+  // Tolérance de 1 FCFA (alignée sur la CHECK constraint commandes:
+  // montant_paye ≤ montant_total + 1)
+  if (montant > resteAPayer + 1) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: `Le montant saisi (${montant} FCFA) dépasse le reste à payer (${resteAPayer} FCFA).`,
+      },
+      { status: 400 }
+    );
+  }
+
+  const estAcompte = commande.montant_paye + montant < commande.montant_total;
+
+  // --- INSERT paiement ---
+  // Le trigger `trigger_recalculer_paiement_commande` met à jour
+  // automatiquement commandes.montant_paye + statut_paiement.
+  const insertPayload: Record<string, unknown> = {
+    commande_id: commandeId,
+    montant,
+    methode,
+    date_paiement: new Date().toISOString(),
+    est_acompte: estAcompte,
+    enregistre_par: me.id,
+  };
+  if (reference) insertPayload.reference = reference;
+  if (notes) insertPayload.notes = notes;
+
+  const { data: paiement, error: insertErr } = await supabase
+    .from("paiements")
+    .insert(insertPayload)
+    .select("id, commande_id, montant, methode, date_paiement")
+    .maybeSingle();
+
+  if (insertErr || !paiement) {
+    console.error("[api/personnel/caissier/encaisser] Erreur INSERT paiement:", insertErr);
+    // 23514 = CHECK violation (montant > 0, date_paiement ≤ NOW()+5min)
+    if (insertErr && insertErr.code === "23514") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Le paiement ne respecte pas les contraintes (montant ou date).",
+        },
+        { status: 400 }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: "Erreur lors de l'enregistrement du paiement." },
+      { status: 500 }
+    );
+  }
+
+  // --- Re-fetch de la commande pour retourner le nouveau solde ---
+  // (le trigger a déjà mis à jour montant_paye + statut_paiement)
+  const { data: cmdUpdated } = await supabase
+    .from("commandes")
+    .select("montant_paye, statut_paiement, montant_total")
+    .eq("id", commandeId)
+    .maybeSingle();
+
+  const nouveauMontantPaye = cmdUpdated?.montant_paye ?? commande.montant_paye + montant;
+  const nouveauStatut = cmdUpdated?.statut_paiement ?? commande.statut_paiement;
+  const nouveauReste = (cmdUpdated?.montant_total ?? commande.montant_total) - nouveauMontantPaye;
+
+  return NextResponse.json(
+    {
+      success: true,
+      data: {
+        paiement_id: paiement.id,
+        commande_id: paiement.commande_id,
+        montant: paiement.montant,
+        methode: paiement.methode,
+        date_paiement: paiement.date_paiement,
+        nouveau_montant_paye: nouveauMontantPaye,
+        nouveau_statut_paiement: nouveauStatut,
+        reste_a_payer: Math.max(0, nouveauReste),
+        montant_total: cmdUpdated?.montant_total ?? commande.montant_total,
+      },
+    },
+    { status: 201 }
+  );
+}
