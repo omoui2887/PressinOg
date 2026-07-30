@@ -4752,3 +4752,98 @@ Stage Summary:
 - ✅ La sélection d'un article met à jour `form.catalogue_article` et ferme le dialogue (via `handleSelectCatalogueArticle`).
 - Cause racine : le dialogue n'était jamais rendu dans le JSX — oubli d'implémentation lors du LOT 15.2 (le handler et le state existaient, mais pas le rendu).
 - Artifact modifié : `src/components/ogpressing/admin/commande-wizard/step-articles.tsx`.
+
+---
+Task ID: CAIS-AUDIT
+Agent: Explore
+Task: Audit caissier infrastructure
+
+Work Log:
+- Lecture du worklog existant (4 754 lignes) — repéré entrée Task 13 line 3926 : "Pour Caissier : nouvelle API POST /api/personnel/caissier/encaisser (insert paiements + est_acompte calculé + enregistre_par = me.id)" — décision de design déjà actée.
+- Lecture des migrations SQL (001_enums, 002_tables, 003_constraints, 005_triggers, 009_vue_clients_enrichis, 010_lot2_gap_fill) pour établir le schéma exact des tables commandes / paiements / clients / personnel + colonnes ajoutées (est_acompte, montant_total_avant_remise, montant_remise, preferences_lavage, assigne_a, abonnement_id, justificatif_url).
+- Lecture des 4 routes API existantes pertinentes : /api/admin/commandes (GET liste + POST create), /api/admin/commandes/[id] (GET detail uniquement, PAS de PATCH — fichier 191 lignes), /api/admin/clients (GET + POST manager|receptionniste), /api/admin/clients/[id] (GET + PATCH manager|receptionniste).
+- Vérification : AUCUNE route /api/admin/paiements ni /api/admin/commandes/[id]/paiements n'existe. Pas de dossier /api/personnel/*. La route /api/admin/rapports/paiements existe (lecture seule, utilisée par receptionniste/dashboard).
+- Lecture du pattern d'auth : la plupart des routes utilisent un inline auth (getSupabaseServer + getUser + lookup personnel by user_id). Une fonction helper réutilisable `getConnectedPersonnel(allowWrite)` existe dans /api/admin/services/route.ts (services, pressing, stock) — `allowWrite=true` exige role=manager (TROP strict pour le caissier qui doit pouvoir encaisser).
+- Lecture du layout (personnel)/layout.tsx — auth défense-en-profondeur, vérifie actif + statut_compte + role ∈ 6 rôles non-manager. Récupère pressing.nom + logo_url pour le PersonnelShell.
+- Lecture du personnel-nav-config.ts — caissier a 3 nav items (dashboard, encaisser, clients) ; bottom nav mobile : 3 items avec "Encaisser" en CTA central surélevé.
+- Lecture du personnel-shell.tsx + dashboard-layout.tsx — PersonnelShell wrap DashboardLayout avec navItems[role] + PersonnelBottomNav. StatCard exposé (label, value, icon, accent: primary|secondary|warning|danger, description, trend, delay, className).
+- Lecture des 3 placeholders caissier actuels (dashboard, encaisser, clients) — tous DashboardPlaceholder simple.
+- Lecture comparée des dashboards receptionniste (FULL impl, pattern de référence : 4 StatCards + 3 shortcuts + Card "Commandes récentes" + Promise.all 5 fetchs + loading skeletons + error alert) vs laveur/livreur/repassage (placeholders).
+- Lecture des composants réutilisables : ClientsPage (accepte déjà `basePath` + `readOnly` props — cache "Nouveau client" si readOnly), ClientDetailPage (accepte déjà `basePath` + `readOnly` — cache boutons Modifier), ClientsList, CommandesList (basePath), DashboardShortcuts (admin-spécifique, non réutilisable tel quel pour caissier), StatusBadge, EmptyState.
+- Lecture du receptionniste/clients/page.tsx (thin Server Component → <ClientsPage basePath="..." />) et receptionniste/clients/[id]/page.tsx (fetch Supabase direct du client + 50 commandes + paiements, puis <ClientDetailPage basePath="..." />) — patterns à mirror pour caissier.
+- Lecture de format.ts (formatFCFA, formatFCFACompact, formatDate, formatDateOnly, formatTime, formatRelative — tous présents et exportés) et database.types.ts (StatutCommande, StatutPaiement, MethodePaiement + RolePersonnel incluant "caissier").
+- Lecture de rapports/paiements (GET — schema nested commande+client+caissier, filtre start/end sur date_paiement, limit 1000, tri DESC) et rapports/impayes (GET — clients avec solde_impaye>0, agrégation JS).
+- Lecture du trigger 005 §5 : AFTER INSERT/UPDATE/DELETE sur paiements → recalc commandes.montant_paye + statut_paiement automatiquement. Donc l'API encaisser n'a PAS besoin de updater commandes manuellement.
+- Lecture des CHECK constraints (003) critiques pour l'API encaisser : paiements.montant > 0, paiements.date_paiement <= NOW()+5min, commandes.montant_paye <= montant_total+1 (validations à faire server-side AVANT l'INSERT pour éviter une erreur DB).
+- Lecture du commande-wizard/step-recap.tsx — confirme le pattern "acompte" déjà implémenté à la création commande (checkbox + montant + methode + reference) — réutilisable comme inspiration UI pour encaisser.
+
+Stage Summary:
+- **Schéma DB confirmé** (migrations 002 + 010 + 005 triggers) :
+  - commandes : id, pressing_id, client_id, numero_commande, statut, statut_paiement, montant_total, montant_paye (recalc par trigger), remise_type, remise_valeur, montant_total_avant_remise, montant_remise, date_reception, date_pret_prevue, date_pret_reel, date_livraison, date_retrait, livraison, adresse_livraison, frais_livraison, notes, cree_par, created_at, updated_at.
+  - paiements : id, commande_id (nullable pour SaaS abonnements, NOT NULL pour caissier), abonnement_id (XOR avec commande_id), montant (>0), methode, reference, date_paiement (<=NOW()+5min), est_acompte (default false), justificatif_url, enregistre_par, notes, created_at, updated_at. Trigger AFTER INSERT/UPDATE/DELETE → recalc commandes.montant_paye + statut_paiement.
+  - clients : id, pressing_id, nom_complet, telephone (UNIQUE per pressing), email, adresse, points_fidelite (>=0), notes, preferences_lavage (JSONB), created_at, updated_at. Vue vue_clients_enrichis (009) ajoute solde_impaye, total_depense, nombre_commandes, derniere_commande.
+  - personnel : id, pressing_id, user_id, nom_complet, email, telephone, role (7 valeurs dont caissier), methode_creation, statut_compte, actif, cree_par, created_at, updated_at.
+- **Enums** : statut_commande = recu|en_traitement|lave|repasse|pret|en_livraison|livre|retire ; statut_paiement_commande = non_paye|partiel|paye ; methode_paiement = especes|mobile_money|carte_bancaire.
+- **Routes API réutilisables TELLES QUELLES par le caissier** (toutes acceptent "n'importe quel personnel actif") : GET /api/admin/commandes (filtre statut_paiement ✓), GET /api/admin/commandes/[id], GET /api/admin/clients (renvoie solde_impaye ✓), GET /api/admin/clients/[id], GET /api/admin/rapports/paiements, GET /api/admin/rapports/journalier, GET /api/admin/rapports/impayes.
+- **Routes API NON réutilisables** : POST /api/admin/clients (manager|receptionniste only), PATCH /api/admin/clients/[id] (manager|receptionniste only). PAS de PATCH sur /api/admin/commandes/[id] (seulement GET).
+- **NOUVELLE route API à créer** : POST /api/personnel/caissier/encaisser (décision déjà actée Task 13). Body : { commande_id, montant, methode, reference?, notes? }. Auth : role=caissier + actif + statut_compte=actif. Server-side : fetch commande → validate montant+montant_paye <= montant_total+1 → compute est_acompte = (montant_paye + montant) < montant_total → INSERT paiements (trigger recalc automatique) → return { paiement_id, nouveau_montant_paye, nouveau_statut_paiement, reste_a_payer }.
+- **Pattern d'auth** : inline `getSupabaseServer()` + `supabase.auth.getUser()` + `supabase.from("personnel").select("id, pressing_id, role, actif, statut_compte").eq("user_id", user.id).maybeSingle()` + check `actif===true && statut_compte==="actif"` + check `role==="caissier"`. Pour la nouvelle route encaisser, NE PAS réutiliser getConnectedPersonnel(allowWrite) car allowWrite=true exige manager — écrire un helper inline ou un nouveau helper acceptant une liste de rôles autorisés.
+- **Pattern composants** : StatCard (label/value/icon/accent/description/trend/delay/className) ; DashboardLayout (navItems/user/roleLabel/brand/bottomNav/children) wrap par PersonnelShell automatiquement ; ClientsPage déjà paramétrable (basePath + readOnly) ; ClientDetailPage déjà paramétrable (basePath + readOnly).
+- **Recommandation pour les 3 pages caissier** :
+  1. **dashboard** : remplacer placeholder par Client Component mirroir de receptionniste/dashboard (Promise.all 4 fetchs : rapports/paiements du jour, commandes non_paye count, commandes partiel count, clients impayés count). 4 StatCards : Recette du jour / Impayées / Partielles / Clients en impayé. 2-3 raccourcis (Encaisser primary CTA + Clients). Card "Paiements récents" (5 derniers du jour).
+  2. **encaisser** : remplacer placeholder par Client Component avec (a) recherche commande par numero/client (GET /api/admin/commandes?q=), (b) récap commande (numéro, client, montant_total, montant_paye, reste), (c) formulaire (montant default=reste, methode 3 boutons, reference optionnel, notes optionnel) → POST /api/personnel/caissier/encaisser → toast succès + lien vers fiche commande.
+  3. **clients** : remplacer placeholder par thin Server Component `<ClientsPage basePath="/personnel/caissier" readOnly />`. Ajouter aussi `/personnel/caissier/clients/[id]/page.tsx` mirroir de receptionniste (fetch Supabase direct + `<ClientDetailPage basePath="/personnel/caissier" readOnly />`).
+- **Fichiers à créer/modifier** :
+  - CREATE src/app/api/personnel/caissier/encaisser/route.ts (POST)
+  - REPLACE src/app/(personnel)/personnel/caissier/dashboard/page.tsx (placeholder → Client Component)
+  - REPLACE src/app/(personnel)/personnel/caissier/encaisser/page.tsx (placeholder → Client Component)
+  - REPLACE src/app/(personnel)/personnel/caissier/clients/page.tsx (placeholder → thin Server Component)
+  - CREATE src/app/(personnel)/personnel/caissier/clients/[id]/page.tsx (thin Server Component)
+  - OPTIONNEL : extraire composants réutilisables dans src/components/ogpressing/personnel/caissier/ (caissier-dashboard.tsx, encaisser-form.tsx) si la taille des page.tsx dépasse ~300 lignes.
+
+---
+Task ID: CAIS-1
+Agent: main
+Task: Développement complet des 3 pages caissier (dashboard, encaisser, clients) + API d'encaissement. Remplacement des placeholders "Dashboard en cours de développement" par des fonctionnalités réelles.
+
+Work Log:
+- Audit infrastructure caissier (sous-agent CAIS-AUDIT) : schéma DB (commandes, paiements, clients, personnel), enums (statut_commande, statut_paiement, methode_paiement), routes API existantes réutilisables, pattern d'auth, composants réutilisables (StatCard, ClientsPage avec `readOnly`, ClientDetailPage, StatusBadge), pattern du dashboard réceptionniste à suivre.
+- Création de la route API `POST /api/personnel/caissier/encaisser` :
+  - Auth : exige `role === "caissier" && actif && statut_compte === "actif"` (inline auth, pas de helper partagé).
+  - Validation : commande_id (UUID), montant (entier > 0), methode (especes|mobile_money|carte_bancaire), reference/notes optionnels.
+  - Logique : fetch commande (RLS isole par pressing) → valide montant ≤ reste à payer + 1 (tolérance CHECK) → calcule `est_acompte` → INSERT dans `paiements` avec `enregistre_par = me.id` → le trigger `trigger_recalculer_paiement_commande` (migration 005) recalcule automatiquement `commandes.montant_paye` + `statut_paiement` → re-fetch commande pour retourner le nouveau solde.
+  - Réponse : `{ paiement_id, nouveau_montant_paye, nouveau_statut_paiement, reste_a_payer, montant_total }`.
+- Remplacement de `/personnel/caissier/dashboard` (placeholder → Client Component complet) :
+  - 4 StatCards : Recette du jour (Wallet, primary), Commandes impayées (AlertCircle, danger), Paiements partiels (Clock, warning), Clients en impayé (Users, secondary).
+  - Fetch parallèle : rapports/paiements (jour), commandes?statut_paiement=non_paye, commandes?statut_paiement=partiel, clients?impayes=true.
+  - 2 raccourcis : Encaisser un paiement (CTA primary), Clients.
+  - Liste des 5 derniers paiements du jour (numero_commande, client, montant, methode, formatRelative).
+  - États loading (skeletons) + error (alerte + bouton Réessayer).
+- Remplacement de `/personnel/caissier/encaisser` (placeholder → Client Component complet) :
+  - Layout 2 colonnes (lg) : liste rechercheable à gauche, formulaire d'encaissement à droite (sticky).
+  - Recherche debouncée (300 ms) via `GET /api/admin/commandes?q=...&pageSize=50`.
+  - Filtre "Impayées" (non_paye + partiel) / "Toutes" (côté client, pas de refetch).
+  - Formulaire d'encaissement : récap commande (total, déjà payé, reste à payer en rouge), montant (default = reste, max = reste+1), méthode (3 boutons-toggle : Espèces/Mobile Money/Carte avec icônes), référence (obligatoire pour mobile_money + carte_bancaire), notes (optionnel).
+  - Submit → POST /api/personnel/caissier/encaisser → écran de succès avec récap (montant, méthode, nouveau solde, reste) + boutons "Nouvel encaissement" / "Voir les clients".
+  - Validation UI : montant valide + référence requise + !submitting + !success.
+- Remplacement de `/personnel/caissier/clients` (placeholder → thin Server Component) :
+  - `<ClientsPage basePath="/personnel/caissier" readOnly />` — réutilise le composant admin existant.
+  - `readOnly` masque le bouton "Nouveau client" (caissier ne peut pas créer de client — POST /api/admin/clients réservé manager+receptionniste).
+- Création de `/personnel/caissier/clients/[id]` (thin Server Component) :
+  - `<ClientDetailPage basePath="/personnel/caissier" readOnly />` — réutilise le composant admin.
+  - `readOnly` masque les boutons "Modifier" (EditInfoDialog, EditPreferencesDialog, EditNotesDialog).
+  - Fetch Supabase direct (RLS isole par pressing) : client + 50 commandes + paiements.
+- Création de `.env.local` avec les vraies clés Supabase (URL + anon + service_role) pour permettre la vérification locale.
+- Vérification end-to-end via Agent Browser (authentification par magic link Supabase + OTP → session cookies) :
+  - ✅ Dashboard : 4 StatCards affichées (Recette du jour, Commandes impayées, Paiements partiels, Clients en impayé), raccourcis, user "Léon Ogou" connecté.
+  - ✅ Encaisser : titre + barre de recherche + boutons filtre "Impayées"/"Toutes" + liste commandes.
+  - ✅ Clients : table avec colonnes (Nom, Téléphone, Fidélité, Solde impayé, Total dépensé, Commandes), 2 clients, export Excel, recherche, filtre impayés, boutons "Nouveau client" MASQUÉS (readOnly confirmé).
+- Lint : 0 erreur, 0 warning. Dev server : compile sans erreur (le 500 initial sur /clients était une race condition HMR Turbopack, résolu au reload).
+
+Stage Summary:
+- ✅ Page 1 — `/personnel/caissier/dashboard` : tableau de bord complet avec 4 KPIs (recette du jour, impayés, partiels, clients en impayé), 2 raccourcis, et liste des 5 derniers paiements du jour. Remplace le placeholder.
+- ✅ Page 2 — `/personnel/caissier/encaisser` : interface POS-like avec recherche de commande, filtre impayées/toutes, formulaire d'encaissement (montant + méthode + référence + notes), validation, écran de succès avec récap. Appelle la nouvelle API `POST /api/personnel/caissier/encaisser`. Le trigger DB recalcule automatiquement `commandes.montant_paye` + `statut_paiement`.
+- ✅ Page 3 — `/personnel/caissier/clients` : liste complète des clients (réutilise `<ClientsPage readOnly />`) avec recherche, filtre impayés, export Excel. Bouton "Nouveau client" masqué (caissier en lecture seule). Page détail `[id]` également créée avec `readOnly`.
+- ✅ API — `POST /api/personnel/caissier/encaisser` : auth caissier stricte, validation, INSERT dans `paiements` avec `enregistre_par`, gestion d'erreurs (404/409/400/500), trigger DB pour le recalcul auto.
+- ✅ Vérification browser : les 3 pages rendent correctement avec un vrai compte caissier authentifié (Léon Ogou). Le mode `readOnly` sur la page clients est confirmé.
+- Artifacts créés : `api/personnel/caissier/encaisser/route.ts`, `(personnel)/personnel/caissier/dashboard/page.tsx` (remplacé), `(personnel)/personnel/caissier/encaisser/page.tsx` (remplacé), `(personnel)/personnel/caissier/clients/page.tsx` (remplacé), `(personnel)/personnel/caissier/clients/[id]/page.tsx` (nouveau), `.env.local` (nouveau).
