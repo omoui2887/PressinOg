@@ -4733,3 +4733,22 @@ Stage Summary:
 - ✅ Illustrations : chaque type de service a une icône Lucide (Droplets/Wind/Sparkles/SprayCan/Shirt) visible dans la liste, les dialogues, et le wizard commande.
 - ✅ Anomalie wizard : l'étape 2 affiche désormais un encart warning clair avec lien vers /admin/services quand aucun service n'est configuré (au lieu d'un dropdown vide silencieux).
 - Artifacts modifiés : `api/admin/services/[id]/route.ts`, `services-helpers.tsx`, `services-list.tsx`, `services-page.tsx`, `add-service-dialog.tsx`, `edit-service-dialog.tsx`, `step-articles.tsx`, nouveau `delete-service-dialog.tsx`.
+
+---
+Task ID: ART-1
+Agent: main
+Task: Correction du bug « cliquer sur Choisir un article n'affiche rien » dans le wizard Nouvelle commande (Étape 2).
+
+Work Log:
+- Diagnostic via capture d'écran (VLM) : clic sur « Choisir un article » / « Ouvrir » n'ouvre AUCUN dialogue.
+- Investigation code : grep `pickerOpen|ArticleCatalogPicker|<Dialog` dans `step-articles.tsx` → le state `pickerOpen` (ligne 221) et le handler `handleSelectCatalogueArticle` (ligne 391) existent, le bouton appelle `setPickerOpen(true)` (ligne 448), MAIS aucun élément `<Dialog open={pickerOpen}>` n'était rendu dans le JSX. Le composant `ArticleCatalogPicker` était importé (ligne 69) mais jamais utilisé dans le rendu.
+- Fix : ajout du bloc `<Dialog open={pickerOpen} onOpenChange={setPickerOpen}>` contenant `<ArticleCatalogPicker selectedId={...} onSelect={handleSelectCatalogueArticle} compact />` juste avant la fermeture du composant (avant le `</div>` final).
+- Le dialogue utilise `max-h-[90vh] overflow-y-auto sm:max-w-3xl` pour s'afficher correctement sur mobile et desktop.
+- `selectedId` est lié à `form.catalogue_article?.id` pour mettre en surbrillance l'article déjà sélectionné (mode édition).
+- Lint OK (`bun run lint` — 0 erreur). Dev server compile sans erreur.
+
+Stage Summary:
+- ✅ Le clic sur « Choisir un article » ouvre désormais le dialogue `<ArticleCatalogPicker>` qui affiche la grille des 33 articles du catalogue (avec recherche + onglets de catégorie).
+- ✅ La sélection d'un article met à jour `form.catalogue_article` et ferme le dialogue (via `handleSelectCatalogueArticle`).
+- Cause racine : le dialogue n'était jamais rendu dans le JSX — oubli d'implémentation lors du LOT 15.2 (le handler et le state existaient, mais pas le rendu).
+- Artifact modifié : `src/components/ogpressing/admin/commande-wizard/step-articles.tsx`.
