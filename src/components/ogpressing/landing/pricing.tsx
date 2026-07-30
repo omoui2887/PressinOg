@@ -1,11 +1,18 @@
 /**
- * OgPressing — Section Tarifs (3 plans)
- * -------------------------------------
- * Trois cartes : Starter (9 900), Pro (24 900, "Populaire"),
- * Business (49 900). Bouton "Choisir ce plan" qui mémorise le plan
- * dans le store Zustand et scrolle vers #inscription.
+ * OgPressing — Section Tarifs (Stitch design)
+ * -------------------------------------------
+ * Trois cartes : Starter (9 900), Pro (24 900, "Populaire"), Business (49 900).
  *
- * Client component car interactivité (sélection de plan).
+ * Plan Pro mis en avant : bordure bleue épaisse (border-2 border-primary),
+ * ombre `shadow-lg`, léger scale (`lg:scale-[1.03]`), badge "Populaire" en haut.
+ *
+ * Boutons :
+ *   - Starter  : "Choisir Starter"      (outline)
+ *   - Pro      : "Essai gratuit Pro"    (default — bleu)
+ *   - Business : "Choisir Business"     (outline)
+ *
+ * L'interaction mémorise le plan dans le store Zustand et déclenche le
+ * défilement vers #inscription via le hook dédié du store.
  */
 "use client";
 
@@ -56,7 +63,7 @@ const PLANS: Plan[] = [
       "Support prioritaire",
     ],
     highlight: true,
-    cta: "Choisir Pro",
+    cta: "Essai gratuit Pro",
   },
   {
     id: "business",
@@ -80,11 +87,11 @@ export function PricingSection() {
   const selectPlan = useInscriptionStore((s) => s.selectPlan);
 
   return (
-    <section id="tarifs" className="scroll-mt-16 py-16 sm:py-24">
+    <section id="tarifs" className="scroll-mt-20 py-16 sm:py-24">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <Reveal className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-            Des tarifs simples, en FCFA
+            Des tarifs adaptés à votre croissance
           </h2>
           <p className="mt-4 text-lg text-muted-foreground">
             Choisissez votre formule. Règlement physique, hors application —
@@ -101,9 +108,9 @@ export function PricingSection() {
                   className={cn(
                     "relative h-full transition-all duration-300",
                     plan.highlight
-                      ? "border-primary shadow-lg ring-1 ring-primary/20 lg:scale-[1.03]"
+                      ? "border-2 border-primary shadow-lg ring-1 ring-primary/20 lg:scale-[1.03]"
                       : "",
-                    isSelected && "ring-2 ring-secondary"
+                    isSelected && !plan.highlight && "ring-2 ring-secondary"
                   )}
                 >
                   {plan.highlight && (

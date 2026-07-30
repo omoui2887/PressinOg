@@ -77,15 +77,15 @@ const FEATURES: Feature[] = [
 
 export function FeaturesSection() {
   return (
-    <section id="fonctionnalites" className="scroll-mt-16 bg-muted/30 py-16 sm:py-24">
+    <section id="fonctionnalites" className="scroll-mt-20 bg-muted/30 py-16 sm:py-24">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <Reveal className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-            Tout ce qu&apos;il faut pour gérer votre pressing
+            Tout ce dont votre pressing a besoin
           </h2>
           <p className="mt-4 text-lg text-muted-foreground">
-            Huit modules intégrés, pensés pour le quotidien des pressings
-            ivoiriens.
+            Une suite d&apos;outils puissants adaptée à la réalité du terrain
+            ivoirien.
           </p>
         </Reveal>
 

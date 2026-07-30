@@ -62,6 +62,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -861,6 +862,11 @@ export function StepArticles({ state, dispatch }: StepProps) {
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Choisir un article</DialogTitle>
+            <DialogDescription className="sr-only">
+              Parcourez le catalogue d&apos;articles illustrés, filtrez par
+              catégorie ou recherchez par nom, puis sélectionnez l&apos;article
+              à ajouter à la commande.
+            </DialogDescription>
           </DialogHeader>
           <ArticleCatalogPicker
             selectedId={form.catalogue_article?.id ?? null}
