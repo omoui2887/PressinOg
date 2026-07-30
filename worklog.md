@@ -5341,3 +5341,50 @@ Stage Summary:
 
 Fichier modifié (1) :
 - `src/components/ogpressing/admin/commande-wizard/commande-wizard.tsx` (ajout useRef + useEffect scroll-to-top sur state.step + classe scroll-mt-24 sur l'en-tête)
+
+---
+Task ID: CAT-ICONS-33
+Agent: main
+Task: Génération des 33 illustrations d'articles du catalogue (style flat design matching les 3 posters de référence "PRESSING MODERNE" fournis par l'utilisateur)
+
+Work Log:
+- L'utilisateur a fourni 3 images de référence (Gemini_Generated_Image_*.png) : posters A4 "PRESSING MODERNE" montrant les 33 articles du catalogue en style flat design vectoriel avec contours fins, palette pastel corporate (teal/navy/terracotta/crème/sauge), fond beige chaud. Les 3 images couvrent les sections 1-12 du catalogue.
+- Analyse VLM des 3 images de référence (skill VLM, modèle glm-5v-turbo) pour extraire :
+  * Le style visuel exact (flat design vectoriel, contours bleu-gris foncé #2C3E50, ombres portées douces, palette pastel corporate)
+  * La description précise de chacun des 33 articles (couleurs, forme, disposition, accessoires)
+  * Un prompt de style commun (STYLE_PREFIX) réutilisable pour chaque génération
+- Diagnostic de l'état initial : dossier `public/images/articles/` VIDE (0 fichier). L'`ArticleCatalogPicker` affichait donc l'icône fallback `Shirt` (lucide) pour TOUS les 33 articles.
+- Création du script `scripts/generate-article-icons.ts` :
+  * 33 définitions d'articles (slug + description visuelle dérivée des 3 posters de référence)
+  * Préfixe de style commun (STYLE_PREFIX) garantissant la cohérence visuelle
+  * Concurrency paramétrable (3 au départ, réduit à 1 après rate-limit 429)
+  * Retry avec backoff exponentiel (jusqu'à 4 retries, délais 5s/20s/45s/80s)
+  * Skip des fichiers déjà générés (reprise possible après interruption)
+  * Taille 1024x1024 (carré, optimal pour les cards du picker)
+- Génération des 33 images via z-ai CLI / SDK (skill image-generation) :
+  * Test initial : 1 image (chemise) → validation du style par VLM (chemise blanche sur cintre bois, flat design, contours fins, fond beige, AUCUN texte) ✅
+  * Lot complet : 33 images générées en plusieurs passes (rate-limit 429 rencontré, résolu par réduction concurrency à 1 + attentes 60-180s entre passes)
+  * Taille totale : 2,8 MB (moyenne ~85 KB/image)
+- DÉCOUVERTE d'un bug de mismatch slug vs icone_url en DB :
+  * 2 articles ont un slug avec TRIPLE "s" (faute de frappe héritée) : `houssse-coussin` et `houssse-vetement-perso`
+  * Mais leur `icone_url` en DB utilise l'orthographe française correcte avec DOUBLE "s" : `housse-coussin.png` et `housse-vetement-perso.png`
+  * Le script a généré les fichiers avec le slug (triple s) → mismatch → fallback Shirt affiché pour ces 2 articles
+  * FIX : copie des 2 fichiers triple-s vers les noms double-s attendus par la DB : `cp houssse-coussin.png housse-coussin.png` (idem pour vetement-perso). Désormais 35 fichiers au total (33 + 2 alias double-s).
+- Vérification end-to-end (Agent Browser) :
+  * Login test-receptionniste → wizard → étape 2 → ouverture picker
+  * Screenshot du picker → analyse VLM : "0 icône grise générique restante" ✅
+  * TOUS les articles affichent désormais leur illustration colorée en flat design
+  * Sélection d'un article (Chemises) → ajout au panier → "Articles de la commande (1)" → bouton Suivant activé ✅
+  * Aucune erreur runtime dans dev.log ✅
+
+Stage Summary:
+- ✅ 33 illustrations d'articles générées en style flat design vectoriel, cohérentes avec les 3 posters de référence fournis par l'utilisateur (contours fins, palette pastel corporate teal/navy/terracotta/crème/sauge, fond beige chaud, ombres douces, aucun texte).
+- ✅ Toutes les illustrations s'affichent dans l'`ArticleCatalogPicker` du wizard commande (vérifié Agent Browser + VLM : 0 fallback restant).
+- ✅ Bug de mismatch slug/icone_url (triple-s vs double-s) identifié et corrigé par création d'alias de fichiers.
+- ✅ Flux complet vérifié : login → wizard → sélection client → étape articles → picker avec illustrations → sélection article → ajout au panier → Suivant activé.
+- Le style des illustrations correspond aux attentes visuelles de l'utilisateur (posters "PRESSING MODERNE" fournis en référence).
+- Les illustrations sont stockées dans `/public/images/articles/` (35 fichiers PNG, 2,8 MB total) et servies statiquement par Next.js via `next/image` avec `unoptimized`.
+
+Fichiers créés :
+- `scripts/generate-article-icons.ts` (script de génération réutilisable, avec retry/concurrency/skip)
+- `public/images/articles/*.png` (35 fichiers : 33 slugs + 2 alias double-s pour housse-coussin et housse-vetement-perso)
