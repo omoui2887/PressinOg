@@ -48,7 +48,6 @@ import { formatDateOnly, formatFCFA } from "@/lib/utils/format";
 import {
   COULEUR_LABELS,
   ETAT_LABELS,
-  TYPE_VETEMENT_LABELS,
 } from "./article-labels";
 import { METHODE_PAIEMENT_LABELS } from "./remise-labels";
 import {
@@ -66,7 +65,8 @@ interface ArticleVetementRow {
   id: string;
   ligne_id: string | null;
   code_qr: string | null;
-  type_vetement: string | null;
+  catalogue_article_id: string | null;
+  type_vetement_legacy: string | null;
   couleur: string | null;
   couleur_libre: string | null;
   etat: string | null;
@@ -75,13 +75,19 @@ interface ArticleVetementRow {
   photo_url: string | null;
   assigne_a: string | null;
   created_at: string;
+  catalogue_article: {
+    id: string;
+    nom: string;
+    slug: string;
+    icone_url: string;
+  } | null;
 }
 
 /** Ligne `commande_lignes` avec service imbriqué. */
 interface CommandeLigneRow {
   id: string;
   service_id: string | null;
-  type_vetement: string | null;
+  type_vetement_legacy: string | null;
   description: string | null;
   quantite: number;
   prix_unitaire: number;
@@ -135,11 +141,6 @@ const STATUT_LABELS: Record<string, string> = {
 // Helpers de libellé article
 // ============================================================
 
-function typeLabel(t: string | null): string {
-  if (!t) return "—";
-  return TYPE_VETEMENT_LABELS[t as keyof typeof TYPE_VETEMENT_LABELS] ?? t;
-}
-
 function couleurLabel(c: string | null, libre: string | null): string {
   if (!c) return "";
   if (c === "autre" && libre) return libre;
@@ -151,9 +152,9 @@ function etatLabel(e: string | null): string {
   return ETAT_LABELS[e as keyof typeof ETAT_LABELS] ?? e;
 }
 
-/** Description courte « Type Couleur » pour un article de la DB. */
+/** Description courte « Nom Couleur » pour un article de la DB (LOT 15). */
 function articleDescription(a: ArticleVetementRow): string {
-  const t = typeLabel(a.type_vetement);
+  const t = a.catalogue_article?.nom ?? "—";
   const c = couleurLabel(a.couleur, a.couleur_libre);
   return c ? `${t} ${c}` : t;
 }
@@ -313,7 +314,7 @@ function printTicket(opts: {
   const lignesHtml = (detail?.lignes ?? [])
     .map((l) => {
       const svc = l.service?.nom ?? "—";
-      const t = typeLabel(l.type_vetement);
+      const t = l.description ?? svc;
       return `<tr>
         <td style="padding:2px 4px;border-bottom:1px solid #eee;">${escapeHtml(
           t
@@ -612,7 +613,8 @@ export function StepConfirmation({
         client_id: state.client.id,
         articles: state.articles.map((a) => ({
           service_id: a.service_id,
-          type_vetement: a.type_vetement,
+          catalogue_article_id: a.catalogue_article_id,
+          catalogue_article_nom: a.catalogue_article_nom,
           couleur: a.couleur,
           couleur_libre: a.couleur_libre,
           etat: a.etat,
