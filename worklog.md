@@ -5317,3 +5317,44 @@ Stage Summary:
 - Fichiers modifiés :
   - `src/components/ogpressing/admin/commande-wizard/step-articles.tsx` (Dialog picker : structure flex-col + scroll isolé)
   - `src/components/shared/article-catalog-picker.tsx` (ArticleCard : suppression cv-auto, min-h 110px, break-words + hyphens-auto, cleanup imports)
+
+---
+Task ID: EXCLUDE-CATALOGUE-SA
+Agent: main (orchestrator)
+Task: Exclure le catalogue du compte Super Admin tout en le conservant dans les autres comptes (admin, réceptionniste, manager).
+
+Work Log:
+- Localisation de la navigation Super Admin : `src/components/ogpressing/super-admin/super-admin-shell.tsx` → `NAV_ITEMS` array contenant 5 items dont "Catalogue" (href `/super-admin/catalogue`, icône `Shirt`).
+- Suppression de l'item "Catalogue" du menu latéral Super Admin :
+  * Retrait de l'entrée `{ href: "/super-admin/catalogue", label: "Catalogue", icon: Shirt }` du tableau `NAV_ITEMS`
+  * Retrait de l'import `Shirt` de lucide-react (devenu inutilisé)
+  * Ajout d'un commentaire expliquant la décision (catalogue = référentiel lecture seule, consommé par les autres comptes via le picker)
+  * Le menu Super Admin passe de 5 items à 4 : Tableau de bord / Demandes / Pressings / Abonnements
+- Transformation de la route `/super-admin/catalogue` en redirection :
+  * `src/app/(super-admin)/super-admin/catalogue/page.tsx` : remplacement du rendu `<CataloguePage />` par `redirect("/super-admin/dashboard")`
+  * Toute tentative d'accès direct à l'URL (bookmark, lien obsolète) renvoie vers le tableau de bord au lieu d'afficher une 404
+  * Conservation de `export const dynamic = "force-dynamic"` pour éviter le cache de la redirection
+- Vérification que le picker reste disponible dans les autres comptes :
+  * `/admin/commandes/nouvelle` → `<CommandeWizard />` → `step-articles.tsx` → `<ArticleCatalogPicker />` ✅
+  * `/personnel/manager/commandes/nouvelle` → `<CommandeWizard basePath="/personnel/manager" />` → picker ✅
+  * `/personnel/receptionniste/commandes/nouvelle` → `<CommandeWizard basePath="/personnel/receptionniste" />` → picker ✅
+  * Les 3 routes consomment le catalogue via l'API publique `GET /api/public/catalogue-articles` (lecture seule, authentifiée mais sans restriction de rôle — tout utilisateur connecté peut lire)
+- Fichiers conservés (non supprimés, en lecture seule ou dead code inoffensif) :
+  * `src/components/ogpressing/super-admin/catalogue/catalogue-page.tsx` (non référencé, mais conservé pour réutilisation future éventuelle)
+  * `src/components/ogpressing/super-admin/catalogue/catalogue-form.tsx` (idem)
+  * `src/components/ogpressing/super-admin/catalogue/catalogue-helpers.ts` (idem)
+  * `src/app/api/super-admin/catalogue/route.ts` + `[id]/route.ts` + `upload-icon/route.ts` (APIs devenues inutilisées côté UI, mais conservées — un admin DB pourrait les appeler directement si besoin)
+- Vérification :
+  * `bun run lint` → 0 erreur, 0 warning ✅
+  * Compilation OK (`GET /super-admin/catalogue` compile en 5.3s, render 242ms)
+  * ⚠️ Runtime : 500 attendu car `.env.local` manquant (le layout `(super-admin)` appelle `getSupabaseServer()` avant le `redirect()` — erreur Supabase préexistante, pas un bug de code). Une fois `.env.local` restauré, le `redirect()` s'exécutera correctement.
+
+Stage Summary:
+- ✅ Menu latéral Super Admin : "Catalogue" retiré (5 → 4 items)
+- ✅ Route `/super-admin/catalogue` : redirige vers `/super-admin/dashboard` (plus de page de gestion accessible)
+- ✅ Picker `ArticleCatalogPicker` conservé dans les 3 comptes opérationnels (admin, manager, réceptionniste) via le wizard "Nouvelle commande"
+- ✅ Catalogue devient un référentiel lecture seule (33 articles seedés par migration 014) — cohérent avec la logique métier : le Super Admin gère la plateforme (pressings/demandes/abonnements), pas le contenu métier des pressings
+- ⚠️ Les APIs `/api/super-admin/catalogue/*` sont désormais du dead code (inutilisées par l'UI) — conservées pour ne pas casser d'éventuels scripts/intégrations externes
+- Fichiers modifiés (2) :
+  - `src/components/ogpressing/super-admin/super-admin-shell.tsx` (retrait item Catalogue + import Shirt)
+  - `src/app/(super-admin)/super-admin/catalogue/page.tsx` (rendu → redirect dashboard)

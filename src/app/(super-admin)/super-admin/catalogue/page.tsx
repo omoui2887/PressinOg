@@ -1,21 +1,24 @@
 /**
- * OgPressing — Super Admin → Catalogue (page)
- * --------------------------------------------
- * Route : /super-admin/catalogue (groupe `(super-admin)`)
+ * OgPressing — Super Admin → Catalogue (REDIRECT)
+ * -----------------------------------------------
+ * ⚠️ Cette route a été EXCLUE du compte Super Admin.
  *
- * Accès : Super Admin uniquement (vérifié côté middleware + layout).
+ * Le catalogue global d'articles est désormais un référentiel en lecture
+ * seule (seedé par la migration 014, 33 articles initiaux). Il est
+ * consommé par les autres comptes (admin, réceptionniste, manager) via
+ * le sélecteur visuel `ArticleCatalogPicker` dans l'Étape 2 du wizard
+ * "Nouvelle commande".
  *
- * Server Component fin : délègue toute l'interactivité (fetch, switch actif,
- * dialog d'ajout/édition, upload d'icône) au client component
- * `<CataloguePage />` qui consomme les routes API `/api/super-admin/catalogue`.
+ * Le Super Admin n'a plus de page de gestion du catalogue : son rôle se
+ * concentre sur la plateforme (pressings, demandes, abonnements).
  *
- * `force-dynamic` car la liste du catalogue dépend de l'utilisateur connecté
- * (super admin) et que les articles peuvent être modifiés à tout moment.
+ * Redirige toute tentative d'accès direct vers le tableau de bord Super
+ * Admin pour éviter une 404 et garder l'utilisateur dans son espace.
  */
-import { CataloguePage } from "@/components/ogpressing/super-admin/catalogue/catalogue-page";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default function SuperAdminCataloguePage() {
-  return <CataloguePage />;
+  redirect("/super-admin/dashboard");
 }
