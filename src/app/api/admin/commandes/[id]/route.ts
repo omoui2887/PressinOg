@@ -91,8 +91,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       updated_at,
       client:clients(id, nom_complet, telephone, email, adresse, points_fidelite),
       cree_par_personnel:personnel!commandes_cree_par_fkey(id, nom_complet),
-      lignes:commande_lignes(id, service_id, type_vetement, description, quantite, prix_unitaire, montant_ligne, created_at, service:services(id, nom, type)),
-      articles:articles_vetements(id, ligne_id, code_qr, type_vetement, couleur, couleur_libre, etat, description_etat, statut, photo_url, assigne_a, created_at, assigne:personnel!articles_vetements_assigne_a_fkey(id, nom_complet)),
+      lignes:commande_lignes(id, service_id, type_vetement_legacy, description, quantite, prix_unitaire, montant_ligne, created_at, service:services(id, nom, type)),
+      articles:articles_vetements(id, ligne_id, code_qr, catalogue_article_id, type_vetement_legacy, couleur, couleur_libre, etat, description_etat, statut, photo_url, assigne_a, created_at, catalogue_article:catalogue_articles!articles_vetements_catalogue_article_fkey(id, nom, slug, icone_url), assigne:personnel!articles_vetements_assigne_a_fkey(id, nom_complet)),
       paiements:paiements(id, montant, methode, reference, date_paiement, est_acompte, enregistre_par, notes, created_at)
       `
     )
@@ -120,7 +120,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     id: string;
     ligne_id: string | null;
     code_qr: string | null;
-    type_vetement: string | null;
+    catalogue_article_id: string | null;
+    type_vetement_legacy: string | null;
     couleur: string | null;
     couleur_libre: string | null;
     etat: string | null;
@@ -129,13 +130,19 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     photo_url: string | null;
     assigne_a: string | null;
     created_at: string;
+    catalogue_article: {
+      id: string;
+      nom: string;
+      slug: string;
+      icone_url: string;
+    } | null;
     assigne: { id: string; nom_complet: string } | null;
   };
 
   type LigneRow = {
     id: string;
     service_id: string | null;
-    type_vetement: string | null;
+    type_vetement_legacy: string | null;
     description: string | null;
     quantite: number;
     prix_unitaire: number;

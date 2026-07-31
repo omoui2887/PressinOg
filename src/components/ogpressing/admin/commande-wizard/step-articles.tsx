@@ -62,6 +62,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -861,6 +862,11 @@ export function StepArticles({ state, dispatch }: StepProps) {
         <DialogContent className="flex max-h-[90vh] flex-col gap-4 overflow-hidden p-6 sm:max-w-3xl">
           <DialogHeader className="shrink-0">
             <DialogTitle>Choisir un article</DialogTitle>
+            <DialogDescription className="sr-only">
+              Parcourez le catalogue d&apos;articles illustrés, filtrez par
+              catégorie ou recherchez par nom, puis sélectionnez l&apos;article
+              à ajouter à la commande.
+            </DialogDescription>
           </DialogHeader>
           <div className="-mx-1 min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1">
             <ArticleCatalogPicker

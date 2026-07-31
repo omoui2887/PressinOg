@@ -76,7 +76,6 @@ import {
   COULEUR_SWATCH,
   ETAT_ICONS,
   ETAT_LABELS,
-  TYPE_VETEMENT_LABELS,
 } from "./article-labels";
 import {
   computeFideliteRemisePercent,
@@ -97,9 +96,9 @@ import {
 // Helpers
 // ============================================================
 
-/** Libellé d'un article : "Type Couleur" (ou "Type couleur_libre" si "autre"). */
+/** Libellé d'un article : "Nom Couleur" (LOT 15 — utilise catalogue_article_nom). */
 function articleLabel(a: ArticleInfo): string {
-  const typeLabel = TYPE_VETEMENT_LABELS[a.type_vetement];
+  const typeLabel = a.catalogue_article_nom;
   if (a.couleur === "autre" && a.couleur_libre) {
     return `${typeLabel} ${a.couleur_libre}`;
   }
