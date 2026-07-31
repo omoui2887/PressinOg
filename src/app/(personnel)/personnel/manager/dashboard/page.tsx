@@ -51,6 +51,7 @@ import {
 } from "@/components/ogpressing/admin/commandes/commandes-helpers";
 import { formatFCFA, formatRelative } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
+import { STATUT_COMMANDE_LABELS } from "@/lib/workflow/commande-statut";
 
 const BASE_PATH = "/personnel/manager";
 
@@ -72,6 +73,8 @@ interface DashboardStats {
 interface DashboardData {
   stats: DashboardStats;
   recentes: CommandeListItem[];
+  /** WORKFLOW-FIX-V1 : commandes payées mais non prêtes (surveillance). */
+  payeesNonPretes: CommandeListItem[];
 }
 
 interface RapportJournalierRow {
@@ -134,12 +137,14 @@ export default function ManagerDashboardPage() {
       //  3. Total clients (pageSize=1 pour ne récupérer que le count)
       //  4. Rapport journalier (liste des commandes du jour → count = data.length)
       //  5. Rapport paiements (somme des paiements du jour → recette)
+      //  6. WORKFLOW-FIX-V1 : Commandes payées non prêtes (surveillance)
       const [
         recentesRes,
         enTraitementRes,
         clientsRes,
         journalierRes,
         paiementsRes,
+        payeesNonPretesRes,
       ] = await Promise.all([
         fetch(`/api/admin/commandes?pageSize=5`, { cache: "no-store" }),
         fetch(`/api/admin/commandes?statut=en_traitement&pageSize=1`, {
@@ -148,6 +153,13 @@ export default function ManagerDashboardPage() {
         fetch(`/api/admin/clients?pageSize=1`, { cache: "no-store" }),
         fetch(`/api/admin/rapports/journalier`, { cache: "no-store" }),
         fetch(`/api/admin/rapports/paiements?${params.toString()}`, {
+          cache: "no-store",
+        }),
+        // WORKFLOW-FIX-V1 : commandes payées (statut_paiement=paye) non prêtes
+        // (statut NOT IN pret/en_livraison/livre/retire). On récupère les 20
+        // dernières payées puis on filtre côté client (l'API ne supporte pas
+        // l'exclusion de plusieurs statuts).
+        fetch(`/api/admin/commandes?statut_paiement=paye&pageSize=20`, {
           cache: "no-store",
         }),
       ]);
@@ -160,6 +172,8 @@ export default function ManagerDashboardPage() {
         await journalierRes.json();
       const paiementsJson: RapportApiResponse<RapportPaiementRow> =
         await paiementsRes.json();
+      const payeesNonPretesJson: CommandesApiResponse =
+        await payeesNonPretesRes.json();
 
       // Vérifie qu'au moins les endpoints critiques ont répondu OK
       if (!recentesJson.success) {
@@ -173,6 +187,14 @@ export default function ManagerDashboardPage() {
         0
       );
 
+      // WORKFLOW-FIX-V1 : filtrage côté client des commandes payées non prêtes.
+      // On garde les 5 plus récentes avec statut_paiement="paye" ET statut
+      // dans (recu, en_traitement, lave, repasse).
+      const STATUTS_PRETS = new Set(["pret", "en_livraison", "livre", "retire"]);
+      const payeesNonPretes = (payeesNonPretesJson.data ?? [])
+        .filter((c) => !STATUTS_PRETS.has(c.statut))
+        .slice(0, 5);
+
       setData({
         stats: {
           commandesDuJour: (journalierJson.data ?? []).length,
@@ -181,6 +203,7 @@ export default function ManagerDashboardPage() {
           clientsTotal: clientsJson.total ?? 0,
         },
         recentes: recentesJson.data ?? [],
+        payeesNonPretes,
       });
     } catch (err) {
       console.error("[manager/dashboard] Erreur fetch:", err);
@@ -369,6 +392,82 @@ export default function ManagerDashboardPage() {
     );
   }
 
+  /* ---- WORKFLOW-FIX-V1 : Commandes payées non prêtes (surveillance) ---- */
+  function renderPayeesNonPretes() {
+    // Ne rien afficher pendant le loading ou en cas d'erreur (la carte est
+    // bonus — on ne veut pas polluer l'UI avec un skeleton supplémentaire).
+    if (loading || error || !data) return null;
+    if (data.payeesNonPretes.length === 0) return null;
+
+    return (
+      <Card className="border-warning/40">
+        <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-lg text-warning">
+              <AlertCircle className="size-5" />
+              Commandes payées non prêtes
+              <span className="ml-1 inline-flex items-center rounded-full bg-warning/10 px-2 py-0.5 text-xs font-semibold text-warning">
+                {data.payeesNonPretes.length}
+              </span>
+            </CardTitle>
+            <CardDescription>
+              Commandes entièrement payées mais pas encore prêtes. Vérifiez
+              que le workflow avance (lavage → repassage → prêt).
+            </CardDescription>
+          </div>
+          <Button asChild variant="outline" size="sm" className="shrink-0">
+            <Link href={`${BASE_PATH}/commandes?statut_paiement=paye`}>
+              Voir tout
+              <ArrowRight className="size-4" />
+            </Link>
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <ul className="divide-y">
+            {data.payeesNonPretes.map((c) => (
+              <li key={c.id}>
+                <Link
+                  href={`${BASE_PATH}/commandes/${c.id}`}
+                  className="flex items-center justify-between gap-3 py-3 transition-colors first:pt-0 last:pb-0 hover:bg-accent/40 -mx-2 px-2 rounded-md"
+                >
+                  <div className="min-w-0 space-y-0.5">
+                    <p className="truncate text-sm font-semibold text-foreground">
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {c.numero_commande ?? "—"}
+                      </span>
+                      {c.client?.nom_complet && (
+                        <>
+                          {" — "}
+                          <span>{c.client.nom_complet}</span>
+                        </>
+                      )}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Payée {formatRelative(c.created_at)}
+                      {c.date_pret_prevue
+                        ? ` · prévue ${formatRelative(c.date_pret_prevue)}`
+                        : ""}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-foreground">
+                      {formatFCFA(c.montant_total)}
+                    </span>
+                    <StatusBadge
+                      status={c.statut}
+                      label={STATUT_COMMANDE_LABELS[c.statut] ?? c.statut}
+                      className="shrink-0"
+                    />
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
+    );
+  }
+
   /* ---------------- Rendu principal ---------------- */
 
   return (
@@ -481,6 +580,9 @@ export default function ManagerDashboardPage() {
 
       {/* 5. Commandes récentes */}
       {renderRecentes()}
+
+      {/* 6. WORKFLOW-FIX-V1 — Commandes payées non prêtes (surveillance) */}
+      {renderPayeesNonPretes()}
     </div>
   );
 }

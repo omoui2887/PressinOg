@@ -20,22 +20,27 @@
  *     laveur, repassage, livreur, caissier, comptable).
  *   - 401 si non authentifié, 403 si personnel inactif, 404 si article
  *     introuvable.
+ *
+ * 🛡️ GUARD WORKFLOW (WORKFLOW-FIX-V1) :
+ *   - La transition `from → to` doit être autorisée par la matrice
+ *     `TRANSITIONS_ARTICLE_AUTORISEES` (cf. src/lib/workflow/commande-statut.ts).
+ *   - On ne peut jamais reculer dans le workflow (ex: pret → recu interdit).
+ *   - Les rôles "manager" peuvent forcer une transition arbitraire
+ *     (override manuel pour intervention).
+ *   - 409 si transition refusée.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import {
+  canTransitionArticle,
+  expliquerRefusTransition,
+  STATUTS_ARTICLE,
+} from "@/lib/workflow/commande-statut";
 
 export const dynamic = "force-dynamic";
 
 /** 7 statuts valides pour un article (enum SQL `statut_article`). */
-const STATUT_ARTICLE_VALID = [
-  "recu",
-  "en_traitement",
-  "lave",
-  "repasse",
-  "pret",
-  "retire",
-  "livre",
-] as const;
+const STATUT_ARTICLE_VALID = STATUTS_ARTICLE;
 
 type StatutArticleValid = (typeof STATUT_ARTICLE_VALID)[number];
 
@@ -56,10 +61,12 @@ export async function PATCH(
     );
   }
 
-  // Vérifie que l'appelant est un personnel actif
+  // Vérifie que l'appelant est un personnel actif + récupère son rôle
+  // (le rôle est nécessaire pour le guard de transition — les managers
+  // peuvent forcer une transition arbitraire).
   const { data: me } = await supabase
     .from("personnel")
-    .select("id, actif, statut_compte")
+    .select("id, role, actif, statut_compte")
     .eq("user_id", userData.user.id)
     .maybeSingle();
 
@@ -106,6 +113,63 @@ export async function PATCH(
   }
 
   const statutValid = statut as StatutArticleValid;
+
+  // --- Fetch du statut actuel de l'article (pour valider la transition) ---
+  const { data: articleExistant, error: fetchErr } = await supabase
+    .from("articles_vetements")
+    .select("id, statut")
+    .eq("id", articleId)
+    .eq("commande_id", commandeId)
+    .maybeSingle();
+
+  if (fetchErr) {
+    console.error(
+      "[api/admin/commandes/[id]/articles/[articleId]] Erreur SELECT article:",
+      fetchErr
+    );
+    return NextResponse.json(
+      { success: false, error: "Erreur lors de la récupération de l'article" },
+      { status: 500 }
+    );
+  }
+  if (!articleExistant) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Article introuvable (vérifiez l'ID et la commande associée)",
+      },
+      { status: 404 }
+    );
+  }
+
+  const statutActuel = articleExistant.statut as string | null;
+
+  // --- Guard de transition (WORKFLOW-FIX-V1) ---
+  // Vérifie que from → to est autorisé par la matrice. Les managers peuvent
+  // forcer (override). Les autres rôles doivent respecter le workflow.
+  if (!canTransitionArticle(statutActuel, statutValid, me.role)) {
+    const explication = expliquerRefusTransition(statutActuel, statutValid);
+    console.warn(
+      `[api/admin/commandes/[id]/articles/[articleId]] Transition refusée — ` +
+        `user=${userData.user.id} role=${me.role} article=${articleId} ` +
+        `from=${statutActuel} to=${statutValid}`
+    );
+    return NextResponse.json(
+      {
+        success: false,
+        error: explication,
+        code: "WORKFLOW_TRANSITION_REFUSEE",
+        details: {
+          statut_actuel: statutActuel,
+          statut_cible: statutValid,
+          role: me.role,
+          // Indique si l'utilisateur a un rôle d'override disponible
+          override_disponible: me.role === "manager",
+        },
+      },
+      { status: 409 }
+    );
+  }
 
   // UPDATE avec double filtre id + commande_id (sécurité défensive en plus
   // de RLS). RLS isole par pressing via la commande parent.

@@ -5717,3 +5717,82 @@ Stage Summary:
 - ✅ Variables d'environnement déjà documentées pour Vercel (voir échange précédent) : NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY (sensible), NEXT_PUBLIC_SITE_URL, OGP_ROLE_CACHE_SECRET (sensible).
 - ⚠️ Action utilisateur requise : révoquer le token GitHub sur https://github.com/settings/tokens après vérification du déploiement Vercel.
 - Vérification Vercel : l'utilisateur peut suivre le déploiement sur https://vercel.com/dashboard et consulter les logs de build. Le premier déploiement peut échouer si les variables d'environnement ne sont pas encore configurées dans Vercel (voir liste ci-dessus).
+
+---
+Task ID: WORKFLOW-FIX-V1
+Agent: main
+Task: Vérification de la logique de traitement des commandes entre les différents comptes employés + correction du workflow
+
+Work Log:
+- Analyse VLM des 4 captures d'écran fournies par l'utilisateur :
+  * Images 1 & 2 : Dashboard Repassage (Raphaël Bomisso, bomisso@gmail.com) — TOUS les compteurs à 0 (À repasser, En cours, Repassées, Articles à traiter). File d'attente vide.
+  * Image 3 : Dashboard Caissier (Felix OGOU, ogoufelix@gmail.com) — page "Encaisser un paiement" → "Aucune commande impayée".
+  * Image 4 : Vue détail Admin (Omoui OGOU, cloudsaas12@gmail.com) — commande CMD-20260731-7675, statut "Reçu" + "Payé" (2 001 FCFA payé pour 2 000 FCFA), client Test Cloud, 2 articles, Retrait prévu 02/08/2026, Retiré le — (pas encore retiré).
+- Diagnostic du bug de workflow : une commande peut être "recu + paye" sans jamais passer par repassage. Causes racines identifiées via exploration exhaustive du code (sous-agent Explore Task ID 2) :
+  1. POST /api/admin/commandes : si acompte ≥ montant_total à la création → statut="recu" + statut_paiement="paye" (scénario légitime de paiement comptant à la réception).
+  2. POST /api/personnel/caissier/encaisser : AUCUN guard sur commande.statut — le caissier pouvait encaisser le solde final d'une commande encore "recu" ou "en_traitement".
+  3. PATCH /api/admin/commandes/[id]/articles/[articleId] : AUCUN guard de transition — n'importe quel personnel pouvait faire sauter des étapes (ex: recu → livre directement) via le <Select> du détail commande.
+  4. Aucune machine à états centralisée — constantes de statut éclatées dans 5+ fichiers.
+  5. Dashboards repassage/caissier filtrent strictement (statut=lave / statut_paiement=non_paye|partiel) → une commande "recu + paye" devient invisible dans tous les workflows opérationnels.
+
+- CORRECTIONS APPLIQUÉES :
+
+  1. Création du module centralisé `src/lib/workflow/commande-statut.ts` :
+     - STATUTS_ARTICLE (7 valeurs) et STATUTS_COMMANDE (8 valeurs) alignés sur les enums SQL.
+     - Matrice TRANSITIONS_ARTICLE_AUTORISEES : définit les transitions autorisées (avance uniquement, jamais recul).
+     - Fonction canTransitionArticle(from, to, role) — les managers ont override.
+     - Fonction getAllowedNextStatutsArticle(from, role) — pour filtrer les <Select> UI.
+     - Fonction peutEncaisserAcompte(statut) — autorisé si statut NOT IN (retire, livre).
+     - Fonction peutEncaisserSoldeFinal(statut) — autorisé uniquement si statut IN (repasse, pret, en_livraison, livre, retire).
+     - Fonction paiementFermeCommande(montantPaye, montantTotal, montantPaiement) — détermine si un paiement ferme la commande.
+     - Libellés FR + fonction expliquerRefusTransition() pour messages d'erreur API.
+
+  2. Guard caissier dans `src/app/api/personnel/caissier/encaisser/route.ts` :
+     - Calcul de `fermeCommande = paiementFermeCommande(...)` après validation du solde.
+     - Si fermeCommande : exige commande.statut au moins "repasse" (409 avec code WORKFLOW_PAIEMENT_REFUSE + détails).
+     - Si acompte partiel : autorisé si commande non terminale.
+     - estAcompte désormais calculé via `!fermeCommande` (cohérent avec la DB).
+
+  3. Guard transition article dans `src/app/api/admin/commandes/[id]/articles/[articleId]/route.ts` :
+     - Ajout d'un SELECT préalable pour récupérer le statut actuel de l'article.
+     - Ajout du role dans le SELECT personnel (nécessaire pour l'override manager).
+     - Validation canTransitionArticle(statutActuel, statutCible, me.role) avant l'UPDATE.
+     - 409 avec code WORKFLOW_TRANSITION_REFUSEE + explication humaine si transition refusée.
+     - Log warn côté serveur pour audit.
+
+  4. Carte "Commandes payées non prêtes" sur dashboard admin `src/app/(admin)/admin/dashboard/page.tsx` :
+     - Nouvelle requête parallèle (8e entrée du Promise.all) : commandes avec statut_paiement='paye' AND statut NOT IN ('pret','en_livraison','livre','retire'), limit 5, triées par created_at DESC.
+     - Nouveau type CommandePayeeNonPrete.
+     - Carte warning (border-warning/40, icône AlertCircle) insérée entre "Commandes récentes" et "Alertes stock".
+     - Chaque ligne : numéro commande, client, montant, statut, date de paiement, date prévue, lien vers /admin/commandes/[id].
+     - Carte affichée UNIQUEMENT s'il y a au moins 1 commande payée non prête.
+     - Import de STATUT_COMMANDE_LABELS depuis le module centralisé (suppression de la définition locale dupliquée).
+
+  5. Carte "Commandes payées non prêtes" sur dashboard manager `src/app/(personnel)/personnel/manager/dashboard/page.tsx` :
+     - Nouveau fetch parallèle /api/admin/commandes?statut_paiement=paye&pageSize=20.
+     - Filtrage côté client (exclusion pret/en_livraison/livre/retire, slice 5).
+     - Ajout du champ payeesNonPretes à DashboardData.
+     - Nouvelle fonction renderPayeesNonPretes() — carte warning similaire à l'admin.
+     - Import de STATUT_COMMANDE_LABELS depuis le module centralisé.
+
+- Lint : `bun run lint` → 0 erreur, 0 warning ✅
+- ⚠️ .env.local MANQUANT : les variables Supabase ne sont pas chargées (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY). Le middleware skip l'auth et les routes API Supabase renvoient 500. L'utilisateur doit restaurer .env.local (cf. .env.local.example pour le template) pour tester en conditions réelles via Agent Browser.
+
+Stage Summary:
+- ✅ Bug de workflow identifié : une commande pouvait être "Reçu + Payé" sans jamais passer par repassage (acompte total à la création OU encaissement du solde à n'importe quel statut).
+- ✅ Module centralisé créé : src/lib/workflow/commande-statut.ts (machine à états + guards de paiement).
+- ✅ Guard caissier appliqué : le solde final ne peut plus être encaissé si la commande n'est pas au moins "Repassée".
+- ✅ Guard transition article appliqué : les sauts d'étape sont bloqués (rôle manager peut forcer).
+- ✅ Surveillance ajoutée : carte "Commandes payées non prêtes" sur dashboards admin + manager.
+- ⚠️ .env.local doit être restauré par l'utilisateur pour test end-to-end Agent Browser.
+- Note : le scénario "acompte total à la création" (commande "recu + paye" légitime) reste autorisé — c'est une pratique commerciale valide (client paie comptant à la réception). La commande doit ensuite suivre le workflow normal (recu → en_traitement → lave → repasse → pret → retire/livre). Le guard caissier empêche tout nouvel encaissement sur une commande déjà "paye", et la carte de surveillance permet au manager de vérifier que ces commandes avancent dans le workflow.
+
+Fichiers créés (1) :
+- `src/lib/workflow/commande-statut.ts` (machine à états centralisée)
+
+Fichiers modifiés (4) :
+- `src/app/api/personnel/caissier/encaisser/route.ts` (guard solde final)
+- `src/app/api/admin/commandes/[id]/articles/[articleId]/route.ts` (guard transition)
+- `src/app/(admin)/admin/dashboard/page.tsx` (carte surveillance + import centralisé)
+- `src/app/(personnel)/personnel/manager/dashboard/page.tsx` (carte surveillance + fetch + import)
+
