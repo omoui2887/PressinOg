@@ -35,6 +35,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import type { MethodePaiement } from "@/lib/types/database.types";
+import {
+  peutEncaisserAcompte,
+  peutEncaisserSoldeFinal,
+  paiementFermeCommande,
+  STATUT_COMMANDE_LABELS,
+} from "@/lib/workflow/commande-statut";
 
 export const dynamic = "force-dynamic";
 
@@ -187,7 +193,54 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const estAcompte = commande.montant_paye + montant < commande.montant_total;
+  // --- Guard workflow (WORKFLOW-FIX-V1) ---
+  // Le SOLDE FINAL (paiement qui ferme la commande → statut_paiement="paye")
+  // n'est autorisé que si la commande est au moins "repasse" (traitement fait).
+  // Les ACOMPTES (paiement partiel qui laisse un reste) sont autorisés dès
+  // la création, tant que la commande n'est pas terminée.
+  const fermeCommande = paiementFermeCommande(
+    commande.montant_paye,
+    commande.montant_total,
+    montant
+  );
+  const statutCourant = commande.statut as string;
+  const statutLabel = STATUT_COMMANDE_LABELS[statutCourant] ?? statutCourant;
+
+  if (fermeCommande) {
+    // Paiement du solde final → exige commande au moins "repasse"
+    if (!peutEncaisserSoldeFinal(statutCourant)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Encaissement du solde final refusé : la commande est au statut "${statutLabel}" mais doit être au moins "Repassé" (lavé + repassé) avant d'être entièrement payée. Encaissez un acompte partiel, ou faites avancer la commande dans le workflow (lavage → repassage → prêt).`,
+          code: "WORKFLOW_PAIEMENT_REFUSE",
+          details: {
+            statut_commande: statutCourant,
+            montant_paye_actuel: commande.montant_paye,
+            montant_total: commande.montant_total,
+            montant_paiement_propose: montant,
+            reste_a_payer: resteAPayer,
+            statut_requis_minimum: "repasse",
+          },
+        },
+        { status: 409 }
+      );
+    }
+  } else {
+    // Acompte partiel → autorisé tant que la commande n'est pas terminée
+    if (!peutEncaisserAcompte(statutCourant)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Encaissement refusé : la commande est au statut terminal "${statutLabel}". Aucun paiement supplémentaire n'est possible.`,
+          code: "WORKFLOW_PAIEMENT_REFUSE",
+        },
+        { status: 409 }
+      );
+    }
+  }
+
+  const estAcompte = !fermeCommande;
 
   // --- INSERT paiement ---
   // Le trigger `trigger_recalculer_paiement_commande` met à jour

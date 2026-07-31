@@ -29,6 +29,7 @@ import {
   PackageX,
   Users,
   ChevronRight,
+  AlertCircle,
 } from "lucide-react";
 import {
   Card,
@@ -43,6 +44,7 @@ import { StatusBadge } from "@/components/shared";
 import { DashboardShortcuts } from "@/components/ogpressing/admin/dashboard/dashboard-shortcuts";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { formatFCFA, formatRelative } from "@/lib/utils/format";
+import { STATUT_COMMANDE_LABELS } from "@/lib/workflow/commande-statut";
 
 /* ------------------------------------------------------------------ */
 /*  Types & helpers                                                   */
@@ -71,16 +73,24 @@ interface ClientImpaye {
   solde_impaye: number | null;
 }
 
-/** Libellés français pour les statuts de commande (enum statut_commande). */
-const STATUT_COMMANDE_LABELS: Record<string, string> = {
-  recu: "Reçu",
-  en_traitement: "En traitement",
-  lave: "Lavé",
-  repasse: "Repassé",
-  pret: "Prêt",
-  retire: "Retiré",
-  livre: "Livré",
-};
+/**
+ * Commande payée mais non prête — surveillance workflow (WORKFLOW-FIX-V1).
+ * Ces commandes ont statut_paiement='paye' mais statut encore dans
+ * ('recu','en_traitement','lave','repasse'). Elles ont été payées
+ * (acompte total à la création ou encaissement) mais le service n'est
+ * pas encore terminé. Le manager doit s'assurer qu'elles progressent
+ * dans le workflow (lavage → repassage → prêt → retrait/livraison).
+ */
+interface CommandePayeeNonPrete {
+  id: string;
+  numero_commande: string | null;
+  statut: string;
+  statut_paiement: string | null;
+  montant_total: number | null;
+  created_at: string;
+  date_pret_prevue: string | null;
+  client: { nom_complet: string | null } | null;
+}
 
 /** Retourne les bornes [début, fin] du jour courant en UTC ISO strings. */
 function getTodayBounds(): { start: string; end: string } {
@@ -112,6 +122,7 @@ async function getDashboardData() {
     commandesRecentes,
     clientsImpayes,
     pressing,
+    commandesPayeesNonPretes,
   ] = await Promise.all([
     // 1. CA du jour = somme des montants des paiements du jour liés à une commande
     supabase
@@ -158,6 +169,19 @@ async function getDashboardData() {
       .from("pressing")
       .select("id, nom")
       .maybeSingle(),
+    // 8. WORKFLOW-FIX-V1 : Commandes payées mais non prêtes (surveillance).
+    //    statut_paiement='paye' AND statut NOT IN ('pret','en_livraison','livre','retire')
+    //    → commandes à surveiller : le client a payé mais le service n'est
+    //    pas encore terminé. Le manager doit s'assurer qu'elles avancent.
+    supabase
+      .from("commandes")
+      .select(
+        "id, numero_commande, statut, statut_paiement, montant_total, created_at, date_pret_prevue, client:clients(nom_complet)"
+      )
+      .eq("statut_paiement", "paye")
+      .not("statut", "in", '("pret","en_livraison","livre","retire")')
+      .order("created_at", { ascending: false })
+      .limit(5),
   ]);
 
   // Filtrage JS : quantite_actuelle < seuil_alerte (PostgREST ne compare
@@ -190,6 +214,8 @@ async function getDashboardData() {
     commandesRecentes: (commandesRecentes.data ?? []) as unknown as CommandeRecente[],
     clientsImpayes: (clientsImpayes.data ?? []) as ClientImpaye[],
     pressingNom: pressing.data?.nom ?? "Mon pressing",
+    commandesPayeesNonPretes:
+      (commandesPayeesNonPretes.data ?? []) as unknown as CommandePayeeNonPrete[],
   };
 }
 
@@ -321,6 +347,76 @@ export default async function AdminDashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* 4.bis. WORKFLOW-FIX-V1 — Commandes payées mais non prêtes (surveillance) */}
+      {data.commandesPayeesNonPretes.length > 0 && (
+        <Card className="border-warning/40">
+          <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-lg text-warning">
+                <AlertCircle className="size-5" />
+                Commandes payées non prêtes
+                <span className="ml-1 inline-flex items-center rounded-full bg-warning/10 px-2 py-0.5 text-xs font-semibold text-warning">
+                  {data.commandesPayeesNonPretes.length}
+                </span>
+              </CardTitle>
+              <CardDescription>
+                Commandes entièrement payées mais pas encore prêtes (lavage /
+                repassage / retrait en attente). Vérifiez que le workflow avance.
+              </CardDescription>
+            </div>
+            <Button asChild variant="outline" size="sm" className="shrink-0">
+              <Link href="/admin/commandes?statut_paiement=paye">
+                Voir toutes
+                <ArrowRight className="size-4" />
+              </Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y">
+              {data.commandesPayeesNonPretes.map((c) => (
+                <li key={c.id}>
+                  <Link
+                    href={`/admin/commandes/${c.id}`}
+                    className="flex items-center justify-between gap-3 py-3 transition-colors first:pt-0 last:pb-0 hover:bg-accent/40 -mx-2 px-2 rounded-md"
+                  >
+                    <div className="min-w-0 space-y-0.5">
+                      <p className="truncate text-sm font-semibold text-foreground">
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {c.numero_commande ?? "—"}
+                        </span>
+                        {c.client?.nom_complet && (
+                          <>
+                            {" — "}
+                            <span>{c.client.nom_complet}</span>
+                          </>
+                        )}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Payée {formatRelative(c.created_at)}
+                        {c.date_pret_prevue
+                          ? ` · prévue ${formatRelative(c.date_pret_prevue)}`
+                          : ""}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-foreground">
+                        {formatFCFA(c.montant_total ?? 0)}
+                      </span>
+                      <StatusBadge
+                        status={c.statut}
+                        label={STATUT_COMMANDE_LABELS[c.statut] ?? c.statut}
+                        className="shrink-0"
+                      />
+                      <ChevronRight className="size-4 text-muted-foreground" />
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 5. Alertes stock — visible uniquement s'il y a au moins une alerte */}
       {data.produitsAlerte.length > 0 && (
