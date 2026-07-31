@@ -161,6 +161,38 @@
       opacity: 0.5;
     }
   }
+
+  /* ============================================================
+     LOT 17 — Landing Page Cinématographique : tokens dédiés
+     Palette "OgPressing : Précision Textile"
+     Ces tokens sont ADDITIONNELS (ne modifient PAS les tokens
+     existants primary/secondary/warning/danger utilisés par les
+     dashboards). Ils génèrent les utilities Tailwind :
+       bg-landing-primary, text-landing-accent, border-landing-ink, etc.
+     ============================================================ */
+  --color-landing-primary: #14235b; /* Bleu Nuit Pressing — fonds sombres */
+  --color-landing-accent: #d9a441; /* Or Textile — CTA, emphase, détails premium */
+  --color-landing-bg: #f7f6f2; /* Blanc Vapeur — sections claires, cards */
+  --color-landing-ink: #14151a; /* Charbon — texte sombre */
+  --color-landing-success: #10b981; /* Succès — messages CRM positifs */
+  --color-landing-alert: #ef4444; /* Alerte — soldes impayés CRM */
+
+  /* Nuances Or Textile pour dégradés/hover (clarité variable) */
+  --color-landing-accent-soft: #e8c478; /* Or plus clair (hover, halos) */
+  --color-landing-accent-deep: #b8881f; /* Or plus profond (active, bordures) */
+
+  /* Nuances Bleu Nuit pour dégradés de section */
+  --color-landing-primary-soft: #2a3a78; /* Bleu nuit éclairé */
+  --color-landing-primary-deep: #0d1640; /* Bleu nuit plus profond (bas de dégradé) */
+
+  /* Police titres / display / mono de la landing (scopées au route group (public))
+     Les variables --font-jakarta etc. sont posées par next/font dans le
+     layout (public). On mappe ici les tokens Tailwind font-* vers ces
+     variables. → génère les utilities : font-jakarta, font-fraunces,
+     font-plex-mono. */
+  --font-jakarta: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-fraunces: var(--font-fraunces), ui-serif, Georgia, serif;
+  --font-plex-mono: var(--font-plex-mono), ui-monospace, monospace;
 }
 
 :root {
