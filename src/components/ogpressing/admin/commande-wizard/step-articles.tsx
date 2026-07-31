@@ -858,15 +858,17 @@ export function StepArticles({ state, dispatch }: StepProps) {
       {/* (LOT 15.2)                                             */}
       {/* ====================================================== */}
       <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[90vh] flex-col gap-4 overflow-hidden p-6 sm:max-w-3xl">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Choisir un article</DialogTitle>
           </DialogHeader>
-          <ArticleCatalogPicker
-            selectedId={form.catalogue_article?.id ?? null}
-            onSelect={handleSelectCatalogueArticle}
-            compact
-          />
+          <div className="-mx-1 min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1">
+            <ArticleCatalogPicker
+              selectedId={form.catalogue_article?.id ?? null}
+              onSelect={handleSelectCatalogueArticle}
+              compact
+            />
+          </div>
         </DialogContent>
       </Dialog>
     </div>
