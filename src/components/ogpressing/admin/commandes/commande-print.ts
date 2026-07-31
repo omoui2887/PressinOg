@@ -48,7 +48,10 @@ export interface CommandeDetailService {
 export interface CommandeDetailLigne {
   id: string;
   service_id: string | null;
-  type_vetement: string | null;
+  /** Ancienne colonne ENUM (renommée par la migration LOT 15).
+   *  Conservée pour l'historique ; le nouveau code utilise
+   *  `catalogue_article` via les articles rattachés à la ligne. */
+  type_vetement_legacy: string | null;
   description: string | null;
   quantite: number;
   prix_unitaire: number;
@@ -57,11 +60,23 @@ export interface CommandeDetailLigne {
   service: CommandeDetailService | null;
 }
 
+export interface CommandeDetailCatalogueArticle {
+  id: string;
+  nom: string;
+  slug: string;
+  icone_url: string | null;
+}
+
 export interface CommandeDetailArticle {
   id: string;
   ligne_id: string | null;
   code_qr: string | null;
-  type_vetement: string | null;
+  /** FK vers catalogue_articles (LOT 15). */
+  catalogue_article_id: string | null;
+  /** Article catalogue joint (nom lisible pour l'utilisateur). */
+  catalogue_article: CommandeDetailCatalogueArticle | null;
+  /** Ancien ENUM figé (renommé par LOT 15, conservé pour l'historique). */
+  type_vetement_legacy: string | null;
   couleur: string | null;
   couleur_libre: string | null;
   etat: string | null;
@@ -120,7 +135,15 @@ export interface CommandeDetail {
 // Helpers de libellé article
 // ============================================================
 
-function typeLabel(t: string | null): string {
+/** Libellé lisible d'un type d'article. Priorise le catalogue
+ *  (LOT 15) et bascule sur l'ancien ENUM legacy si le catalogue
+ *  n'est pas renseigné (vieilles commandes pré-migration). */
+function typeLabel(a: {
+  catalogue_article: CommandeDetailCatalogueArticle | null;
+  type_vetement_legacy: string | null;
+}): string {
+  if (a.catalogue_article?.nom) return a.catalogue_article.nom;
+  const t = a.type_vetement_legacy;
   if (!t) return "—";
   return TYPE_VETEMENT_LABELS[t as keyof typeof TYPE_VETEMENT_LABELS] ?? t;
 }
@@ -138,7 +161,7 @@ function etatLabel(e: string | null): string {
 
 /** Description courte « Type Couleur » pour un article. */
 export function articleDescription(a: CommandeDetailArticle): string {
-  const t = typeLabel(a.type_vetement);
+  const t = typeLabel(a);
   const c = couleurLabel(a.couleur, a.couleur_libre);
   return c ? `${t} ${c}` : t;
 }
@@ -204,7 +227,16 @@ export function printCommandeTicket(detail: CommandeDetail) {
   const lignesHtml = (detail.lignes ?? [])
     .map((l) => {
       const svc = l.service?.nom ?? "—";
-      const t = typeLabel(l.type_vetement);
+      // Pour une ligne, on n'a plus de type_vetement direct (colonne
+      // renommée legacy). On privilégie la description libre si elle
+      // existe, sinon on dérive le nom du catalogue via le 1er article
+      // rattaché à cette ligne. Si rien n'est disponible, on affiche « — ».
+      const firstArt = (detail.articles ?? []).find(
+        (a) => a.ligne_id === l.id
+      );
+      const t =
+        l.description?.trim() ||
+        (firstArt ? typeLabel(firstArt) : "—");
       return `<tr>
         <td style="padding:2px 4px;border-bottom:1px solid #eee;">${escapeHtml(
           t
