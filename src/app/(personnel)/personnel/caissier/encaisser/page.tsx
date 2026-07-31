@@ -99,7 +99,7 @@ export default function CaissierEncaisserPage() {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [statutFilter, setStatutFilter] = useState<"impayees" | "toutes">(
-    "impayes"
+    "impayees"
   );
   const [commandes, setCommandes] = useState<CommandeListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -208,8 +208,8 @@ export default function CaissierEncaisserPage() {
               <Button
                 type="button"
                 size="sm"
-                variant={statutFilter === "impayes" ? "default" : "outline"}
-                onClick={() => setStatutFilter("impayes")}
+                variant={statutFilter === "impayees" ? "default" : "outline"}
+                onClick={() => setStatutFilter("impayees")}
               >
                 Impayées
               </Button>
@@ -251,14 +251,14 @@ export default function CaissierEncaisserPage() {
                 <div className="flex flex-col items-center justify-center gap-2 p-8 text-center">
                   <Receipt className="size-8 text-muted-foreground/50" />
                   <p className="text-sm font-medium text-foreground">
-                    {statutFilter === "impayes"
+                    {statutFilter === "impayees"
                       ? "Aucune commande impayée"
                       : "Aucune commande trouvée"}
                   </p>
                   <p className="max-w-xs text-xs text-muted-foreground">
                     {debouncedQuery
                       ? "Modifiez votre recherche ou élargissez le filtre."
-                      : statutFilter === "impayes"
+                      : statutFilter === "impayees"
                       ? "Toutes les commandes sont payées. Basculez sur « Toutes » pour voir l'historique."
                       : "Les nouvelles commandes apparaîtront ici."}
                   </p>
@@ -394,7 +394,7 @@ function EncaissementForm({
     Number.isFinite(montantNum) &&
     Number.isInteger(montantNum) &&
     montantNum > 0 &&
-    montantNum <= resteAPayer + 1;
+    montantNum <= resteAPayer;
 
   // Référence obligatoire pour mobile_money et carte_bancaire (bonne pratique
   // pour le rapprochement bancaire). On l'impose côté UI (l'API ne l'exige pas).
@@ -603,8 +603,8 @@ function EncaissementForm({
               id="enc-montant"
               type="number"
               min={1}
-              max={resteAPayer + 1}
-              step={100}
+              max={resteAPayer}
+              step={1}
               value={montant}
               onChange={(e) => setMontant(e.target.value)}
               className="h-11"
