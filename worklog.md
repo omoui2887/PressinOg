@@ -5261,3 +5261,59 @@ Stage Summary:
   - URL dashboard : https://supabase.com/dashboard/project/yqaitafigfxlrprrouhr/settings/api
   - Après restauration, relancer `bun run dev` pour activer l'auth + RLS + permettre la vérification Agent Browser des routes protégées.
 - Le code est prêt et compile. Les 5 rôles (laveur, repassage, livreur, comptable, manager) ont désormais leurs dashboards + pages métier complets, réutilisant les composants admin existants via basePath.
+
+---
+Task ID: FIX-DIALOG-PICKER
+Agent: main (orchestrator)
+Task: Correction de la boîte de dialogue "Choisir un article" qui s'affichait mal (texte tronqué, scroll cassé, débordement horizontal) + explication de la logique métier du catalogue super admin.
+
+Work Log:
+- Analyse VLM de la capture utilisateur (`/home/z/my-project/upload/pasted_image_1785458476422.png`) :
+  * Titre "Choisir un article" visible MAIS tout le contenu défile ensemble (titre compris)
+  * Grille 3 colonnes, 4-5 rangées visibles coupées net en bas
+  * Texte "Blouson en Cui..." et "Serviettes & Peign..." TRONQUÉS sur UNE ligne avec "..." (au lieu de 2 lignes comme prévu par `line-clamp-2`)
+  * Barre de défilement parasite (probablement horizontale)
+- Diagnostic root cause :
+  * `DialogContent` avait `max-h-[90vh] overflow-y-auto` sur TOUT le contenu → le header défile avec la grille (mauvaise UX)
+  * `ArticleCard` utilisait la classe globale `cv-auto` (content-visibility: auto) avec `contain-intrinsic-size: 1px 110px` → cette optimisation de rendu hors-viewport peut provoquer des bugs de layout sur les cards visibles (texte rétréci à 1 ligne)
+  * Pas de `break-words` / `hyphens-auto` → les longs mots ne se coupaient pas proprement
+- Corrections appliquées :
+  1. `step-articles.tsx` (Dialog picker) :
+     - `DialogContent` passe de `max-h-[90vh] overflow-y-auto` à `flex max-h-[90vh] flex-col gap-4 overflow-hidden p-6 sm:max-w-3xl`
+     - `DialogHeader` marqué `shrink-0` (reste fixe en haut)
+     - Wrapper autour du picker : `-mx-1 min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1` → seul le contenu défile, pas le titre
+  2. `article-catalog-picker.tsx` (ArticleCard) :
+     - Suppression de la classe `cv-auto` (content-visibility: auto) — causes plus de bugs qu'elle n'apporte de perf pour 33 cards
+     - Suppression du `style={cvStyle}` (containIntrinsicSize) et de la constante `CARD_INTRINSIC_HEIGHT` associée
+     - Suppression de l'import `CSSProperties` inutilisé
+     - Carte : `min-h-[80px] min-w-[80px]` → `min-h-[110px]` (assez haut pour image 64px + gap 6px + 2 lignes de texte ~30px = 100px)
+     - Texte : ajout de `break-words hyphens-auto` pour la césure propre des longs mots (ex: "Personnalisées")
+- Vérification end-to-end (Agent Browser + VLM) :
+  * Création d'une route temporaire `/picker-preview` avec mock data (15 articles aux noms longs) pour bypass l'auth Supabase (`.env.local` manquant)
+  * iPhone SE viewport (375×667) :
+    - ✅ Titre "Choisir un article" FIXE en haut pendant le scroll
+    - ✅ 12 cards visibles (4×3), coupées proprement par overflow scroll
+    - ✅ "Blouson en Cuir" s'affiche ENTIER sur 2 lignes (avant : "Blouson en Cui..." sur 1 ligne)
+    - ✅ "Serviettes & Peignoirs" ENTIER sur 2 lignes (avant : "Serviettes & Peign..." sur 1 ligne)
+    - ✅ "Housses de Vêtement Personnalisées" tronqué proprement à 2 lignes avec "..." (comportement attendu line-clamp-2)
+    - ✅ Aucun débordement horizontal
+    - ✅ Scroll vertical fonctionnel (cards du bas accessibles)
+  * Suppression de la route temporaire après vérification
+  * `bun run lint` → 0 erreur, 0 warning
+- Analyse logique métier du catalogue super admin (réponse à la question utilisateur) :
+  * Le catalogue est GLOBAL (commun à TOUS les pressings, non filtré par pressing_id)
+  * Source de vérité : table `catalogue_articles` (migration 014, 33 articles initiaux)
+  * Page `/super-admin/catalogue` : CRUD complète (ajout/édition/toggle actif/upload icône)
+  * Utilisation en aval : `ArticleCatalogPicker` dans l'Étape 2 du wizard "Nouvelle commande" (/admin/commandes/nouvelle et /personnel/*/commandes/nouvelle)
+  * Workflow : admin sélectionne un article du catalogue → slug mappé vers `type_vetement_legacy` (enum DB historique) → article rattaché à la commande via `catalogue_article_id`
+  * Sans catalogue : admin devrait ressaisir le type de vêtement en texte libre à chaque commande (saisie lente, incohérente, sans illustration)
+
+Stage Summary:
+- ✅ Dialog picker corrigé : header fixe, scroll uniquement sur la grille, textes wrappés sur 2 lignes, plus de débordement horizontal
+- ✅ Vérification Agent Browser + VLM sur iPhone SE : tous les problèmes identifiés sont résolus
+- ✅ Code propre : `cv-auto` supprimé (causait des bugs de layout), code mort retiré, lint OK
+- ✅ Logique catalogue expliquée à l'utilisateur (rôle global, source de vérité, usage dans le wizard de commande)
+- ⚠️ `.env.local` toujours manquant — vérification runtime impossible sur `/admin/commandes/nouvelle` (500 attendu, code compile OK)
+- Fichiers modifiés :
+  - `src/components/ogpressing/admin/commande-wizard/step-articles.tsx` (Dialog picker : structure flex-col + scroll isolé)
+  - `src/components/shared/article-catalog-picker.tsx` (ArticleCard : suppression cv-auto, min-h 110px, break-words + hyphens-auto, cleanup imports)

@@ -66,7 +66,6 @@ import {
   useEffect,
   useMemo,
   useState,
-  type CSSProperties,
 } from "react";
 import Image from "next/image";
 import {
@@ -118,9 +117,6 @@ interface CatalogueApiResponse {
 /** Valeur spéciale pour l'onglet "Tous" (aucune catégorie n'a ce nom). */
 const TAB_TOUS = "Tous";
 
-/** Hauteur intrinsèque estimée d'une card pour content-visibility. */
-const CARD_INTRINSIC_HEIGHT = "1px 110px";
-
 /** Délai de debounce pour la recherche (ms). Évite de filtrer 33+ articles
  * à chaque frappe et de relancer le rendu de la grille trop souvent. */
 const SEARCH_DEBOUNCE_MS = 150;
@@ -145,21 +141,14 @@ function ArticleCard({
 }) {
   const [imgError, setImgError] = useState(false);
 
-  // Override de contain-intrinsic-size (la classe cv-auto globale définit
-  // 1px 600px, trop grand pour nos cards de ~110px). Inline style > class.
-  const cvStyle: CSSProperties = {
-    containIntrinsicSize: CARD_INTRINSIC_HEIGHT,
-  };
-
   return (
     <button
       type="button"
       onClick={() => onSelect(article)}
       aria-pressed={selected}
       aria-label={`Sélectionner l'article ${article.nom}`}
-      style={cvStyle}
       className={cn(
-        "cv-auto group relative flex min-h-[80px] min-w-[80px] flex-col items-center justify-start gap-1.5 rounded-lg border-2 bg-card p-2 text-center transition-all",
+        "group relative flex min-h-[110px] flex-col items-center justify-start gap-1.5 rounded-lg border-2 bg-card p-2 text-center transition-all",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-1",
         "hover:border-primary/60 hover:bg-accent/40 hover:shadow-sm",
         selected
@@ -200,10 +189,10 @@ function ArticleCard({
         )}
       </div>
 
-      {/* Nom de l'article (2 lignes max) */}
+      {/* Nom de l'article (2 lignes max, avec césure propre des longs mots) */}
       <span
         className={cn(
-          "line-clamp-2 w-full text-xs font-medium leading-tight",
+          "line-clamp-2 w-full break-words text-xs font-medium leading-tight hyphens-auto",
           selected ? "text-primary" : "text-foreground"
         )}
       >
