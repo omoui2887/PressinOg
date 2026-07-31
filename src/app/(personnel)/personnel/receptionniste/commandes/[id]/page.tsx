@@ -27,6 +27,7 @@ import { ArrowLeft, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { fetchCommandeDetail } from "@/lib/queries/commande-detail";
 import { CommandeDetail } from "@/components/ogpressing/admin/commandes/commande-detail";
 import type { CommandeDetail as CommandeDetailData } from "@/components/ogpressing/admin/commandes/commande-print";
 
@@ -44,46 +45,37 @@ export default async function PersonnelReceptionnisteCommandeDetailPage({
   const { id: commandeId } = await params;
   const supabase = await getSupabaseServer();
 
-  // Récupère la commande avec toutes ses relations (RLS isole par pressing)
-  const { data: commande, error: cmdErr } = await supabase
-    .from("commandes")
-    .select(
-      `
-      id,
-      pressing_id,
-      numero_commande,
-      statut,
-      statut_paiement,
-      montant_total,
-      montant_paye,
-      remise_type,
-      remise_valeur,
-      montant_total_avant_remise,
-      montant_remise,
-      date_reception,
-      date_pret_prevue,
-      date_pret_reel,
-      date_livraison,
-      date_retrait,
-      livraison,
-      adresse_livraison,
-      frais_livraison,
-      notes,
-      cree_par,
-      created_at,
-      updated_at,
-      client:clients(id, nom_complet, telephone, email, adresse, points_fidelite),
-      cree_par_personnel:personnel!commandes_cree_par_fkey(id, nom_complet),
-      lignes:commande_lignes(id, service_id, type_vetement_legacy, description, quantite, prix_unitaire, montant_ligne, created_at, service:services(id, nom, type)),
-      articles:articles_vetements(id, ligne_id, code_qr, catalogue_article_id, type_vetement_legacy, couleur, couleur_libre, etat, description_etat, statut, photo_url, assigne_a, created_at, catalogue_article:catalogue_articles!articles_vetements_catalogue_article_fkey(id, nom, slug, icone_url), assigne:personnel!articles_vetements_assigne_a_fkey(id, nom_complet)),
-      paiements:paiements(id, montant, methode, reference, date_paiement, est_acompte, enregistre_par, notes, created_at)
-      `
-    )
-    .eq("id", commandeId)
-    .maybeSingle();
+  const { commande, error } = await fetchCommandeDetail(supabase, commandeId);
 
-  if (cmdErr) {
-    console.error("[personnel/receptionniste/commandes/[id]] Erreur SELECT:", cmdErr);
+  // Erreur technique (requête PostgREST échouée même après fallback)
+  if (error) {
+    return (
+      <div className="mx-auto max-w-2xl space-y-5">
+        <Button variant="ghost" size="sm" asChild>
+          <Link href={`${BASE_PATH}/commandes`}>
+            <ArrowLeft className="size-4" />
+            Retour aux commandes
+          </Link>
+        </Button>
+        <Card>
+          <CardContent className="flex flex-col items-center py-16 text-center">
+            <AlertCircle className="size-12 text-destructive" />
+            <h1 className="mt-3 text-xl font-bold text-foreground">
+              Erreur de chargement
+            </h1>
+            <p className="mt-1 max-w-md text-sm text-muted-foreground">
+              Impossible de charger cette commande. Erreur technique :
+            </p>
+            <p className="mt-2 max-w-md rounded bg-muted p-2 font-mono text-xs text-muted-foreground">
+              {error}
+            </p>
+            <Button asChild className="mt-4">
+              <Link href={`${BASE_PATH}/commandes`}>Retour aux commandes</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   if (!commande) {
@@ -121,7 +113,6 @@ export default async function PersonnelReceptionnisteCommandeDetailPage({
     ligne_id: string | null;
     code_qr: string | null;
     catalogue_article_id: string | null;
-    type_vetement_legacy: string | null;
     couleur: string | null;
     couleur_libre: string | null;
     etat: string | null;
@@ -130,7 +121,7 @@ export default async function PersonnelReceptionnisteCommandeDetailPage({
     photo_url: string | null;
     assigne_a: string | null;
     created_at: string;
-    catalogue_article: {
+    catalogue_article?: {
       id: string;
       nom: string;
       slug: string;
@@ -141,7 +132,6 @@ export default async function PersonnelReceptionnisteCommandeDetailPage({
   type LigneRow = {
     id: string;
     service_id: string | null;
-    type_vetement_legacy: string | null;
     description: string | null;
     quantite: number;
     prix_unitaire: number;

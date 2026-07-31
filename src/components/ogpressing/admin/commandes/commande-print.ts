@@ -49,9 +49,9 @@ export interface CommandeDetailLigne {
   id: string;
   service_id: string | null;
   /** Ancienne colonne ENUM (renommée par la migration LOT 15).
-   *  Conservée pour l'historique ; le nouveau code utilise
-   *  `catalogue_article` via les articles rattachés à la ligne. */
-  type_vetement_legacy: string | null;
+   *  Optionnel car non systématiquement sélectionné (la requête
+   *  minimale ne l'inclut pas — voir src/lib/queries/commande-detail.ts). */
+  type_vetement_legacy?: string | null;
   description: string | null;
   quantite: number;
   prix_unitaire: number;
@@ -73,10 +73,13 @@ export interface CommandeDetailArticle {
   code_qr: string | null;
   /** FK vers catalogue_articles (LOT 15). */
   catalogue_article_id: string | null;
-  /** Article catalogue joint (nom lisible pour l'utilisateur). */
-  catalogue_article: CommandeDetailCatalogueArticle | null;
-  /** Ancien ENUM figé (renommé par LOT 15, conservé pour l'historique). */
-  type_vetement_legacy: string | null;
+  /** Article catalogue joint (nom lisible pour l'utilisateur).
+   *  Optionnel : absent si la requête minimale est utilisée (FK
+   *  catalogue_articles non résolvable par PostgREST). */
+  catalogue_article?: CommandeDetailCatalogueArticle | null;
+  /** Ancien ENUM figé (renommé par LOT 15, conservé pour l'historique).
+   *  Optionnel : absent si la colonne n'a pas été renommée. */
+  type_vetement_legacy?: string | null;
   couleur: string | null;
   couleur_libre: string | null;
   etat: string | null;
@@ -137,10 +140,12 @@ export interface CommandeDetail {
 
 /** Libellé lisible d'un type d'article. Priorise le catalogue
  *  (LOT 15) et bascule sur l'ancien ENUM legacy si le catalogue
- *  n'est pas renseigné (vieilles commandes pré-migration). */
+ *  n'est pas renseigné (vieilles commandes pré-migration). Tous
+ *  les champs sont optionnels car la requête minimale (fallback)
+ *  ne les inclut pas forcément. */
 function typeLabel(a: {
-  catalogue_article: CommandeDetailCatalogueArticle | null;
-  type_vetement_legacy: string | null;
+  catalogue_article?: CommandeDetailCatalogueArticle | null;
+  type_vetement_legacy?: string | null;
 }): string {
   if (a.catalogue_article?.nom) return a.catalogue_article.nom;
   const t = a.type_vetement_legacy;
