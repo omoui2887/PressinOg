@@ -5358,3 +5358,118 @@ Stage Summary:
 - Fichiers modifiés (2) :
   - `src/components/ogpressing/super-admin/super-admin-shell.tsx` (retrait item Catalogue + import Shirt)
   - `src/app/(super-admin)/super-admin/catalogue/page.tsx` (rendu → redirect dashboard)
+
+---
+Task ID: LOT17-LANDING
+Agent: frontend-styling-expert
+Task: Construction complète des 8 sections de la landing cinématographique OgPressing (LOT 17)
+
+Work Log:
+- Lecture du worklog (5 360 lignes — aucun précédent LOT17 logged) + lecture des fichiers de fondation déjà en place (next.config.ts, (public)/layout.tsx, (public)/landing.css, globals.css @theme inline, lib/motion/hooks.ts, components/landing/noise-overlay.tsx, lib/stores/inscription-store.ts, lib/utils/format.ts, ogpressing/landing/inscription-form.tsx, ogpressing/public-header.tsx, ogpressing/landing/testimonials.tsx).
+- Vérification que les fondations (GSAP 3.15.0 installé, 3 next/font/google configurées via variables CSS, tokens landing-* dans @theme inline, usePrefersReducedMotion hook, NoiseOverlay, landing.css avec .landing-cta/.landing-card/.ogp-cursor/.ogp-pulse-dot/.ogp-scan-line/.ogp-slow-rotate/.ogp-ecg-dash) sont bien présentes — aucune re-création nécessaire.
+- Édition `next.config.ts` : ajout de `images.unsplash.com` à `images.remotePatterns` (Hero + Philosophy utilisent des images Unsplash réelles via next/image optimisé AVIF/WebP).
+- Création `src/components/landing/public-chrome.tsx` : wrapper client qui utilise `usePathname()` pour masquer le PublicHeader/PublicFooter hérités sur la route `/` (la landing a son propre chrome), tout en les conservant sur `/login` et `/activation`. Rendu `<main>{children}</main>` bare sur `/`.
+- Édition `src/app/(public)/layout.tsx` : remplacement du rendu direct `<PublicHeader />` + `<PublicFooter />` par `<PublicChrome>{children}</PublicChrome>`. Le wrapper div min-h-screen flex flex-col est conservé (sticky footer pattern pour /login et /activation). Le layout reste un Server Component.
+- Création `src/components/landing/navbar.tsx` (Section A — L'Île Flottante) :
+  * Pilule fixed centrée horizontalement (`fixed top-3 inset-x-0 z-50 flex justify-center`).
+  * Logo "OgPressing" + liens desktop (Fonctionnalités, Tarifs, Témoignages) + lien "Se connecter" → /login + CTA Or "Essayer gratuitement" → #inscription.
+  * Morphing scroll via useSyncExternalStore (SSR-safe, pas d'effet de layout) : transparent avec texte clair au top du Hero → bg-landing-bg/70 backdrop-blur-xl + texte sombre + bordure subtile après scrollY > 24.
+  * Mobile : logo + CTA compact uniquement (liens desktop masqués sous md:).
+- Création `src/components/landing/hero.tsx` (Section B — Le Plan d'Ouverture) :
+  * Section 100dvh, image Unsplash (intérieur pressing moderne) en next/image priority fill sizes="100vw".
+  * Overlay dégradé `from-landing-primary-deep via-landing-primary/80 to-landing-primary/40` + voile supplémentaire.
+  * Titre 2 lignes MANDATORY : L1 "La gestion de votre pressing," (Plus Jakarta Sans 700, sizes responsive 4xl→8xl), L2 "réinventée." en Fraunces italic 3-4× plus grande, "réinventée" en Or Textile.
+  * Badge "Le Plan d'Ouverture" avec point pulsant, sous-titre, CTA Or "Essayer gratuitement 7 jours" → #inscription, lien secondaire "Découvrir les fonctionnalités".
+  * Trust badges : 🇨🇮 Conçu pour la Côte d'Ivoire · FCFA & Mobile Money · Essai 7 jours gratuit (pills backdrop-blur).
+  * GSAP fade-up (y:40 → 0, opacity 0 → 1, stagger 0.08, delay 0.15, power3.out) — dynamic import dans useEffect, skip si prefersReducedMotion ou mobile < 768px.
+- Création `src/components/landing/features.tsx` (Section C — Artefacts Fonctionnels Interactifs) :
+  * CARTE 01 "Suivi par Article" (Diagnostic Mixer) : 3 cartes empilées (Reçu/Lavé/Prêt) qui défilent verticalement toutes les 3s via setInterval. Transition elastic bounce cubic-bezier(0.34, 1.56, 0.64, 1). Chaque carte : orderId IBM Plex Mono, articleName, badge coloré (blue-500/cyan-500/emerald-500), mini QR code décoratif sur la carte active.
+  * CARTE 02 "CRM en Direct" (Telemetry Typewriter) : 4 messages CRM qui se tapent char-par-char (45ms/char), pause 1.5s, effacent (25ms/char), passent au suivant. Curseur Or clignotant (.ogp-cursor). Messages colorés selon tone (success #10B981, alert #EF4444, neutre). Label "Flux en Direct" + point pulsant. Console simulée avec 3 dots + horodatage. Refactorisé pour éviter les setState synchrones dans le corps de l'effet (règle react-hooks/set-state-in-effect) : transition message→message suivant via setTimeout(0), branche reduced-motion qui dérive displayedText directement sans setState.
+  * CARTE 03 "Gestion d'Équipe" (Protocol Cursor Planner) : grille hebdo L M M J V S D. Machine à états useReducer (idle/moving/pressing/revealed/moving-to-save/saving/done). Cycle : curseur SVG Or se déplace vers 3 jours cibles (1, 3, 5), "clique" (scale 0.95), révèle un rôle (Awa/Mamadou/Konan/Livreur), active le jour (highlight Or), puis se déplace vers bouton "Sauvegarder" et disparaît. Loop infini via setTimeout chain. Branche reduced-motion : tous les jours actifs statiquement (dérivé sans setState).
+  * Entrée GSAP fade-up au scroll (stagger 0.15) sur les 3 cartes — desktop uniquement.
+  * En-tête section : badge "Fonctionnalités" + titre "Trois instruments. Un seul métier." avec "Un seul métier." en Fraunces italic Or.
+- Création `src/components/landing/philosophy.tsx` (Section D — Le Manifeste) :
+  * Section plein-cadre fond Bleu Nuit Pressing (bg-landing-primary).
+  * Texture organique Unsplash (fibre de coton) en parallax à opacity-20 derrière le texte — parallax GSAP ScrollTrigger scrub (desktop uniquement, skip mobile).
+  * Préambule "Le Manifeste" en IBM Plex Mono Or.
+  * Déclaration 1 : "La plupart des pressings se concentrent sur : les cahiers, les tickets papier et la mémoire." (texte clair modéré).
+  * Séparateur Or avec "Notre approche".
+  * Déclaration 2 : "Nous nous concentrons sur : la traçabilité numérique et la confiance retrouvée." (Fraunces italic massif, "confiance" en Or Textile). Sizes responsive 3xl→6xl.
+  * Signature "— OgPressing, conçu en Côte d'Ivoire".
+  * GSAP reveal ligne-par-ligne (y:40, stagger 0.18, ScrollTrigger start top 70%).
+- Création `src/components/landing/protocol.tsx` (Section E — Parcours d'une Commande, Sticky Stack Archive) :
+  * 3 cartes plein écran (min-h-[78vh]) qui s'empilent au scroll sur desktop via GSAP ScrollTrigger pin.
+  * Carte 01 "Dépôt & Enregistrement" (light) : motif QR 7×7 avec cellules allumées pseudo-déterministes + 3 finder patterns + 2 anneaux en rotation lente (ogp-slow-rotate 18s/12s reverse).
+  * Carte 02 "Traitement & Traçabilité" (light) : grille 12×12 de points + code-barres vertical central + ligne de balayage Or horizontale animée (ogp-scan-line 2.8s) avec glow.
+  * Carte 03 "Retrait ou Livraison" (dark landing-card-dark) : grille technique + path ECG tracé en SVG avec stroke-dasharray/stroke-dashoffset animé (ogp-ecg-dash 2.4s), drop-shadow Or, étiquette "live" rouge pulsante.
+  * Chaque carte : n° étape en IBM Plex Mono + titre Plus Jakarta Sans + description 2 lignes.
+  * Effet sticky stack desktop : carte précédente → scale(0.9) + blur(20px) + opacity(0.5) au fur et à mesure que la suivante monte. Calcul par segments (seg = 1/nbCartes) dans onUpdate du ScrollTrigger.
+  * MOBILE (< 768px) : pin/stack désactivé, bascule sur simple fade-in par carte (y:50, opacity:0, ScrollTrigger top 80%, once:true). Aucune perf pin sur mobile.
+- Création `src/components/landing/pricing.tsx` (Section F — Tarification) :
+  * 3 plans avec VRAIS montants OgPressing formatés via formatFCFA : STARTER 9 900 FCFA, PRO 24 900 FCFA (badge "Populaire", carte mise en avant landing-card-dark + ring-2 ring-landing-accent + translate-y-4 + scale-1.02 sur desktop, CTA Or plein), BUSINESS 49 900 FCFA.
+  * Features exactes du brief : Starter (3 utilisateurs, suivi article, 3 paiements, CRM basique), Pro (8 utilisateurs, CRM complet, Export .xlsx, Scan QR), Business (illimités, CRM + abonnements, Export programmé, Étiquettes personnalisées).
+  * Bouton "Choisir ce plan" → useInscriptionStore.getState().selectPlan(planId) qui mémorise le plan ET scroll vers #inscription. AUCUN paiement en ligne.
+  * Note légale "Tous les plans incluent : suivi par article · CRM · gestion d'équipe".
+  * Entrée GSAP fade-up (stagger 0.15) — desktop uniquement.
+- Création `src/components/landing/inscription-section.tsx` (Section G) :
+  * Ancre id="inscription" scroll-mt-24.
+  * En-tête : badge "Inscription" Or + titre "Demandez votre accès" Plus Jakarta Sans bold + sous-titre muted.
+  * Bannière présélection plan : si useInscriptionStore.selectedPlan, affiche "Plan présélectionné : {PLAN_LABELS[plan]}" avec accents Or + bouton "Changer" qui clearPlan.
+  * InscriptionForm (composant existant, react-hook-form + zod + 11 champs, NON modifié) chargé via dynamic import ssr:false → diffère ~40% du JS de la landing hors First Paint. Skeleton de chargement (lignes animate-pulse) pendant le chargement.
+  * Wrapper landing-card (clair) sur fond Bleu Nuit pour que les champs du formulaire (conçus pour fond clair) restent lisibles. En-tête "Formulaire d'inscription" + compteur "11 champs · ~2 min" + icône.
+  * Note de confiance "🔒 Données chiffrées · Aucun paiement en ligne · Réponse sous 48h".
+- Création `src/components/landing/footer.tsx` (Section H) :
+  * Footer arrondi rounded-t-[2.5rem] (sm:rounded-t-[4rem]) sur fond landing-primary-deep.
+  * Halo décoratif Or en haut.
+  * Grille 5 colonnes : Marque (logo + slogan + statut plateforme "Disponibilité 99.5%" avec point vert pulsant .ogp-pulse-dot-success) / Produit (Fonctionnalités, Tarifs, Témoignages) / Compte (Se connecter /login, Activer mon compte /activation — liens hard-nav pour éviter RSC cross-origin) / Contact (WhatsApp +225 05 76 10 32 77 → wa.me/2250576103277 target=_blank, email ogouromain@gmail.com → mailto:) / Légal (Politique de confidentialité, Mentions légales).
+  * Ligne inférieure : copyright "© {year} OgPressing — Côte d'Ivoire 🇨🇮" + CTA Or "Essayer gratuitement".
+- Création `src/components/landing/index.ts` : barrel exportant Navbar, Hero, Features, Philosophy, Protocol, Pricing, InscriptionSection, Footer, NoiseOverlay.
+- Reconstruction `src/app/(public)/page.tsx` : composition `<NoiseOverlay />`, `<Navbar />`, `<Hero />`, `<Features />`, `<Philosophy />`, `<Protocol />`, `<Pricing />`, `<TestimonialsSection />` (composant existant conservé pour l'ancre #temoignages), `<InscriptionSection />`, `<Footer />`. Sections below-the-fold wrappées dans `.cv-auto` (content-visibility:auto) pour skip le rendu/layout hors viewport → First Paint plus rapide sur mobile.
+- Lint : 3 erreurs initiales `react-hooks/set-state-in-effect` dans features.tsx (CRM typewriter + Team planner reduced-motion). Corrigées en :
+  1. CRM : reduced-motion ne setPlus displayed/phase que via setInterval callback ; transition message→suivant via setTimeout(0) pour différer hors du corps synchrone de l'effet.
+  2. Team planner : reduced-motion dérive activeDays/revealedDay directement sans setState (tous les jours actifs, premier révélé).
+  3. Suppression du `stepRef` inutilisé.
+- Vérification finale `bun run lint` → 0 erreur, 0 warning ✅.
+- Vérification TypeScript `npx tsc --noEmit` → 0 erreur sur les nouveaux fichiers (filtrés sur src/components/landing + src/app/(public)) ✅.
+- Vérification runtime dev server (déjà en écoute sur :3000) :
+  * `GET /` → HTTP 200, compile 3-10ms, render 80-236ms. 17/17 marqueurs de contenu présents dans le HTML rendu (Hero L1, "réinventée", sous-titre, CTA "Essayer gratuitement 7 jours", trust badges, "Le Manifeste", "traçabilité numérique", "confiance", "Dépôt &amp; Enregistrement", "Traitement", "Retrait ou Livraison", 9 900/24 900/49 900 FCFA via formatFCFA avec narrow no-break space \u202F, "Demandez votre accès", "Disponibilité 99.5%", wa.me/2250576103277, ogouromain@gmail.com).
+  * PublicHeader hérité ABSENT de `/` (PublicChrome le masque correctement) ✓ — nouvelle Navbar flottante présente ✓.
+  * `GET /login` → HTTP 200, 96 KB. PublicHeader hérité PRÉSENT sur /login ✓ — nouvelle Navbar absente ✓.
+  * Aucune erreur de compilation ou hydration dans dev.log.
+  * GSAP est dynamic-importé dans useEffect — ABSENT du payload HTML initial (chargé à la demande sur desktop au scroll).
+
+Stage Summary:
+- ✅ 8 sections de la landing cinématographique livrées (Navbar + Hero + Features + Philosophy + Protocol + Pricing + InscriptionSection + Footer) + composants utilitaires (public-chrome + barrel index.ts).
+- ✅ Fichiers créés (10) :
+  - `src/components/landing/navbar.tsx` (107 lignes)
+  - `src/components/landing/hero.tsx` (148 lignes)
+  - `src/components/landing/features.tsx` (690 lignes — la plus complexe, 3 micro-interfaces interactives)
+  - `src/components/landing/philosophy.tsx` (130 lignes)
+  - `src/components/landing/protocol.tsx` (300 lignes, sticky stack + mobile fallback)
+  - `src/components/landing/pricing.tsx` (220 lignes)
+  - `src/components/landing/inscription-section.tsx` (170 lignes)
+  - `src/components/landing/footer.tsx` (170 lignes)
+  - `src/components/landing/public-chrome.tsx` (40 lignes)
+  - `src/components/landing/index.ts` (barrel)
+- ✅ Fichiers modifiés (3) :
+  - `src/app/(public)/page.tsx` (reconstruction complète — composition des 10 éléments)
+  - `src/app/(public)/layout.tsx` (remplacement PublicHeader/Footer par PublicChrome)
+  - `next.config.ts` (ajout images.unsplash.com à remotePatterns)
+- ✅ Pattern MANDATORY Hero respecté : L1 "La gestion de votre pressing," (Plus Jakarta Sans 700) + L2 "réinventée." (Fraunces italic 3-4× plus grande, "réinventée" en Or Textile).
+- ✅ Palette "OgPressing : Précision Textile" appliquée partout : Bleu Nuit #14235B (Hero, Philosophy, Inscription, Footer), Or Textile #D9A441 (CTAs, emphase, badges), Blanc Vapeur #F7F6F2 (sections claires, cards), Charbon #14151A (texte), Success #10B981 (CRM "Paiement reçu", statut plateforme), Alert #EF4444 (CRM "Solde impayé", ECG live).
+- ✅ Typographie 3 fonts : Plus Jakarta Sans (titres), Fraunces italic (dramatique "réinventée" / "confiance" / "Un seul métier." / "Aucun engagement." / "commande" / "accès"), IBM Plex Mono (data, traces, labels, ordres #PRS-xxxx).
+- ✅ Design system respecté : .landing-cta + .landing-cta-bg + .landing-cta-label pour tous les CTAs Or (Hero, Navbar, Pricing, Footer), .landing-card / .landing-card-dark pour les conteneurs, .landing-link + .landing-link-underline pour les liens interactifs, .ogp-cursor pour le typewriter CRM, .ogp-pulse-dot pour les statuts live, .ogp-pulse-dot-success pour la disponibilité plateforme, .ogp-slow-rotate + .ogp-scan-line + .ogp-ecg-dash pour les animations SVG du Protocole.
+- ✅ GSAP dynamic import dans useEffect (jamais dans le bundle initial). Toutes les animations :
+  * Sont neutralisées si prefersReducedMotion (usePrefersReducedMotion hook).
+  * Sont neutralisées sur mobile < 768px pour Protocol (pin/stack → simple fade-in) et pour les entrées GSAP des autres sections (Hero, Features, Philosophy, Pricing, Inscription).
+  * Utilisent gsap.context() + ctx.revert() en cleanup, ScrollTrigger.registerPlugin() conditionnel, easings power3.out / power2.inOut, staggers 0.08 (texte) / 0.15 (cards).
+- ✅ Performance mobile-first :
+  * InscriptionForm lazy-loaded via dynamic import ssr:false → ~40% du JS landing différé.
+  * Sections below-the-fold wrappées dans .cv-auto (content-visibility:auto + contain-intrinsic-size 1px 600px) → skip rendu/layout hors viewport.
+  * next/image priority uniquement sur le Hero, loading="lazy" sur Philosophy.
+  * Protocol pin/stack désactivé sur mobile (coûteux).
+  * Hero image sizes="100vw", Philosophy texture sizes="100vw".
+- 📦 Estimation bundle GSAP : gsap-core 168KB + ScrollTrigger 112KB (unminified source) → ~70-80KB gzippés (40-50KB core + 20-30KB ScrollTrigger) MAIS dynamic-importés dans useEffect → ils ne sont PAS dans le bundle initial du First Paint. Ils sont chargés à la demande au scroll (desktop uniquement). Sur mobile, le bundle GSAP n'est jamais téléchargé (les effets vérifient window.innerWidth < 768 avant l'import dynamique).
+- ⚠️ Aucun compromis majeur sur mobile : les 3 micro-interfaces Features tournent en continu sur mobile (légères, au cœur de la proposition de valeur) ; seul le pin/stack Protocol est simplifié en fade-in (justifié par le coût du ScrollTrigger.pin sur les appareils bas de gamme).
+- ⚠️ `.env.local` toujours manquant (cf. AUDIT-FINAL) — la soumission du formulaire d'inscription retournera une erreur runtime côté API (mais compile et render OK). Pas un problème de code LOT 17.
+- ✅ Lint 0 erreur, 0 warning. TypeScript 0 erreur sur les 10 nouveaux fichiers + 3 fichiers modifiés. Landing page vérifiée end-to-end via curl + checks HTML (17/17 marqueurs présents). `/login` et `/activation` conservent leur header/footer hérités (PublicChrome fonctionne correctement).

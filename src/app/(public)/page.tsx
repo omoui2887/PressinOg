@@ -1,60 +1,81 @@
 /**
- * OgPressing — Landing page publique (racine /)
- * ----------------------------------------------
- * Page marketing une-page avec ancres de navigation :
- *   1. Hero
- *   2. Problème / Solution
- *   3. Fonctionnalités (8 cards)
- *   4. Plans tarifaires (3 cards avec pré-sélection)
- *   5. Témoignages
- *   6. Formulaire d'inscription (placeholder — contenu détaillé à venir)
+ * OgPressing — Landing page cinématographique (LOT 17)
+ * ---------------------------------------------------
+ * Composition des 8 sections du LOT 17 + overlay de bruit + navbar
+ * flottante + footer arrondi.
  *
- * Header sticky + footer gérés par le layout `(public)`.
+ *   1. NoiseOverlay  — texture SVG globale (fixed, z-1)
+ *   2. Navbar        — pilule flottante fixed
+ *   3. Hero          — "Le Plan d'Ouverture" (100dvh, image + overlay)
+ *   4. Features      — 3 artefacts fonctionnels interactifs
+ *   5. Philosophy    — manifeste dark avec parallax
+ *   6. Protocol      — sticky stack 3 cartes (parcours d'une commande)
+ *   7. Pricing       — 3 plans STARTER / PRO / BUSINESS
+ *   8. Inscription   — wrapper du formulaire existant
+ *   9. Footer        — pied de page arrondi Bleu Nuit
  *
- * 🚀 PERF : Les sections below-the-fold sont wrappées dans des divs avec
- * `content-visibility:auto` (classe `.cv-auto`) pour que le navigateur
- * skippe leur rendu/layout jusqu'à ce qu'elles approchent du viewport.
- * Cela accélère drastiquement le First Paint sur mobile.
+ * Les sections below-the-fold sont wrappées dans .cv-auto pour skipper
+ * leur rendu/layout jusqu'à l'approche du viewport (perf First Paint).
+ *
+ * La section Témoignages (déjà existante) est insérée entre Protocol et
+ * Pricing pour conserver la cohérence des ancres #temoignages du navbar.
  */
+import { NoiseOverlay } from "@/components/landing/noise-overlay";
 import {
-  HeroSection,
-  ProblemSolutionSection,
-  FeaturesSection,
-  PricingSection,
-  TestimonialsSection,
+  Navbar,
+  Hero,
+  Features,
+  Philosophy,
+  Protocol,
+  Pricing,
   InscriptionSection,
-} from "@/components/ogpressing/landing";
+  Footer,
+} from "@/components/landing";
+import { TestimonialsSection } from "@/components/ogpressing/landing";
 
 export default function PublicHomePage() {
   return (
     <>
+      <NoiseOverlay />
+
+      {/* Navbar flottante (fixed) — overlay au-dessus de tout */}
+      <Navbar />
+
       {/* 1. HERO — au-dessus de la ligne de flottaison, rendu immédiat */}
-      <HeroSection />
+      <Hero />
 
-      {/* 2. PROBLÈME / SOLUTION */}
+      {/* 2. FONCTIONNALITÉS — 3 artefacts interactifs */}
       <div className="cv-auto">
-        <ProblemSolutionSection />
+        <Features />
       </div>
 
-      {/* 3. FONCTIONNALITÉS */}
+      {/* 3. PHILOSOPHIE — manifeste dark parallax */}
       <div className="cv-auto">
-        <FeaturesSection />
+        <Philosophy />
       </div>
 
-      {/* 4. PLANS TARIFAIRES */}
+      {/* 4. PROTOCOLE — sticky stack 3 cartes */}
       <div className="cv-auto">
-        <PricingSection />
+        <Protocol />
       </div>
 
-      {/* 5. TÉMOIGNAGES */}
+      {/* 5. TARIFICATION — 3 plans */}
+      <div className="cv-auto">
+        <Pricing />
+      </div>
+
+      {/* 6. TÉMOIGNAGES — section existante conservée (ancre #temoignages) */}
       <div className="cv-auto">
         <TestimonialsSection />
       </div>
 
-      {/* 6. FORMULAIRE D'INSCRIPTION */}
+      {/* 7. INSCRIPTION — wrapper du formulaire existant */}
       <div className="cv-auto">
         <InscriptionSection />
       </div>
+
+      {/* 8. FOOTER — arrondi Bleu Nuit */}
+      <Footer />
     </>
   );
 }

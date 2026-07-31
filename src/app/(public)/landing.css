@@ -1,0 +1,246 @@
+/**
+ * OgPressing — landing.css (LOT 17)
+ * ---------------------------------
+ * Styles spécifiques à la landing page cinématographique.
+ * Importé uniquement par le groupe de routes (public) via son layout.
+ *
+ * Contient :
+ *   - Variables CSS de section (couleurs de fond, transitions)
+ *   - Utilitaires composés réutilisables sur la landing :
+ *     .landing-section-shadow, .landing-cta (effet magnétique + fond glissant),
+ *     .landing-card (rounded-[2rem] + ombre douce), .landing-link-underline
+ *   - Keyframes spécifiques (type-cursor, ogp-pulse, ogp-scan-line…)
+ *   - Support prefers-reduced-motion : on neutralise les animations non
+ *     essentielles via les media queries (les animations GSAP sont gérées
+ *     côté JS via usePrefersReducedMotion).
+ *   - Scrollbar discrète pour la navbar flottante (webkit + firefox)
+ */
+
+/* ============================================================
+   Section rhythm
+   ============================================================ */
+.landing-section {
+  position: relative;
+  padding-block: clamp(4rem, 10vw, 9rem);
+}
+
+/* ============================================================
+   Card — conteneur premium (rounded-[2rem], ombre douce, bordure subtile)
+   ============================================================ */
+.landing-card {
+  border-radius: 2rem;
+  background: var(--color-landing-bg);
+  border: 1px solid color-mix(in srgb, var(--color-landing-ink) 8%, transparent);
+  box-shadow:
+    0 1px 2px rgba(20, 21, 26, 0.04),
+    0 12px 32px -8px rgba(20, 21, 26, 0.08);
+  transition:
+    transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    box-shadow 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.landing-card-dark {
+  border-radius: 2rem;
+  background: var(--color-landing-primary);
+  border: 1px solid color-mix(in srgb, var(--color-landing-accent) 18%, transparent);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.2),
+    0 24px 60px -16px rgba(0, 0, 0, 0.4);
+}
+
+/* ============================================================
+   CTA — effet magnétique + fond glissant
+   Usage : <a class="landing-cta"><span class="landing-cta-bg"></span><span class="landing-cta-label">…</span></a>
+   ============================================================ */
+.landing-cta {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  overflow: hidden;
+  border-radius: 9999px;
+  padding: 0.85rem 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-landing-primary);
+  background: var(--color-landing-accent);
+  transition:
+    transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    box-shadow 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 0 8px 24px -6px color-mix(in srgb, var(--color-landing-accent) 60%, transparent);
+  cursor: pointer;
+  isolation: isolate;
+}
+.landing-cta:hover {
+  transform: scale(1.03) translateY(-1px);
+  box-shadow: 0 12px 32px -6px color-mix(in srgb, var(--color-landing-accent) 70%, transparent);
+}
+.landing-cta:active {
+  transform: scale(0.98);
+}
+.landing-cta:focus-visible {
+  outline: 2px solid var(--color-landing-accent);
+  outline-offset: 3px;
+}
+.landing-cta-bg {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in srgb, white 35%, transparent) 50%,
+    transparent 70%
+  );
+  transform: translateX(-100%);
+  transition: transform 0.7s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.landing-cta:hover .landing-cta-bg {
+  transform: translateX(100%);
+}
+.landing-cta-label {
+  position: relative;
+  z-index: 1;
+}
+
+/* Variante CTA outline (texte sombre, bordure Or) */
+.landing-cta-outline {
+  background: transparent;
+  color: var(--color-landing-ink);
+  border: 1.5px solid color-mix(in srgb, var(--color-landing-accent) 60%, transparent);
+  box-shadow: none;
+}
+.landing-cta-outline:hover {
+  background: color-mix(in srgb, var(--color-landing-accent) 12%, transparent);
+  box-shadow: none;
+}
+
+/* Variante CTA sur fond sombre (texte clair, Or) */
+.landing-cta-on-dark {
+  color: var(--color-landing-primary);
+  background: var(--color-landing-accent);
+}
+
+/* ============================================================
+   Lien interactif — soulèvement subtil + underline animé
+   ============================================================ */
+.landing-link {
+  position: relative;
+  display: inline-block;
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.landing-link:hover {
+  transform: translateY(-1px);
+}
+.landing-link-underline::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 1.5px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.landing-link-underline:hover::after {
+  transform: scaleX(1);
+  transform-origin: left;
+}
+
+/* ============================================================
+   Keyframes spécifiques landing
+   ============================================================ */
+
+/* Curseur de machine à écrire (CRM en Direct) */
+@keyframes ogp-type-cursor {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.ogp-cursor {
+  display: inline-block;
+  width: 0.6ch;
+  background: var(--color-landing-accent);
+  animation: ogp-type-cursor 1s steps(1) infinite;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  height: 1em;
+}
+
+/* Point pulsant (Flux en Direct, statut plateforme) */
+@keyframes ogp-pulse-dot {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-landing-accent) 70%, transparent);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(0.92);
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+.ogp-pulse-dot {
+  animation: ogp-pulse-dot 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@keyframes ogp-pulse-dot-success {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-landing-success) 70%, transparent);
+  }
+  50% {
+    opacity: 0.75;
+    transform: scale(0.92);
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+.ogp-pulse-dot-success {
+  animation: ogp-pulse-dot-success 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Ligne de balayage laser (Protocole carte 02) */
+@keyframes ogp-scan-line {
+  0% { transform: translateY(-100%); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(2000%); opacity: 0; }
+}
+
+/* Rotation lente (Protocole carte 01 — motif QR) */
+@keyframes ogp-slow-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Forme d'onde ECG (Protocole carte 03) */
+@keyframes ogp-ecg-dash {
+  to { stroke-dashoffset: 0; }
+}
+
+/* ============================================================
+   Navbar flottante — scrollbar discrète pour les onglets
+   ============================================================ */
+.landing-nav-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.landing-nav-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* ============================================================
+   prefers-reduced-motion : neutraliser les animations CSS
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .landing-cta,
+  .landing-link,
+  .landing-card,
+  .ogp-cursor,
+  .ogp-pulse-dot,
+  .ogp-pulse-dot-success {
+    animation: none !important;
+    transition: none !important;
+  }
+}
