@@ -18,7 +18,6 @@ import {
   Inbox,
   CreditCard,
   Building2,
-  Shirt,
 } from "lucide-react";
 import {
   DashboardLayout,
@@ -30,6 +29,14 @@ import {
 // la génération de codes se fait directement depuis la page Demandes
 // (prompt 5.2 — bouton "Valider et générer un code d'activation"),
 // aucune page dédiée n'est prévue par le spec.
+//
+// L'item "Catalogue" a été retiré : le catalogue global d'articles est
+// désormais un référentiel en lecture seule (seedé par la migration 014,
+// 33 articles). Il est CONSOMMÉ par les autres comptes (admin, réceptionniste,
+// manager) via le sélecteur visuel `ArticleCatalogPicker` dans l'Étape 2 du
+// wizard "Nouvelle commande". Le Super Admin n'a plus besoin de gérer ce
+// catalogue — son rôle se concentre sur la gestion de la plateforme
+// (pressings, demandes, abonnements).
 const NAV_ITEMS: DashboardNavItem[] = [
   {
     href: "/super-admin/dashboard",
@@ -50,11 +57,6 @@ const NAV_ITEMS: DashboardNavItem[] = [
     href: "/super-admin/abonnements",
     label: "Abonnements",
     icon: CreditCard,
-  },
-  {
-    href: "/super-admin/catalogue",
-    label: "Catalogue",
-    icon: Shirt,
   },
 ];
 
