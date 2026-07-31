@@ -196,7 +196,26 @@ function CrmLiveCard() {
   const [phase, setPhase] = useState<"typing" | "pausing" | "erasing">(
     "typing"
   );
+  // Horloge : on rend une chaîne fixe côté serveur et au premier render
+  // client, puis on la met à jour dans useEffect pour éviter une
+  // hydration mismatch (l'heure change entre SSR et hydration).
+  const [clock, setClock] = useState("--:--");
   const prefersReducedMotion = usePrefersReducedMotion();
+
+  // Mise à jour de l'horloge côté client uniquement (évite la mismatch
+  // d'hydration car l'heure serveur ≠ heure client à la minute près).
+  useEffect(() => {
+    const updateClock = () =>
+      setClock(
+        new Date().toLocaleTimeString("fr-FR", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      );
+    updateClock();
+    const id = window.setInterval(updateClock, 30_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   // Reduced motion : on affiche le message complet du message courant et on
   // fait défiler les messages toutes les 2.5s via setInterval (le setState
@@ -277,11 +296,7 @@ function CrmLiveCard() {
           <span className="ogp-cursor" aria-hidden />
         </p>
         <p className="mt-3 text-[9px] uppercase tracking-wider text-white/30">
-          {new Date().toLocaleTimeString("fr-FR", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}{" "}
-          · temps réel
+          {clock} · temps réel
         </p>
       </div>
     </div>
