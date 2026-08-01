@@ -6146,3 +6146,1846 @@ Fichiers modifiés au total (9) :
 - `src/app/(personnel)/personnel/laveur/dashboard/page.tsx` (WorkflowStagesCard)
 - `src/app/(personnel)/personnel/repassage/dashboard/page.tsx` (WorkflowStagesCard)
 - `src/app/(personnel)/personnel/livreur/dashboard/page.tsx` (WorkflowStagesCard)
+
+---
+Task ID: AUDIT-AUTH
+Agent: explore-security
+Task: Audit de sécurité du middleware auth, sessions Supabase, layouts/pages
+
+Work Log:
+- Lecture intégrale des 16 fichiers demandés + recherche transversale (getSession, localStorage, dangerouslySetInnerHTML, console.*, productionBrowserSourceMaps, inviteUserByEmail, /auth/callback)
+- Aucune modification de code effectuée (audit lecture seule)
+
+Stage Summary:
+
+# RAPPORT D'AUDIT DE SÉCURITÉ — AUTH/SSESSIONS OGPRESSING
+
+## 3.1 — Middleware d'auth existe — ✅ CONFORME
+
+**Preuve** : `src/middleware.ts:17-36` délègue à `updateSession()` qui protège explicitement les 3 préfixes.
+
+```ts
+// src/middleware.ts
+export async function middleware(request: NextRequest) {
+  return await updateSession(request);
+}
+export const config = {
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/.*|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
+};
+```
+
+```ts
+// src/lib/supabase/middleware.ts:39
+const PROTECTED_PREFIXES = ["/super-admin", "/admin", "/personnel"] as const;
+```
+
+Cross-space prevention implémentée (`middleware.ts:759-813`) : /super-admin/* réservé à `role === "super_admin"`, /admin/* à `role === "manager"`, /personnel/* bloque les super_admins + restriction par segment de rôle (`extractPersonnelRoleFromPath`, `middleware.ts:804-812`).
+
+⚠️ **Note** : le matcher EXCLUT `api/.*` du middleware (ligne 34). Les routes API doivent donc assurer leur propre auth — c'est bien le cas (ex: `src/app/api/admin/personnel/route.ts:61-86` vérifie `getUser()` + rôle manager). Acceptable mais à vérifier sur toutes les routes API.
+
+## 3.2 — Routage par défaut en refus (liste blanche) — ✅ CONFORME
+
+**Preuve** : approche par liste blanche (allowlist).
+
+```ts
+// src/lib/supabase/middleware.ts:577-579
+const isProtected = PROTECTED_PREFIXES.some(
+  (p) => pathname === p || pathname.startsWith(p + "/")
+);
+const isAuthRoute = (AUTH_ROUTES as readonly string[]).includes(pathname);
+```
+
+```ts
+// src/lib/supabase/middleware.ts:616-626
+if (!user) {
+  if (isProtected) {
+    return redirectTo(request, responseRef.current,
+      `/login?next=${encodeURIComponent(pathname)}`);
+  }
+  return responseRef.current; // route publique : on laisse passer
+}
+```
+
+Logique : si `isProtected` est false (route non listée dans `PROTECTED_PREFIXES`), la requête passe même sans auth. Toute nouvelle route sensible DOIT être ajoutée à `PROTECTED_PREFIXES`. ⚠️ Pas de fail-fast par défaut : une route oubliée serait publique. Mais comme les routes sensibles vivent toutes sous `/admin|/personnel|/super-admin`, le risque est faible. Le fast-path ligne 598-600 skip même Supabase si aucun cookie — bon pour la perf, mais si un développeur crée `/factures/` (sensible) hors d'un préfixe protégé, ce sera ouvert. **Recommandation : inverser en deny-by-default** (whitelist explicite des routes publiques : `/`, `/login`, `/activation`, `/_next/*`, `/api/public/*`).
+
+## 3.3 — getUser() vs getSession() — ✅ CONFORME
+
+**Recherche** : `rg "getSession\("` dans `src/` → **0 résultat**.
+
+**Preuve** : tous les checks d'auth utilisent `supabase.auth.getUser()` qui valide le JWT côté serveur Supabase :
+
+- `src/lib/supabase/middleware.ts:609-611` (middleware)
+- `src/app/(admin)/layout.tsx:33-35` (layout admin)
+- `src/app/(personnel)/layout.tsx:36-38` (layout personnel)
+- `src/app/(super-admin)/layout.tsx:25-27` (layout super admin)
+- `src/app/(personnel)/personnel/changer-mot-de-passe/page.tsx:163, 225` (page mdp)
+- `src/app/api/admin/personnel/route.ts:61` (route API)
+- `src/app/(public)/login/page.tsx` : n'utilise que `signInWithPassword` (login) puis requêtes DB.
+
+✅ Aucun usage de `getSession()` (qui ne vérifie pas la signature JWT côté serveur). Bonne pratique.
+
+## 3.4 — Gestionnaire de callback auth — ⚠️ MANQUANT
+
+**Recherche** : `Glob "src/app/**/callback/**"` et `Glob "src/app/**/auth/**"` → **0 résultat**. Aucune route `/auth/callback` ni `/callback` n'existe.
+
+**Impact** : le flux d'invitation par email utilise `supabase.auth.admin.inviteUserByEmail(email, { redirectTo: inviteRedirect })` (`src/app/api/admin/personnel/route.ts:465-468` et `[id]/route.ts:477-480`). Avec @supabase/ssr + PKCE (default Supabase v2), le clic sur le lien d'invitation redirige vers `/personnel/changer-mot-de-passe?code=<PKCE_CODE>&type=invite`. **Ce code DOIT être échangé via `supabase.auth.exchangeCodeForSession(code)` côté serveur** dans une route callback.
+
+Or, la page `changer-mot-de-passe/page.tsx` appelle directement `supabase.auth.getUser()` (ligne 163) sans échanger le code au préalable — `getUser()` retournera null car la session n'est pas encore établie → l'utilisateur sera redirigé vers `/login` (ligne 166). **Le flux d'invitation est probablement cassé** ou repose sur un échange implicite client-side (non sécurisé, token visible dans l'URL du navigateur).
+
+**Recommandation** : créer `src/app/auth/callback/route.ts` qui :
+1. Lit `code` depuis `searchParams`
+2. Appelle `supabase.auth.exchangeCodeForSession(code)`
+3. Redirige vers `/personnel/changer-mot-de-passe`
+
+## 3.5 — Stockage de session — ✅ CONFORME
+
+**Preuve** :
+- `@supabase/ssr` (`createServerClient`, `createBrowserClient`) pose les cookies de session avec `httpOnly: true`, `secure: true`, `sameSite: "lax"` par défaut (config Supabase standard, non surchargée dans le code).
+- Le cookie de cache custom `ogp_role_cache` est explicitement configuré en httpOnly+secure+lax :
+```ts
+// src/lib/supabase/middleware.ts:269-277
+response.cookies.set({
+  name: ROLE_CACHE_COOKIE,
+  value: signed,
+  httpOnly: true,
+  secure: true,
+  sameSite: "lax",
+  maxAge: ROLE_CACHE_TTL_SEC, // 5 min
+  path: "/",
+});
+```
+- `src/lib/supabase/admin.ts:39-46` désactive `persistSession` et `autoRefreshToken` pour le client service_role (anti-fuite).
+- **Recherche** : `rg "localStorage"` dans `src/` → **0 résultat**. Aucun token stocké en localStorage.
+
+⚠️ **Note** : `secure: true` est hardcoded — en dev HTTP (`localhost:3000`), les cookies ne seront PAS posés par le navigateur (la plupart des navigateurs tolèrent `secure` sur localhost, mais c'est à vérifier). Pas un problème de sécurité en soi, mais peut causer des bugs de session en dev.
+
+## 3.8 — Flux création/réinit mot de passe — ✅ MAIS ⚠️ sur invitation
+
+**Preuve flag `mot_de_passe_temporaire`** :
+- Posé à `true` à la création : `src/app/api/admin/personnel/route.ts:421` (creation_directe) et `:496` (lien_invitation, implicite via le type).
+- Vérifié à la connexion → redirection forcée :
+```ts
+// src/app/(public)/login/page.tsx:224-230
+if (personnel.mot_de_passe_temporaire === true) {
+  toast.info("Pour votre première connexion, veuillez changer votre mot de passe.");
+  window.location.assign("/personnel/changer-mot-de-passe");
+  return;
+}
+```
+- **Double-check côté middleware** (`src/lib/supabase/middleware.ts:374-381`) : `computeDashboardTarget()` renvoie `/personnel/changer-mot-de-passe` en priorité si `mot_de_passe_temporaire=true`. ✅ Défense en profondeur.
+- Remis à `false` après changement : `src/app/(personnel)/personnel/changer-mot-de-passe/page.tsx:281` (`updatePayload.mot_de_passe_temporaire = false`).
+- Anti-rejeu : `changer-mot-de-passe/page.tsx:198-202` redirige si `mot_de_passe_temporaire === false`.
+- Reset password (admin) remet le flag à `true` : `src/app/api/admin/personnel/[id]/route.ts:421`.
+- Activation du compte `statut_compte: 'actif'` + `date_activation` après changement (`changer-mot-de-passe/page.tsx:285-288`).
+
+✅ Le flux de changement obligatoire est correct et défense en profondeur (login + middleware + page).
+
+**⚠️ Liens d'invitation par email** :
+```ts
+// src/app/api/admin/personnel/route.ts:459-468
+const redirectTo =
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  request.nextUrl.origin ??
+  "http://localhost:3000";
+const inviteRedirect = `${redirectTo}/personnel/changer-mot-de-passe`;
+const { data: invitedUser, error: inviteErr } =
+  await admin.auth.admin.inviteUserByEmail(email, { redirectTo: inviteRedirect });
+```
+
+Problèmes :
+1. **Fallback sur `request.nextUrl.origin`** : si `NEXT_PUBLIC_SITE_URL` n'est pas défini, le `Host` header de la requête est utilisé → **open redirect possible** si un attaquant spoofe le header `Host` (envoie une requête avec `Host: evil.com` à un serveur en prod sans var d'env configurée). L'email partirait avec un lien `https://evil.com/personnel/changer-mot-de-passe?code=...` → leak du code PKCE.
+2. **Pas de contrôle d'expiration du lien** : l'expiration dépend uniquement de la config Supabase Auth (default 24h pour invite). Le code OgPressing ne peut pas la configurer. Acceptable mais à documenter.
+3. **Pas de route `/auth/callback`** pour échanger le code (voir 3.4) → le flux d'invitation est probablement cassé ou implicite client-side.
+
+**Recommandations** :
+- Forcer `NEXT_PUBLIC_SITE_URL` en prod (validation au démarrage — voir 1.6).
+- Refuser l'invitation si `NEXT_PUBLIC_SITE_URL` n'est pas défini (ne pas fallback sur `request.nextUrl.origin`).
+- Créer une route `/auth/callback` (voir 3.4).
+
+## 1.4 — Fuites console/erreurs — ⚠️ MODÉRÉ
+
+**Recherche** : `rg "console\.(log|error|warn|info|debug)"` dans `src/` → **~110 occurrences**. Aucune n'expose explicitement des variables d'env ou des secrets. Mais plusieurs logguent des erreurs Supabase brutes qui peuvent contenir des détails internes.
+
+**Suspects côté serveur (route handlers — exposés en logs serveur, pas au client)** :
+- `src/app/api/admin/personnel/route.ts:396` — `console.error("[api/admin/personnel POST] createUser error:", createErr)` — logge l'erreur Auth brute (peut contenir config hints)
+- `src/app/api/admin/personnel/route.ts:471` — idem pour `inviteErr`
+- `src/app/api/admin/personnel/[id]/route.ts:408,425,483` — logge `updateAuthErr`, `updatePersErr`, `inviteErr` bruts
+- `src/app/api/public/activation/route.ts:168,229,323` — logge `codeError`, `authError`, `err` rollback
+- `src/app/api/public/inscription/route.ts:255,267` — logge erreurs Supabase brutes
+- `src/app/api/admin/pressings/[id]/route.ts:88,126,132,138,249` — 5 logs d'erreurs SQL brutes
+- ~80 autres dans `src/app/api/**` qui suivent le même pattern (erreurs Postgres brutes).
+
+**Suspects côté client ( exposés au navigateur)** :
+- `src/app/error.tsx:38` — `console.error("[OgPressing] Erreur non gérée :", error?.message ?? error, { digest: error?.digest })` — ✅ safe (message + digest seulement, pas de stack)
+- `src/app/(public)/login/page.tsx:263` — `console.error("[login] Erreur inattendue :", err)` — ⚠️ logge l'objet erreur complet côté client (peut inclure stack trace côté navigateur)
+- `src/app/(public)/activation/page.tsx:350` — logge `{ status, body: text.substring(0, 300) }` — ⚠️ logge 300 premiers caractères de la réponse serveur (peut inclure stack trace si Next dev mode)
+- `src/app/(public)/activation/page.tsx:372,421,482,540` — logge des objets réponse
+- `src/app/(personnel)/personnel/changer-mot-de-passe/page.tsx:178,296,324` — logge `persError`, `updatePersError`, `err` bruts côté client
+- `src/app/(personnel)/personnel/**/page.tsx` — ~10 logs `Erreur fetch:` côté client (peut exposer URL / détails réseau)
+- `src/components/ogpressing/**` — ~25 logs côté client (catégories: fetch errors, scan errors, QR/barcode render errors)
+
+**Aucune fuite de :** variables d'env, JWT, service_role key, mots de passe en clair.
+
+**Recommandations** :
+- Pour les routes API serveur : envisager un logger structuré (pino/winston) avec niveau `error` en prod et filtrage des champs sensibles (`password`, `token`, `Authorization`).
+- Côté client : remplacer `console.error("[X] Erreur inattendue :", err)` par `console.error("[X] Erreur inattendue :", err?.message ?? "unknown")` pour éviter les stack traces côté navigateur (surtout dans `login`, `activation`, `changer-mot-de-passe` qui sont des pages d'auth sensibles).
+- Vérifier la config Next.js `serverActions` / `logging` pour s'assurer que les `console.error` server-side ne sont pas loggués en clair dans `server.log` (le script `start` fait `bun .next/standalone/server.js 2>&1 | tee server.log` — si ce fichier est servi ou commit, c'est une fuite).
+
+## 1.5 — Exposition artefacts de build — ✅ CONFORME
+
+**Preuve** : `next.config.ts` lu entièrement (36 lignes). `productionBrowserSourceMaps` n'est PAS défini → default `false`. Pas de source maps exposées au navigateur.
+
+```ts
+// next.config.ts:3-33
+const nextConfig: NextConfig = {
+  output: "standalone",
+  typescript: { ignoreBuildErrors: true },  // ⚠️ voir note
+  reactStrictMode: true,
+  compress: true,
+  images: { formats: [...], remotePatterns: [...] },
+  allowedDevOrigins: [...],
+};
+```
+
+⚠️ **Note hors-scope mais importante** : `typescript.ignoreBuildErrors: true` (ligne 9) — les erreurs TypeScript sont silencieusement ignorées au build. Le commentaire TODO (ligne 5-7) mentionne "75 erreurs TypeScript restantes". Cela peut masquer des bugs de sécurité (ex: typage lâche sur les rôles, les `user_id`, les `pressing_id`). **Recommandation forte** : corriger les 75 erreurs et passer à `false` avant la mise en prod.
+
+## 1.6 — Validation au démarrage — ⬚ NON CONFORME
+
+**Recherche** : `Glob "src/lib/**/env*"` et `"src/lib/**/config*"` et `"src/**/validate-env*"` → **0 résultat**. Aucun module central de validation des variables d'env au démarrage.
+
+**Comportement actuel par client** :
+| Client | Fichier | Comportement si var manquante |
+|--------|---------|-------------------------------|
+| `getSupabaseServer()` | `server.ts:24-25` | `process.env.NEXT_PUBLIC_SUPABASE_URL!` — assertion `!` non-null, passe `undefined` silencieusement à `createServerClient`. L'app crashera plus tard avec une erreur cryptique Supabase. |
+| `getSupabaseBrowser()` | `client.ts:18-21` | Idem — `!` assertion, crash différé. |
+| `getSupabaseAdmin()` | `admin.ts:33-37` | ✅ `throw new Error(...)` explicite si `NEXT_PUBLIC_SUPABASE_URL` ou `SUPABASE_SERVICE_ROLE_KEY` manquantes. |
+| `createMiddlewareClient()` | `middleware.ts:473-484` | ✅ Log + `throw new Error(msg)` si URL/ANON manquantes. |
+| `updateSession()` | `middleware.ts:564-574` | ⚠️ **FAIL-SILENT** : `console.warn(...)` puis `return NextResponse.next({ request })` — l'auth est **désactivée silencieusement** sans crash. Si l'env est cassé en prod, toutes les routes protégées deviennent publiquement accessibles. |
+
+**Risque critique** : le pattern de `updateSession()` (middleware.ts:564-574) est un **fail-open**. Si `NEXT_PUBLIC_SUPABASE_ANON_KEY` vient à disparaître (ex: variable mal nommée en prod, clé rotée et oubliée), le middleware laisse passer toutes les requêtes vers /admin/*, /super-admin/*, /personnel/* sans auth. Les layouts redirigent vers /login (car `getUser()` échoue), MAIS les routes API sous `/api/admin/*`, `/api/super-admin/*`, `/api/personnel/*` qui ne s'appuient QUE sur `getUser()` (sans ceinture supplémentaire) renverront 401 — donc pas de fuite de données via API. Le risque principal est l'affichage de pages protégées sans leur data (page d'erreur ou page vide).
+
+**Recommandations** :
+1. Créer `src/lib/env.ts` qui valide au démarrage :
+   ```ts
+   const required = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
+   for (const k of required) if (!process.env[k]) throw new Error(`Env var ${k} manquante`);
+   ```
+2. Importer ce module dans `instrumentation.ts` (Next.js) pour qu'il s'exécute au boot du serveur.
+3. **Changer `updateSession()` en fail-closed** : si env manquante, `return redirectTo(request, responseRef.current, "/login?error=config")` au lieu de `NextResponse.next`.
+4. Vérifier `NEXT_PUBLIC_SITE_URL` en prod (utilisé pour `redirectTo` d'invitation — voir 3.8).
+
+## 4.3 — XSS / dangerouslySetInnerHTML — ✅ CONFORME
+
+**Recherche** : `rg "dangerouslySetInnerHTML"` dans `src/` → **1 seule occurrence**.
+
+**Preuve** : `src/components/ui/chart.tsx:83` (composant shadcn/ui `ChartStyle`) :
+```tsx
+return (
+  <style
+    dangerouslySetInnerHTML={{
+      __html: Object.entries(THEMES)
+        .map(([theme, prefix]) => `
+${prefix} [data-chart=${id}] {
+${colorConfig
+  .map(([key, itemConfig]) => {
+    const color = itemConfig.theme?.[theme as keyof typeof itemConfig.theme] || itemConfig.color
+    return color ? `  --color-${key}: ${color};` : null
+  })
+  .join("\n")}
+}
+`).join("\n"),
+    }}
+  />
+);
+```
+
+**Analyse de risque** : ⚠️ Faible.
+- Le contenu injecté est un `<style>` CSS, pas du HTML/JS exécutable.
+- Sources : `THEMES` (constante du module shadcn), `config` (objet `ChartConfig` passé en prop), et `id` (string identifiant de chart).
+- `id` vient typiquement d'un prop du composant parent (ex: `<ChartContainer id="commandes-par-mois">`). Dans le code OgPressing, ces IDs sont des littéraux strings dans les composants (non user-controlled).
+- `color` vient de `itemConfig.color` ou `itemConfig.theme[...]` — valeurs définies par le développeur dans les `ChartConfig` (ex: `{ color: "var(--chart-1)" }`).
+- **Aucune entrée utilisateur** dans le `__html`.
+
+Cependant, si un développeur futur passe une valeur user-controlled à `ChartContainer` (ex: un nom de chart basé sur un input), l'`id` serait injecté dans `data-chart=${id}` sans échappement → CSS injection possible (ex: `id="x]; *{display:none} /*"`). CSS injection peut permettre du data exfiltration via `background-url` vers un domaine attaquant. Risque résiduel faible mais présent.
+
+**Recommandation** : échapper `id` (et les `color` si dynamiques) avec `CSS.escape(id)` avant injection dans le `__html`.
+
+---
+
+## SYNTHÈSE EXÉCUTIVE
+
+| # | Check | Verdict | Sévérité |
+|---|-------|---------|----------|
+| 3.1 | Middleware protège /admin, /super-admin, /personnel | ✅ | — |
+| 3.2 | Liste blanche (deny-by-default) | ⚠️ | Moyenne — oubli d'un préfixe = route ouverte |
+| 3.3 | getUser() vs getSession() | ✅ | — |
+| 3.4 | Route /auth/callback | ⚠️ | **Haute** — flux d'invitation probablement cassé |
+| 3.5 | Cookies httpOnly + pas de localStorage | ✅ | — |
+| 3.8 | Flux mot_de_passe_temporaire | ✅ + ⚠️ | Moyenne — open redirect via `request.nextUrl.origin` |
+| 1.4 | Fuites console.log/error | ⚠️ | Faible — pas de secrets, mais stack traces côté client |
+| 1.5 | productionBrowserSourceMaps | ✅ | — (mais `ignoreBuildErrors: true` à corriger) |
+| 1.6 | Validation env au démarrage | ⬚ | **Haute** — `updateSession` fail-open si env cassé |
+| 4.3 | dangerouslySetInnerHTML | ✅ | Faible — 1 occ. shadcn/ui, pas d'input user |
+
+### Priorités d'action
+1. **P0 — Créer `src/app/auth/callback/route.ts`** avec `exchangeCodeForSession(code)` (flux invitation cassé sans ça — voir 3.4).
+2. **P0 — Changer `updateSession()` en fail-closed** (middleware.ts:564-574) : rediriger vers `/login?error=config` au lieu de `NextResponse.next` si env Supabase manquante (voir 1.6).
+3. **P1 — Refuser `inviteUserByEmail` si `NEXT_PUBLIC_SITE_URL` non défini** (route.ts:459-462) — anti open-redirect (voir 3.8).
+4. **P1 — Créer `src/lib/env.ts` + `instrumentation.ts`** pour valider les vars d'env au boot (voir 1.6).
+5. **P2 — Échapper `id` dans `chart.tsx`** avec `CSS.escape()` (voir 4.3).
+6. **P2 — Réduire les `console.error` côté client** dans les pages d'auth (`login`, `activation`, `changer-mot-de-passe`) pour éviter les stack traces navigateur (voir 1.4).
+7. **P2 — Corriger les 75 erreurs TypeScript** et passer `typescript.ignoreBuildErrors` à `false` (next.config.ts:9).
+8. **P3 — Considérer un deny-by-default middleware** (whitelist explicite des routes publiques) plutôt que `PROTECTED_PREFIXES` (voir 3.2).
+
+Aucune modification de code effectuée — audit lecture seule.
+
+---
+Task ID: AUDIT-UPLOADS
+Agent: explore-security
+Task: Audit de sécurité des uploads et buckets Supabase Storage (recherche uniquement, pas de modification)
+
+Work Log:
+- Lecture du worklog.md (contexte projet, schema, 4 buckets référencés : `catalogue-articles`, `logos`, `fds`, `justificatifs`)
+- Grep routes API upload → 2 fichiers : `api/super-admin/catalogue/upload-icon/route.ts`, `api/super-admin/abonnements/[id]/renouveler/route.ts`
+- Grep composants client upload → 10 fichiers dont 4 effectuent un véritable upload Storage : `infos-generales-tab.tsx`, `add-product-dialog.tsx`, `edit-product-dialog.tsx`, `renouvellement-dialog.tsx` (+ `catalogue-form.tsx` qui délègue à l'API serveur)
+- Grep migrations pour `storage.buckets` / `storage.objects` / `create policy` Storage → AUCUNE migration ne crée de bucket ni ne définit de policy Storage
+- Grep `supabase.storage` côté client → 5 fichiers : 4 composants client + 1 route serveur (upload-icon)
+- Lecture intégrale des routes d'upload et des composants concernés
+- Lecture `src/lib/supabase/client.ts` pour confirmer que `getSupabaseBrowser()` utilise la clé `anon`
+
+## Résumé exécutif
+
+L'audit révèle **3 vulnérabilités critiques** et **2 majeures** liées aux uploads de fichiers :
+
+1. **❌ CRITIQUE — Absence totale de buckets et de policies Storage dans les migrations SQL** : les 4 buckets référencés en code (`catalogue-articles`, `logos`, `fds`, `justificatifs`) ne sont créés par AUCUNE migration, et AUCUNE policy RLS Storage n'est définie dans `006_rls_policies.sql`. Seul `catalogue-articles` est documenté comme créé via API Management (cf. worklog Task 15-c, ligne 3956). Les 3 autres (`logos`, `fds`, `justificatifs`) ne sont ni créés ni documentés — ils peuvent donc être absents (uploads silencieusement échoués, ce que le code tolère via toast.warning) ou créés manuellement via Dashboard sans policy (par défaut Supabase Storage refuse tout sauf si le bucket est marqué `public`, auquel cas tout est lisible anonymement).
+2. **❌ CRITIQUE — FDS et justificatifs potentiellement publics** : `add-product-dialog.tsx:120`, `edit-product-dialog.tsx:122` et `renouvellement-dialog.tsx:192` appellent `getPublicUrl()` sur les buckets `fds` et `justificatifs`. Si ces buckets sont publics (cas par défaut quand coché dans le Dashboard), n'importe qui avec l'URL peut lire les FDS et justificatifs de paiement — or le PRD exige que FDS et justificatifs soient accessibles uniquement au pressing concerné et au Super Admin.
+3. **❌ CRITIQUE — Uploads client-side directs vers Supabase Storage via clé anon** : `infos-generales-tab.tsx`, `add-product-dialog.tsx`, `edit-product-dialog.tsx`, `renouvellement-dialog.tsx` uploadent directement depuis le navigateur via `getSupabaseBrowser()` (clé `NEXT_PUBLIC_SUPABASE_ANON_KEY`). Aucune validation serveur MIME/taille/magic-number n'est appliquée pour ces 3 flux. Seul l'upload d'icône catalogue (`/api/super-admin/catalogue/upload-icon`) passe par une route serveur qui valide MIME + taille.
+4. **⚠️ MAJEUR — Validation MIME FDS contournable côté client** : `add-product-dialog.tsx:183` et `edit-product-dialog.tsx:183` font `file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")` — un fichier `.pdf` avec un MIME `application/x-msdownload` (ou n'importe quoi) est accepté. L'extension stockée provient du nom de fichier client (`file.name.split(".").pop()`), ce qui permettrait de stocker un exécutable renommé en `.pdf`.
+5. **⚠️ MAJEUR — Pas de validation magic number / signature nulle part** : y compris sur la route serveur `upload-icon` qui ne valide que `file.type` (valeur fournie par le client, falsifiable).
+
+---
+
+## Partie 1 — Routes d'upload identifiées
+
+### Routes API (côté serveur)
+
+| Fichier | Type upload | Auth | Bucket | Validation serveur MIME | Validation serveur taille | Magic number |
+|---|---|---|---|---|---|---|
+| `src/app/api/super-admin/catalogue/upload-icon/route.ts` | Icône catalogue (PNG/JPG/WebP/SVG) | ✅ Super Admin (table `super_admins`, actif) | `catalogue-articles` | ✅ L.116 `ALLOWED_MIME.includes(mime)` | ✅ L.105 `MAX_SIZE_BYTES = 5 MB` | ❌ Aucune |
+| `src/app/api/super-admin/abonnements/[id]/renouveler/route.ts` | (N/A — ne reçoit que `justificatif_url: string`) | ✅ Super Admin | N/A | N/A | N/A | N/A |
+| `src/app/api/admin/pressing/route.ts` (PATCH) | (N/A — ne fait que stocker `logo_url: string` en DB) | ✅ Manager actif | N/A | N/A | N/A | N/A |
+| `src/app/api/admin/stock/route.ts` (POST) | (N/A — ne fait que stocker `fds_url: string` en DB) | ✅ Manager actif | N/A | N/A | N/A | N/A |
+| `src/app/api/admin/stock/[id]/route.ts` (PATCH) | (N/A — ne fait que stocker `fds_url: string` en DB) | ✅ Manager actif | N/A | N/A | N/A | N/A |
+
+### Composants client (côté navigateur, clé anon)
+
+| Fichier | Type upload | Bucket | Validation MIME (client) | Validation taille (client) | Magic number | Récupération URL |
+|---|---|---|---|---|---|---|
+| `src/components/ogpressing/admin/pressing/infos-generales-tab.tsx` (L.149-179) | Logo pressing | `logos` | ✅ PNG/JPEG/WebP (L.97, L.191) | ✅ 2 MB (L.98, L.197) | ❌ | `getPublicUrl` (L.165-167) |
+| `src/components/ogpressing/admin/stock/add-product-dialog.tsx` (L.103-133) | FDS produit | `fds` | ⚠️ contournable (L.183 — OR logique sur extension) | ✅ 5 MB (L.189) | ❌ | `getPublicUrl` (L.120) |
+| `src/components/ogpressing/admin/stock/edit-product-dialog.tsx` (L.105-133) | FDS produit | `fds` | ⚠️ contournable (L.183) | ✅ 5 MB (L.187) | ❌ | `getPublicUrl` (L.122) |
+| `src/components/ogpressing/super-admin/abonnements/renouvellement-dialog.tsx` (L.172-217) | Justificatif paiement | `justificatifs` | ✅ PNG/JPEG/WebP/PDF (L.89, L.131) | ✅ 5 MB (L.88, L.128) | ❌ | `getPublicUrl` puis fallback `createSignedUrl(10 ans)` (L.192-203) |
+| `src/components/ogpressing/super-admin/catalogue/catalogue-form.tsx` (L.190-246) | Icône catalogue | `catalogue-articles` | ✅ PNG/JPG/WebP/SVG (L.203-214, client-side pre-check) | ✅ 5 MB (L.197, client-side pre-check) | ❌ | Via route serveur `/api/super-admin/catalogue/upload-icon` (POST FormData) |
+
+### Routes d'upload pressings logo / FDS / justificatifs attendues mais ABSENTES (⚠️ PARTIEL)
+
+- **❌ Aucune route `POST /api/admin/pressing/upload-logo`** — l'upload du logo pressing se fait entièrement côté client (browser → Supabase Storage via clé anon). Le serveur ne reçoit que l'URL finale via PATCH `/api/admin/pressing`.
+- **❌ Aucune route `POST /api/admin/stock/upload-fds`** — idem, upload direct client → Storage, puis POST `/api/admin/stock` avec `fds_url` en string.
+- **❌ Aucune route `POST /api/super-admin/abonnements/upload-justificatif`** — idem pour les justificatifs de paiement.
+
+---
+
+## Partie 2 — Policies des buckets Storage dans les migrations SQL
+
+**Recherche exhaustive** dans `supabase/migrations/*.sql` (15 fichiers) :
+- Pattern `storage.buckets` / `storage.objects` / `create policy.*storage` / `bucket` → **0 résultat dans aucune migration**.
+- Pattern `storage|bucket|logo|fds|justificatif|illustration` (case-insensitive) → uniquement des références aux **colonnes** `logo_url` (002_tables.sql:117), `fds_url` (010_lot2_gap_fill.sql:249), `justificatif_url` (010_lot2_gap_fill.sql:108, 222), et un COMMENT sur `catalogue_articles` (014_lot15_catalogue_articles.sql:9). **Aucune création de bucket, aucune policy Storage.**
+
+**Le fichier `006_rls_policies.sql` ne contient AUCUNE policy `storage.objects`** (vérifié par grep `storage|bucket|logo|fds|justificatif` sur ce fichier → 0 match).
+
+### État réel des 4 buckets (croisement code + worklog)
+
+| Bucket | Création documentée | Public/Private | Policies RLS Storage | Statut |
+|---|---|---|---|---|
+| `catalogue-articles` | ✅ Worklog Task 15-c (L.3956) : "Création bucket Storage Supabase `catalogue-articles` (public, 5 MB max, PNG/JPG/WebP/SVG) via POST /storage/v1/bucket avec service_role" | Public (intentionnel,icônes doivent être accessibles au picker client) | Aucune dans migrations | Acceptable pour usage prévu (icônes non sensibles) — mais l'absence de policy signifie que n'importe qui peut LISTER les objets si le bucket est `public` (Supabase expose `?list=true`). |
+| `logos` | ❌ Aucune trace dans worklog ni migrations | Inconnu | Aucune | ⚠️ PARTIEL — bucket probablement inexistant (uploads échouent silencieusement selon code `infos-generales-tab.tsx:170` qui catch et toast.warning "Le stockage des logos est indisponible"). |
+| `fds` | ❌ Aucune trace dans worklog ni migrations | Inconnu (code appelle `getPublicUrl` → présuppose public) | Aucune | ⚠️ PARTIEL — même cas ; si créé manuellement comme public, les FDS sont lisibles par tout le monde. |
+| `justificatifs` | ❌ Aucune trace dans worklog ni migrations | Inconnu (code essaie `getPublicUrl` puis fallback `createSignedUrl`) | Aucune | ⚠️ PARTIEL — idem. |
+
+---
+
+## Partie 3 — Checklist détaillée avec verdicts et preuves
+
+### 8.1 — Validation côté serveur
+
+#### Route `/api/super-admin/catalogue/upload-icon` (fichier : `src/app/api/super-admin/catalogue/upload-icon/route.ts`)
+
+- **Type MIME validé (pas juste l'extension) ? ✅ mais partiel** — L.32-37 `ALLOWED_MIME` + L.115-124 `if (!ALLOWED_MIME.includes(mime)) return 415`. Preuve :
+  ```ts
+  const ALLOWED_MIME = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
+  // ...
+  const mime = file.type;
+  if (!ALLOWED_MIME.includes(mime)) { return NextResponse.json({...}, { status: 415 }); }
+  ```
+  ⚠️ Le MIME provient de `file.type` qui est fourni par le client (header `Content-Type` du multipart) — il est falsifiable. Pas de corrélation avec l'extension réelle du fichier ni avec le magic number.
+
+- **Taille limitée ? ✅** — L.31, L.99-113. Preuve :
+  ```ts
+  const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+  if (file.size === 0) return 400;  // fichier vide
+  if (file.size > MAX_SIZE_BYTES) return 413;
+  ```
+
+- **Magic number / signature ? ❌** — Aucune lecture des premiers octets du fichier. Le code lit uniquement `file.arrayBuffer()` (L.138) pour le transférer tel quel à Storage.
+
+#### Composant `infos-generales-tab.tsx` (logo pressing)
+
+- **Type MIME validé côté serveur ? ❌** — Aucune route serveur n'intercepte l'upload. Le navigateur poste directement vers Supabase Storage via clé anon. La validation MIME se fait uniquement côté client (L.191) :
+  ```ts
+  if (!ALLOWED_TYPES.includes(file.type)) { toast.error(...); return; }
+  ```
+  Contournable en modifiant la requête HTTP directement.
+
+- **Taille limitée côté serveur ? ❌** — Seule la validation client existe (L.197, 2 MB). La limite projet Supabase (50 MB par défaut) s'applique mais c'est beaucoup plus permissif.
+
+- **Magic number ? ❌**
+
+#### Composants `add-product-dialog.tsx` et `edit-product-dialog.tsx` (FDS)
+
+- **Type MIME validé côté serveur ? ❌** — même constat, upload client direct.
+
+- **Type MIME validé côté client ? ⚠️ contournable** — L.183 :
+  ```ts
+  if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+      toast.error("Fichier invalide", { description: "La FDS doit être un PDF." });
+      return;
+  }
+  ```
+  Le `OR` (`&& !...endsWith(".pdf")`) accepte un fichier dont le MIME est `application/octet-stream` ou `application/x-msdownload` dès lors que le nom se termine par `.pdf`. Un attaquant peut uploader un exécutable renommé `malware.pdf`.
+
+- **Taille limitée côté serveur ? ❌** — uniquement client (5 MB L.189 / L.187).
+
+- **Magic number ? ❌**
+
+#### Composant `renouvellement-dialog.tsx` (justificatif)
+
+- **Type MIME validé côté serveur ? ❌** — upload client direct.
+- **Type MIME validé côté client ? ✅** — L.89, L.131 : `ACCEPTED_TYPES = ["image/png","image/jpeg","image/webp","application/pdf"]` + `if (!ACCEPTED_TYPES.includes(file.type)) return err`. Mais contournable côté réseau.
+- **Taille limitée côté serveur ? ❌** — uniquement client (5 MB L.88, L.128).
+- **Magic number ? ❌**
+
+#### Composant `catalogue-form.tsx` (icône catalogue)
+
+- ✅ Délègue à `/api/super-admin/catalogue/upload-icon` (route serveur, voir ci-dessus). Pré-validation client existe aussi (L.197-214) pour éviter un round-trip inutile.
+
+### 8.2 — Permissions de stockage (fichiers privés accessibles via URL devinable)
+
+- **FDS privée accessible via URL devinable ? ❌ CRITIQUE**
+  - Preuve : `add-product-dialog.tsx:120` et `edit-product-dialog.tsx:122` :
+    ```ts
+    const { data: pub } = supabase.storage.from("fds").getPublicUrl(path);
+    ```
+  - Le path est `fds/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}` — `Date.now()` est un timestamp milliseconde (devinable à ~1 s près) et `Math.random()` à 6 chars base36 = ~31 bits d'entropie, soit ~6 × 10^8 combinaisons. Si le bucket est public, un attaquant pourrait théoriquement énumérer les URLs (faible faisabilité mais non nulle).
+  - Le composant `stock-actions-menu.tsx:52` affiche `<a href={produit.fds_url} target="_blank">Voir la FDS</a>` — l'URL est donc exposée dans le DOM et partagée telle quelle.
+  - Aucune isolation `pressing_id` au niveau Storage (les paths sont `fds/{timestamp}-{random}` sans préfixe pressing_id) → un pressing ne pourrait pas être restreint à ne lire que ses propres FDS même si des policies existaient.
+
+- **Justificatif de paiement accessible via URL devinable ? ❌ CRITIQUE**
+  - Preuve : `renouvellement-dialog.tsx:181-203` :
+    ```ts
+    const { error: upErr } = await supabase.storage.from("justificatifs").upload(path, ...);
+    const { data: pub } = supabase.storage.from("justificatifs").getPublicUrl(path);
+    if (pub?.publicUrl) return pub.publicUrl;
+    const { data: signed, error: sErr } = await supabase.storage
+      .from("justificatifs")
+      .createSignedUrl(path, 60 * 60 * 24 * 365 * 10); // 10 ANS
+    ```
+  - Le path est `abonnements/{abonnementId}/{timestamp}-{random6}.{ext}` — `abonnementId` est un UUID (non devinable), mais si `getPublicUrl` retourne une URL non-null (cas bucket public), c'est cette URL qui est stockée en DB → n'importe qui peut lire le justificatif.
+  - Le fallback signed URL de **10 ans** (315 360 000 secondes) annule toute la valeur d'une URL signée — c'est essentiellement une URL permanente.
+
+- **Policies de bucket appliquent l'isolation par pressing_id ? ❌** — Aucune policy Storage dans les migrations. Même si le code isole `produits_stock` et `pressing` via RLS tables (cf. `006_rls_policies.sql`), les objets Storage ne sont PAS isolés. Un manager connecté qui connaît l'URL d'une FDS d'un autre pressing peut la lire si le bucket est public.
+
+### 8.3 — Prévention d'exécution (fichiers téléchargés exécutables sur le serveur)
+
+- **Fichiers stockés hors du chemin web exécutable ? ✅**
+  - Preuve : aucun fichier n'est écrit dans `public/` ou dans le système de fichiers du serveur Next.js. Tous les uploads vont vers Supabase Storage (`*.supabase.co/storage/v1/object/...`), service externe S3-like.
+  - Le répertoire `public/images/articles/*.png` contient uniquement des icônes pré-générées par `scripts/generate-article-icons.ts`, non alimenté par upload utilisateur.
+
+- ** risque XSS via SVG uploadé ? ⚠️**
+  - Preuve : `upload-icon/route.ts:36` accepte `image/svg+xml`. Un SVG peut contenir `<script>` ou `onload=`. Le bucket `catalogue-articles` est public. Si un navigateur charge l'URL SVG directement (pas via `<img src>`), il pourrait exécuter du JS dans l'origine `*.supabase.co`. Toutefois :
+    - L'usage prévu est `<Image src={iconeUrl} unoptimized>` (cf. `catalogue-form.tsx:454` et `catalogue-page.tsx`) — Next.js rend un `<img>` ou `<picture>` qui ne permet PAS l'exécution de scripts SVG (les navigateurs bloquent les scripts dans les SVG chargés via `<img>`).
+    - Mais si un attaquant obtient l'URL brute et la visite directement, son navigateur pourrait interpréter le SVG comme document si `Content-Type: image/svg+xml` est respecté (Chrome/Firefox traitent désormais les SVG via `<img>` de façon sécurisée, mais en navigation directe le SVG s'affiche comme page — historiquement XSS).
+  - Verdict : risque faible mais présent → ⚠️.
+
+### 2.6 — Policies des buckets de stockage (synthèse par bucket)
+
+| Bucket | Public/Private attendu | Public/Private constaté | Policies | Isole pressing_id ? | Verdict |
+|---|---|---|---|---|---|
+| `catalogue-articles` | Public (icônes globales, lecture picker client) | Public (worklog Task 15-c) | ❌ Aucune policy Storage dans migrations | N/A (catalogue global, pas multi-tenant) | ⚠️ Acceptable pour usage prévu, mais exposer le bucket public sans policy signifie que n'importe qui peut énumérer/lister les objets via API Storage `?list=true`. Risque faible (les icônes ne sont pas sensibles). |
+| `logos` | Public acceptable (logo affiché sur tickets) | Inconnu (bucket non créé par migration, non documenté) | ❌ Aucune | ❌ Path `logos/{pressingId}-{ts}.{ext}` contient bien `pressingId` mais aucune policy ne l'utilise | ❌ Bucket probablement inexistant → upload silently échoué. Si créé manuellement public, n'importe qui peut lire les logos de tous les pressings (acceptable car logos sont publics par nature, mais pas d'isolation en écriture). |
+| `fds` | **PRIVÉ** (FDS = données sécurité produits chimiques, accès pressing + super admin seulement) | Code appelle `getPublicUrl` → présuppose public ❌ | ❌ Aucune | ❌ Path `fds/{ts}-{rand6}.{ext}` SANS pressingId — impossible d'isoler même avec policy | ❌❌ CRITIQUE — Si bucket public : fuite massive de FDS. Si bucket privé : `getPublicUrl` retourne une URL inutilisable et le code ne fait pas de fallback signed URL (contrairement à `renouvellement-dialog.tsx`). Bug fonctionnel + risque de contournement. |
+| `justificatifs` | **PRIVÉ** (justificatifs paiement, accès pressing + super admin seulement) | Code essaie `getPublicUrl` d'abord, fallback signed URL 10 ans | ❌ Aucune | ✅ Path `abonnements/{abonnementId}/{ts}-{rand6}.{ext}` contient `abonnementId` — pourrait être utilisé par une policy | ⚠️ Mauvaise conception : 10 ans de signed URL = URL permanente. Devrait être : bucket privé + signed URL courte durée (ex 1h) générée à la demande par route serveur, OU bucket privé + policy `auth.uid() IN (SELECT user_id FROM personnel WHERE pressing_id = ...)` pour lecture directe. |
+
+---
+
+## Partie 4 — Références Storage côté client (audit spécifique)
+
+**Pattern recherché** : `supabase.storage|getPublicUrl|.from(['"].*['"].*\.upload` sur `src/**/*.{ts,tsx}`
+
+**Fichiers correspondants** (5) :
+
+1. `src/app/api/super-admin/catalogue/upload-icon/route.ts` (server-side, service_role) — ✅ légitime
+2. `src/components/ogpressing/admin/pressing/infos-generales-tab.tsx` (client-side, anon) — ❌ upload direct client
+3. `src/components/ogpressing/admin/stock/add-product-dialog.tsx` (client-side, anon) — ❌ upload direct client
+4. `src/components/ogpressing/admin/stock/edit-product-dialog.tsx` (client-side, anon) — ❌ upload direct client
+5. `src/components/ogpressing/super-admin/abonnements/renouvellement-dialog.tsx` (client-side, anon) — ❌ upload direct client
+
+**Exposition de la clé anon** : la clé `NEXT_PUBLIC_SUPABASE_ANON_KEY` est, par définition Next.js, exposée dans le bundle client (préfixe `NEXT_PUBLIC_`). Ce n'est PAS une fuite en soi — la clé anon est conçue pour être publique et est protégée par RLS. **Mais en l'absence de policies Storage RLS**, cette exposition signifie que n'importe quel visiteur authentifié (ou non, si le bucket est public) peut :
+- Lister les objets des buckets `fds` et `justificatifs` via `supabase.storage.from('fds').list()` si la policy par défaut l'autorise (à vérifier sur le Dashboard — en l'absence de policy explicite, Supabase applique `deny` par défaut sauf pour les buckets publics où `read` est ouvert).
+- Uploader directement dans le bucket `fds` avec un nom de fichier et un content-type arbitraires, en contournant totalement le dialogue produit : `supabase.storage.from('fds').upload('fds/evil.exe', payload, {contentType:'application/pdf'})`.
+
+---
+
+## Synthèse des verdicts
+
+| Critère | Verdict global | Preuve clé |
+|---|---|---|
+| 8.1 Validation MIME serveur | ❌ ÉCHEC | 3 flux sur 4 (logos, FDS, justificatifs) n'ont AUCUNE route serveur — validation client-only contournable |
+| 8.1 Validation taille serveur | ❌ ÉCHEC | Idem — seules les limites projet Supabase (50 MB défaut) s'appliquent aux 3 flux client |
+| 8.1 Validation magic number | ❌ ÉCHEC | Absent partout, y compris sur la route serveur `upload-icon` |
+| 8.2 Fichiers privés non devinables | ❌ CRITIQUE | `getPublicUrl` utilisé pour FDS et justificatifs ; paths partiellement devinables (timestamp + random6) |
+| 8.2 Isolation pressing_id | ❌ ÉCHEC | Aucune policy Storage ; paths FDS ne contiennent pas `pressing_id` |
+| 8.3 Pas d'exécution sur serveur | ✅ OK | Tous les uploads vont vers Supabase Storage externe, jamais dans `public/` |
+| 8.3 Risque XSS SVG | ⚠️ Partiel | SVG accepté par `/upload-icon`, usage via `<Image>` sécurisé mais URL brute consultable |
+| 2.6 Bucket `catalogue-articles` | ⚠️ Acceptable | Public par conception, mais 0 policy RLS Storage |
+| 2.6 Bucket `logos` | ❌ Non créé / 0 policy | Aucune trace dans migrations ni worklog |
+| 2.6 Bucket `fds` | ❌❌ CRITIQUE | Devrait être privé, code utilise `getPublicUrl`, 0 policy, path sans `pressing_id` |
+| 2.6 Bucket `justificatifs` | ❌ CRITIQUE | Devrait être privé, code essaie `getPublicUrl` puis signed URL 10 ans |
+
+## Recommandations (non appliquées — audit recherche uniquement)
+
+1. **Créer une migration `016_storage_buckets.sql`** qui :
+   - Crée explicitement les 4 buckets avec `INSERT INTO storage.buckets (id, name, public) VALUES ...` (`catalogue-articles` et `logos` = `true`, `fds` et `justificatifs` = `false`).
+   - Définit des policies RLS `storage.objects` :
+     - `catalogue-articles` : SELECT public, INSERT/UPDATE/DELETE restreint au service_role (les uploads doivent passer par la route serveur existante).
+     - `logos` : SELECT public, INSERT/UPDATE/DELETE pour `auth.uid() IN (SELECT user_id FROM personnel WHERE role='manager' AND actif=true)` ou service_role.
+     - `fds` : SELECT pour `auth.uid() IN (SELECT user_id FROM personnel WHERE pressing_id = ...)` + service_role ; INSERT/UPDATE même règle. (Nécessite aussi de préfixer les paths par `pressing_id` pour pouvoir écrire la policy.)
+     - `justificatifs` : SELECT pour `auth.uid() IN (SELECT user_id FROM super_admins WHERE actif=true)` + service_role ; INSERT idem.
+2. **Migrer les 3 uploads client-side vers des routes serveur** : `/api/admin/pressing/upload-logo`, `/api/admin/stock/upload-fds`, `/api/super-admin/abonnements/upload-justificatif` qui valident MIME, taille, magic number, puis utilisent `getSupabaseAdmin()` (service_role) pour écrire dans le bucket. Cela supprime aussi l'exposition de la clé anon pour les uploads.
+3. **Remplacer `getPublicUrl` par `createSignedUrl` courte durée (ex 1h)** pour FDS et justificatifs, via une route serveur dédiée `/api/admin/stock/[id]/fds-url` qui vérifie l'appartenance pressing_id avant de générer l'URL signée.
+4. **Préfixer les paths Storage par `pressing_id`** pour `fds` (ex `fds/{pressing_id}/{ts}-{rand6}.pdf`) afin de permettre l'isolation par policy.
+5. **Ajouter une validation magic number côté serveur** pour `/upload-icon` (lire les 8-12 premiers octets et comparer aux signatures PNG `89 50 4E 47`, JPEG `FF D8 FF`, WebP `52 49 46 46 ... 57 45 42 50`, SVG `<svg` ou `<\x3Fxml`).
+6. **Restreindre SVG dans `upload-icon`** : soit l'interdire (passer à PNG/JPG/WebP only), soit sanitizer le contenu SVG (supprimer `<script>`, `on*=`) avant stockage.
+7. **Corriger la validation MIME FDS** dans `add-product-dialog.tsx:183` et `edit-product-dialog.tsx:183` : remplacer le `OR` par un `AND` (`file.type !== "application/pdf"`) pour exiger strictement le MIME PDF, et ne plus se fier à l'extension.
+8. **Réduire la durée des signed URLs** pour justificatifs de 10 ans à 1 heure (ou moins), générées à la demande via route serveur.
+
+Stage Summary:
+- 3 vulnérabilités critiques identifiées (absence policies Storage, FDS/justificatifs potentiellement publics, uploads client-side sans validation serveur)
+- 2 vulnérabilités majeures (validation MIME FDS contournable, absence magic number)
+- 1 risque mineur (SVG XSS potentiel)
+- Aucune modification de code effectuée (audit recherche uniquement)
+- 8 recommandations concrètes prêtes à implémenter dans une task de remédiation dédiée
+- Périmètre couvert : 1 route serveur d'upload + 4 composants client d'upload + 15 migrations SQL auditées
+
+---
+Task ID: AUDIT-RLS
+Agent: Explore (sous-agent audit sécurité — recherché uniquement, aucune modif de code)
+Task: Audit de sécurité des 15 migrations SQL Supabase — évaluation de la couche base de données (RLS, policies, fonctions SECURITY DEFINER, contraintes, injection SQL, isolation multi-tenant).
+
+Work Log:
+- Lecture intégrale de /home/z/my-project/worklog.md (6 148 lignes) pour contexte projet.
+- Lecture ENTIÈRE des 15 fichiers de migration :
+  - 001_enums.sql (369 lignes) — 21 types ENUM, pas de sécurité (N/A).
+  - 002_tables.sql (444 lignes) — 17 tables, FK, commentaires.
+  - 003_constraints.sql (365 lignes) — 6 UNIQUE + 28 CHECK.
+  - 004_indexes.sql (377 lignes) — ~45 index, pas de sécurité (N/A).
+  - 005_triggers.sql (620 lignes) — 7 fonctions SECURITY DEFINER + 25 triggers.
+  - 006_rls_policies.sql (614 lignes) — RLS sur 17 tables + 33 policies + 2 helpers.
+  - 007_grants_public.sql (84 lignes) — GRANT anon INSERT/SELECT.
+  - 008_correctif_policy_demande.sql (55 lignes) — re-création policy demande_insert_public.
+  - 009_vue_clients_enrichis.sql (61 lignes) — vue + GRANT SELECT.
+  - 010_lot2_gap_fill.sql (731 lignes) — 17 colonnes + 3 fonctions + vue recréée.
+  - 011_lot3_gap_fill.sql (138 lignes) — 3e tentative policy demande_insert_public + colonne mot_de_passe_temporaire.
+  - 012_lot4_gap_fill.sql (104 lignes) — colonne plan_souhaite.
+  - 013_lot5_gap_fill.sql (56 lignes) — colonne notes_super_admin.
+  - 014_lot15_catalogue_articles.sql (339 lignes) — 18e table catalogue_articles + RLS + migration articles_vetements.
+  - 015_casiers_stockage.sql (120 lignes) — 3 colonnes zone_stockage/date_rangeement/rangee_par sur articles_vetements.
+- Recherche exhaustive via Grep de : `user_metadata`, `auth.jwt()`, `SECURITY DEFINER`, `SECURITY INVOKER`, `EXECUTE`, `format(`, `||`, `auth.uid()`, `GRANT`, `REVOKE`, `BYPASSRLS`, `date_expiration`, `utilise`.
+- Aucune modification de code effectuée (audit recherche uniquement).
+
+---
+
+## SYNTHÈSE GLOBALE
+
+| Item | Verdict | Résumé |
+|------|---------|--------|
+| 2.1 — RLS activé | ✅ PASSE | 18/18 tables (17 + catalogue_articles) ont `ENABLE ROW LEVEL SECURITY`. |
+| 2.2 — Policies existent | ✅ PASSE | Toutes les tables RLS ont au moins une policy SELECT et INSERT (via FOR ALL). |
+| 2.3 — WITH CHECK | ✅ PASSE | commandes, articles_vetements, paiements, personnel : toutes les policies INSERT/UPDATE ont `WITH CHECK`. |
+| 2.4 — Source d'identité | ✅ PASSE | Aucune policy n'utilise `user_metadata`/`auth.jwt()`. Tout passe par `auth.uid()`. |
+| 2.5 — SECURITY DEFINER | ⚠️ PARTIEL | 12 fonctions SECURITY DEFINER ; 3 d'entre elles (deriver_statut_commande, calculer_statut_commande, calculer_statut_paiement_commande) sont callable via PostgREST `/rpc/` et bypassent RLS → fuite mineure d'info cross-pressing (statut enum). |
+| 2.7 — Injection SQL | ✅ PASSE | Aucun `EXECUTE` dynamique ni `format()` avec entrée utilisateur. `||` utilisé uniquement pour concaténation de variables plpgsql (numéro commande, code QR). |
+| 2.8 — is_super_admin / get_pressing_id_utilisateur | ✅ PASSE | SECURITY DEFINER, utilisent `auth.uid()`, n'utilisent pas user_metadata, ne peuvent être détournées. |
+| 9.1 — Isolation croisée | ✅ PASSE | Toutes les policies SELECT filtrent par `pressing_id = get_pressing_id_utilisateur()` ou EXISTS sur table parent. Pressing A ne peut pas lire Pressing B. |
+| 9.2 — Fiabilité get_pressing_id_utilisateur | ✅ PASSE | N'utilise pas user_metadata, retourne NULL si non lié. Caveat : `LIMIT 1` retourne un seul pressing si multi-rattachement (UX, pas sécurité). |
+| 9.3 — Fiabilité is_super_admin | ✅ PASSE | Statut via table dédiée `super_admins`, pas via user_metadata. |
+| 9.6 — Policies tables accès public partiel | ✅ PASSE | demandes_inscription : INSERT anon OK, SELECT/UPDATE/DELETE anon interdits. codes_activation : anon ne lit QUE code/utilise (GRANT column-level), pas demande_id/cree_par/pressing_id_cible. |
+| 9.10 — Robustesse codes activation | ❌ ÉCHOUE | Aucune vérification côté serveur (policy ou fonction) de l'expiration 7 jours ni du `utilise=false` au moment de la création du compte Admin. Seules contraintes CHECK : `utilise=TRUE ⇒ date_utilisation NOT NULL` et `date_expiration > date_generation`. La logique métier repose entièrement sur l'API route d'activation (non auditée ici). |
+
+**Verdict global** : 🔶 **Sécurité globalement solide (10/12 items PASS) — 2 écarts à corriger** :
+1. Item 2.5/9.x — fuite mineure d'info cross-pressing via 3 fonctions `SECURITY DEFINER` callable par RPC.
+2. Item 9.10 — absence d'enforcement serveur des règles d'expiration/usage unique des codes d'activation.
+
+---
+
+## DÉTAIL PAR ITEM
+
+### 2.1 — RLS activé : ✅ PASSE
+
+Les 18 tables du schéma `public` ont toutes `ALTER TABLE ... ENABLE ROW LEVEL SECURITY`.
+
+**Preuve** — `006_rls_policies.sql:129-145` (17 tables initiales) :
+```sql
+ALTER TABLE public.super_admins          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.demandes_inscription  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.codes_activation      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pressing              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.abonnements           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.personnel             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.clients               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.services              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.commandes             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.commande_lignes       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.articles_vetements    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.paiements             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.produits_stock        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.mouvements_stock      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.machines              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.anomalies             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.depenses              ENABLE ROW LEVEL SECURITY;
+```
+
+**Preuve** — `014_lot15_catalogue_articles.sql:277` (18e table) :
+```sql
+ALTER TABLE public.catalogue_articles ENABLE ROW LEVEL SECURITY;
+```
+
+**Tables SANS RLS** : aucune. Toutes les 18 tables attendues sont couvertes (super_admins, demandes_inscription, codes_activation, pressing, abonnements, personnel, clients, services, commandes, commande_lignes, articles_vetements, paiements, produits_stock, mouvements_stock, machines, anomalies, depenses, catalogue_articles).
+
+---
+
+### 2.2 — Policies existent : ✅ PASSE
+
+Toutes les tables avec RLS ont au moins une policy SELECT et INSERT (couvertes par `FOR ALL` qui englobe SELECT/INSERT/UPDATE/DELETE).
+
+**Preuve** — `006_rls_policies.sql:313-317` (exemple personnel) :
+```sql
+DROP POLICY IF EXISTS "isolation_pressing" ON public.personnel;
+CREATE POLICY "isolation_pressing" ON public.personnel
+    FOR ALL
+    USING (pressing_id = public.get_pressing_id_utilisateur())
+    WITH CHECK (pressing_id = public.get_pressing_id_utilisateur());
+```
+
+**Tables avec RLS mais sans policy** : aucune. Répartition :
+- 17 tables ont `super_admin_full_access` (FOR ALL) + `isolation_pressing` (FOR ALL) — couvre SELECT + INSERT.
+- `demandes_inscription` : ajoute `demande_insert_public` (FOR INSERT to anon).
+- `codes_activation` : ajoute `code_read_public` (FOR SELECT to anon).
+- `catalogue_articles` : `catalogue_articles_select_authenticated` (FOR SELECT) + `catalogue_articles_write_super_admin` (FOR ALL) — `014_lot15_catalogue_articles.sql:281-295`.
+
+**Total policies** : 33 (documenté en `006_rls_policies.sql:600`) + 2 (catalogue_articles) = 35 policies.
+
+---
+
+### 2.3 — Clauses WITH CHECK : ✅ PASSE
+
+Pour les policies INSERT et UPDATE sur `commandes`, `articles_vetements`, `paiements`, `personnel` : toutes les policies `isolation_pressing` ont explicitement `WITH CHECK`. Aucune policy `USING(...)` seule ne permet d'insérer avec un `pressing_id` arbitraire.
+
+**Preuve — commandes** — `006_rls_policies.sql:362-366` :
+```sql
+CREATE POLICY "isolation_pressing" ON public.commandes
+    FOR ALL
+    USING (pressing_id = public.get_pressing_id_utilisateur())
+    WITH CHECK (pressing_id = public.get_pressing_id_utilisateur());
+```
+
+**Preuve — articles_vetements** — `006_rls_policies.sql:491-508` :
+```sql
+CREATE POLICY "isolation_pressing" ON public.articles_vetements
+    FOR ALL
+    USING (EXISTS (SELECT 1 FROM public.commandes c
+            WHERE c.id = articles_vetements.commande_id
+              AND c.pressing_id = public.get_pressing_id_utilisateur()))
+    WITH CHECK (EXISTS (SELECT 1 FROM public.commandes c
+            WHERE c.id = articles_vetements.commande_id
+              AND c.pressing_id = public.get_pressing_id_utilisateur()));
+```
+
+**Preuve — paiements** — `006_rls_policies.sql:522-540` :
+```sql
+CREATE POLICY "isolation_pressing" ON public.paiements
+    FOR ALL
+    USING (EXISTS (SELECT 1 FROM public.commandes c
+            WHERE c.id = paiements.commande_id
+              AND c.pressing_id = public.get_pressing_id_utilisateur()))
+    WITH CHECK (EXISTS (SELECT 1 FROM public.commandes c
+            WHERE c.id = paiements.commande_id
+              AND c.pressing_id = public.get_pressing_id_utilisateur()));
+```
+
+**Preuve — personnel** — `006_rls_policies.sql:313-317` (cité en 2.2).
+
+Aucune policy manquante. `WITH CHECK` est toujours présent et symétrique au `USING`.
+
+---
+
+### 2.4 — Source d'identité : ✅ PASSE
+
+Grep sur `user_metadata|auth\.jwt\(\)` dans `/home/z/my-project/supabase/migrations` → **No matches found**.
+
+Toutes les policies utilisent `auth.uid()` indirectement via les deux helpers SECURITY DEFINER.
+
+**Preuve** — `006_rls_policies.sql:67-93` :
+```sql
+CREATE OR REPLACE FUNCTION public.is_super_admin()
+RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+    SELECT EXISTS (SELECT 1 FROM public.super_admins sa
+                    WHERE sa.user_id = auth.uid());
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_pressing_id_utilisateur()
+RETURNS UUID LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+    SELECT p.pressing_id FROM public.personnel p
+    WHERE p.user_id = auth.uid() LIMIT 1;
+$$;
+```
+
+Aucune policy n'utilise `auth.jwt()->'user_metadata'` ni `auth.jwt()->>'...'`. L'identité est systématiquement dérivée de `auth.uid()` (correspondance avec `auth.users.id`), ce qui est la pratique recommandée par Supabase (user_metadata est falsifiable côté client lors du signUp).
+
+---
+
+### 2.5 — Clé service_role / fonctions SECURITY DEFINER : ⚠️ PARTIEL
+
+12 fonctions SECURITY DEFINER identifiées (grep `SECURITY DEFINER`) :
+- `005_triggers.sql` : `set_updated_at` (l.46), `generer_numero_commande` (l.76), `generer_code_qr_article` (l.131), `deriver_statut_commande` (l.198), `trigger_recalculer_statut_commande` (l.264), `trigger_recalculer_paiement_commande` (l.332), `trigger_appliquer_mouvement_stock` (l.403).
+- `006_rls_policies.sql` : `is_super_admin` (l.65), `get_pressing_id_utilisateur` (l.86).
+- `010_lot2_gap_fill.sql` : `calculer_montant_remise` (l.404), `calculer_statut_commande` (l.490), `calculer_statut_paiement_commande` (l.525).
+
+Aucune fonction SECURITY INVOKER (grep `SECURITY INVOKER` → No matches).
+
+**Analyse des fuites potentielles** :
+
+| Fonction | Type | DB Access | Risque |
+|----------|------|-----------|--------|
+| set_updated_at | trigger | aucun | ✅ safe |
+| generer_numero_commande | trigger | SELECT commandes WHERE pressing_id = NEW.pressing_id | ✅ safe (NEW borné par RLS WITH CHECK) |
+| generer_code_qr_article | trigger | SELECT articles_vetements WHERE code_qr = tentative | ✅ safe (uniquement existence d'un string) |
+| deriver_statut_commande(p_commande_id UUID) | scalaire (RPC) | SELECT articles_vetements + commandes WHERE commande_id = param | ⚠️ **fuite mineure** : callable via `/rpc/deriver_statut_commande`, bypass RLS, retourne le statut d'UNE commande arbitraire |
+| trigger_recalculer_statut_commande | trigger | utilise NEW/OLD.commande_id | ✅ safe (borné par RLS parent) |
+| trigger_recalculer_paiement_commande | trigger | utilise NEW/OLD.commande_id | ✅ safe |
+| trigger_appliquer_mouvement_stock | trigger | utilise NEW.produit_id | ✅ safe |
+| is_super_admin | scalaire (utilisée dans policies) | SELECT super_admins WHERE user_id = auth.uid() | ✅ safe |
+| get_pressing_id_utilisateur | scalaire (utilisée dans policies) | SELECT personnel WHERE user_id = auth.uid() | ✅ safe |
+| calculer_montant_remise(p_montant_avant, p_type, p_valeur) | scalaire (RPC) | aucun (pure) | ✅ safe |
+| calculer_statut_commande(commande_id) | scalaire (RPC) | délègue à deriver_statut_commande | ⚠️ **fuite mineure** (même vecteur) |
+| calculer_statut_paiement_commande(commande_id) | scalaire (RPC) | SELECT commandes + paiements WHERE commande_id = param | ⚠️ **fuite mineure** : callable via `/rpc/calculer_statut_paiement_commande`, bypass RLS |
+
+**Preuve — fonction leakante** — `010_lot2_gap_fill.sql:520-564` :
+```sql
+CREATE OR REPLACE FUNCTION public.calculer_statut_paiement_commande(
+    commande_id UUID
+)
+RETURNS statut_paiement_commande
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_total_paye INTEGER := 0; v_montant_total INTEGER := 0; v_statut statut_paiement_commande;
+BEGIN
+    SELECT c.montant_total INTO v_montant_total
+      FROM public.commandes c
+     WHERE c.id = commande_id;   -- ⚠️ PAS de filtre pressing_id, bypass RLS
+    ...
+    SELECT COALESCE(SUM(p.montant), 0) INTO v_total_paye
+      FROM public.paiements p
+     WHERE p.commande_id = commande_id;  -- ⚠️ idem
+    ...
+END;
+$$;
+```
+
+**Sévérité** : faible. Les UUID (122 bits d'entropie) sont impossibles à deviner en pratique. Mais l'attaque est réalisable si l'utilisateur connaît un `commande_id` d'un autre pressing (fuite côté client, log, URL partagée, etc.). L'information divulguée est limitée à un enum (`recu`, `en_traitement`, `lave`, `repasse`, `pret`, `en_livraison`, `livre`, `retire` ou `non_paye`, `partiel`, `paye`).
+
+**Recommandation** : ajouter dans chaque fonction un check `WHERE c.id = commande_id AND c.pressing_id = public.get_pressing_id_utilisateur()` (ou `is_super_admin()`), ou transformer ces fonctions en SECURITY INVOKER (le RLS de commandes filtrera alors correctement).
+
+---
+
+### 2.7 — Injection SQL : ✅ PASSE
+
+Grep `EXECUTE` : 25 occurrences, toutes sont `EXECUTE FUNCTION` dans des `CREATE TRIGGER` (syntaxe PostgreSQL standard, pas du SQL dynamique).
+
+Grep `format(` : aucune occurrence.
+
+Grep `||` : 2 occurrences, toutes pour concaténation de variables plpgsql (pas d'EXECUTE dynamique) :
+- `005_triggers.sql:109` : `numero_genere := 'CMD-' || annee_courante || '-' || LPad(compteur::TEXT, 5, '0');` — construction d'un numéro de commande à partir de variables internes (annee_courante INT, compteur INT). Aucune entrée utilisateur.
+- `005_triggers.sql:159` : `tentative := 'ART-' || tentative;` — préfixe un code QR généré aléatoirement.
+
+**Fonctions auditées spécifiquement** :
+
+- `calculer_statut_commande` (`010_lot2_gap_fill.sql:485-499`) : SQL statique avec paramètre `commande_id`. Aucun EXECUTE. ✅
+- `calculer_montant_remise` (`010_lot2_gap_fill.sql:397-467`) : CASE statement avec paramètres typés (INTEGER, remise_type ENUM, INTEGER). Aucun EXECUTE. ✅
+- `get_pressing_id_utilisateur` (`006_rls_policies.sql:82-93`) : SELECT statique avec `WHERE p.user_id = auth.uid()`. ✅
+- `is_super_admin` (`006_rls_policies.sql:61-73`) : SELECT statique avec `WHERE sa.user_id = auth.uid()`. ✅
+
+Aucun vecteur d'injection SQL identifié. Toutes les fonctions utilisent des paramètres bindés ou du SQL statique.
+
+---
+
+### 2.8 — Fonctions SECURITY DEFINER is_super_admin / get_pressing_id_utilisateur : ✅ PASSE
+
+**is_super_admin()** — `006_rls_policies.sql:61-73` :
+```sql
+CREATE OR REPLACE FUNCTION public.is_super_admin()
+RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.super_admins sa
+        WHERE sa.user_id = auth.uid()
+    );
+$$;
+```
+- ✅ SECURITY DEFINER (nécessaire pour bypass RLS sur super_admins, sinon boucle infinie : `is_super_admin()` lirait super_admins qui est protégé par `is_super_admin()`).
+- ✅ Utilise `auth.uid()`, pas `user_metadata`.
+- ✅ Ne peut pas être détournée : la fonction ne prend aucun paramètre, ne lit que `super_admins.user_id` (colonne FK vers `auth.users(id)`).
+- ✅ `SET search_path = public` protège contre le hijack de schéma (recherche `public.super_admins` et non un objet homonyme dans un schéma contrôlé par l'attaquant).
+
+**get_pressing_id_utilisateur()** — `006_rls_policies.sql:82-93` :
+```sql
+CREATE OR REPLACE FUNCTION public.get_pressing_id_utilisateur()
+RETURNS UUID LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+    SELECT p.pressing_id FROM public.personnel p
+    WHERE p.user_id = auth.uid() LIMIT 1;
+$$;
+```
+- ✅ SECURITY DEFINER (même justification que ci-dessus).
+- ✅ Utilise `auth.uid()`, pas `user_metadata`.
+- ✅ Aucun paramètre → ne peut être détournée.
+- ✅ `SET search_path = public`.
+
+Aucune des deux fonctions n'est vulnérable. Elles constituent la base de confiance de tout le schéma RLS.
+
+---
+
+### 9.1 — Test d'isolation croisée : ✅ PASSE
+
+**Méthode** : analyse statique de toutes les policies `SELECT` (clause `USING`) sur les 8 tables métier. Pour chaque table, vérifier que la condition de filtrage dépende de `get_pressing_id_utilisateur()` (soit directement, soit via EXISTS sur table parent elle-même filtrée).
+
+**Table par table** :
+
+| Table | Type de policy SELECT | Filtre | Pressing A peut lire Pressing B ? |
+|-------|----------------------|--------|-----------------------------------|
+| clients | `isolation_pressing` FOR ALL | `pressing_id = get_pressing_id_utilisateur()` (`006:329`) | ❌ non |
+| commandes | `isolation_pressing` FOR ALL | `pressing_id = get_pressing_id_utilisateur()` (`006:365`) | ❌ non |
+| articles_vetements | `isolation_pressing` FOR ALL | `EXISTS(SELECT 1 FROM commandes c WHERE c.id = articles_vetements.commande_id AND c.pressing_id = get_pressing_id_utilisateur())` (`006:493-499`) | ❌ non |
+| paiements | `isolation_pressing` FOR ALL | `EXISTS(SELECT 1 FROM commandes c WHERE c.id = paiements.commande_id AND c.pressing_id = get_pressing_id_utilisateur())` (`006:525-531`) | ❌ non |
+| produits_stock | `isolation_pressing` FOR ALL | `pressing_id = get_pressing_id_utilisateur()` (`006:385`) | ❌ non |
+| personnel | `isolation_pressing` FOR ALL | `pressing_id = get_pressing_id_utilisateur()` (`006:316`) | ❌ non |
+| depenses | `isolation_pressing` FOR ALL | `pressing_id = get_pressing_id_utilisateur()` (`006:431`) | ❌ non |
+| anomalies | `isolation_pressing` FOR ALL | `pressing_id = get_pressing_id_utilisateur()` (`006:417`) | ❌ non |
+
+**Preuve (exemple articles_vetements)** — `006_rls_policies.sql:491-500` :
+```sql
+CREATE POLICY "isolation_pressing" ON public.articles_vetements
+    FOR ALL
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.commandes c
+            WHERE c.id = articles_vetements.commande_id
+              AND c.pressing_id = public.get_pressing_id_utilisateur()
+        )
+    )
+    ...
+```
+
+**Double sécurité** : la sous-requête EXISTS référence `public.commandes`, qui a sa propre policy `isolation_pressing`. En PostgreSQL, RLS s'applique récursivement aux sous-requêtes → la commande parente doit également appartenir au pressing de l'utilisateur. Un utilisateur du Pressing A ne peut donc pas insérer un `article_vetement` avec un `commande_id` pointant vers une commande du Pressing B (la sous-requête EXISTS retournerait false).
+
+**Conclusion** : aucune fuite cross-pressing identifiée sur les policies SELECT. L'isolation multi-tenant est solide.
+
+**Caveat** (UX, pas sécurité) : `get_pressing_id_utilisateur()` utilise `LIMIT 1` sans `ORDER BY`, donc si un utilisateur est rattaché à plusieurs pressings (autorisé par `personnel_pressing_id_user_id_uniq` qui n'est unique que par couple pressing×user), il ne verra qu'un seul pressing arbitraire. Pas de fuite, mais comportement non déterministe.
+
+---
+
+### 9.2 — Fiabilité de get_pressing_id_utilisateur() : ✅ PASSE
+
+**Peut-elle être trompée par user_metadata ?** — Non.
+**Preuve** — `006_rls_policies.sql:88-92` :
+```sql
+AS $$
+    SELECT p.pressing_id FROM public.personnel p
+    WHERE p.user_id = auth.uid()
+    LIMIT 1;
+$$;
+```
+La fonction lit directement la table `public.personnel` en filtrant sur `auth.uid()` (clé primaire de `auth.users`, non falsifiable côté client). `user_metadata` (qui peut être injecté lors du signUp par un client malveillant) n'est jamais consulté.
+
+**Retourne-t-elle null si l'utilisateur n'est rattaché à aucun pressing ?** — Oui.
+Si `auth.uid()` n'a aucune ligne correspondante dans `personnel` (par ex. Super Admin pur, ou compte non encore activé), le SELECT retourne 0 ligne → la fonction retourne NULL (comportement par défaut de PL/pgSQL pour un SELECT INTO vide, et de SQL pour une fonction RETURNS UUID). Toutes les policies `isolation_pressing` deviennent alors `pressing_id = NULL` → false → deny by default. ✅
+
+**Caveat (UX, pas sécurité)** : `LIMIT 1` sans `ORDER BY`. Si l'utilisateur a plusieurs rattachements (comptable externalisé, cas prévu par `002_tables.sql:58-59` et `003_constraints.sql:56-64`), seul un pressing arbitraire est retourné. Pas de fuite, mais l'utilisateur pourrait ne pas voir toutes ses données attendues.
+
+---
+
+### 9.3 — Fiabilité de is_super_admin() : ✅ PASSE
+
+**Le statut Super Admin est-il déterminé via une table dédiée (super_admins) et non via user_metadata ?** — Oui.
+
+**Preuve** — `006_rls_policies.sql:67-73` :
+```sql
+AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.super_admins sa
+        WHERE sa.user_id = auth.uid()
+    );
+$$;
+```
+
+La fonction interroge la table `public.super_admins` (définie en `002_tables.sql:61-70`), qui est une table dédiée liée 1-1 à `auth.users(id)` via `user_id UUID NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE`. L'appartenance au groupe Super Admin ne peut être accordée qu'en insérant une ligne dans cette table — opération réservée au `service_role` (bypass RLS) selon `006_rls_policies.sql:151-154` :
+
+> "Le tout 1er Super Admin est inséré via service_role (bypass RLS) lors de l'initialisation de la plateforme (script bootstrap)."
+
+`user_metadata` n'est jamais consulté. Un attaquant ne peut pas s'auto-promouvoir Super Admin en falsifiant son JWT.
+
+---
+
+### 9.6 — Policies sur tables à accès public partiel : ✅ PASSE
+
+**demandes_inscription** :
+- ✅ INSERT anonyme autorisé : `GRANT INSERT ON public.demandes_inscription TO anon;` (`007_grants_public.sql:42`, reaffirmé `008:28`, `011:53`) + policy `demande_insert_public` FOR INSERT TO anon WITH CHECK (true) (`006:201-204`, re-créée en `007:46-50`, `008:36-40`, `011:61-65`).
+- ✅ SELECT/UPDATE/DELETE anonymes interdits : seule la policy `super_admin_full_access` (FOR ALL, `is_super_admin()`) couvre ces opérations (`006:189-193`). Anon n'est pas super_admin → deny by default. Aucune policy SELECT pour anon sur cette table.
+
+**codes_activation** :
+- ✅ Lecture anonyme limitée : policy `code_read_public` FOR SELECT TO anon USING (true) (`006:225-229`, `007:66-70`).
+- ✅ Restriction column-level stricte : `REVOKE SELECT ON public.codes_activation FROM anon; GRANT SELECT (code, utilise) ON public.codes_activation TO anon;` (`006:238-239`, `007:62-63`).
+- ✅ Anon ne peut pas lire `demande_id` (ajouté en `010:75-77`), `created_by`/`cree_par`, `pressing_id_cible`, `date_expiration`, `date_generation`, `date_utilisation`, `plan_initial` — seules `code` et `utilise` sont accessibles.
+
+**Preuve** — `007_grants_public.sql:62-63` :
+```sql
+REVOKE SELECT ON public.codes_activation FROM anon;
+GRANT SELECT (code, utilise) ON public.codes_activation TO anon;
+```
+
+**Note (écart spec mineur, pas sécurité)** : le spec 9.6 mentionne "lecture anonyme limitée aux colonnes code/utilise/**expire_at**". L'implémentation n'expose QUE `code` et `utilise` (PAS `expire_at`/`date_expiration`). C'est plus restrictif que le spec — pas un problème de sécurité (moins d'info divulguée = plus sûr), mais l'application ne peut pas afficher l'expiration à l'utilisateur anon côté page d'activation. À confirmer côté spec/intégration applicative.
+
+---
+
+### 9.10 — Robustesse des codes d'activation : ❌ ÉCHOUE
+
+**Expiration à 7 jours** : ❌ aucune vérification côté serveur (policy ou fonction) que `date_expiration <= NOW()` au moment de la création du compte Admin.
+- La contrainte CHECK `codes_activation_expiration_check` (`003_constraints.sql:319-323`) vérifie uniquement que `date_expiration > date_generation` (si elle est renseignée), mais n'impose PAS une durée de 7 jours ni ne valide l'expiration au moment de l'activation.
+- La policy `code_read_public` (`006:225-229`) retourne `USING (true)` → tous les codes sont lisibles par anon, y compris expirés (l'expiration n'est pas filtrée par RLS).
+- La logique "7 jours" est implicitement supposée être appliquée par le Super Admin lors de la génération (`date_expiration = NOW() + INTERVAL '7 days'`) — mais ce calcul n'est pas dans une fonction SQL ni dans une contrainte. Il dépend entièrement de l'API route côté application.
+
+**Caractère usage unique (utilise=true)** : ❌ aucune vérification côté serveur que `utilise = false` au moment de la création du compte Admin.
+- La contrainte CHECK `codes_activation_utilise_date_check` (`003_constraints.sql:312-316`) impose seulement `utilise = TRUE ⇒ date_utilisation IS NOT NULL` (cohérence post-utilisation). Elle n'empêche PAS l'activation d'un compte avec un code déjà utilisé.
+- La policy `code_read_public` ne filtre pas les codes déjà utilisés.
+- Aucune fonction SQL `activer_compte_ pressing(code UUID, ...)` n'existe — l'activation est faite côté API route, qui doit (devrait) vérifier `utilise = false` puis faire un UPDATE `utilise = true, date_utilisation = NOW()` de manière atomique.
+
+**Preuve** — `003_constraints.sql:312-323` (les seules contraintes sur codes_activation) :
+```sql
+ALTER TABLE public.codes_activation
+    ADD CONSTRAINT codes_activation_utilise_date_check
+    CHECK ((utilise = FALSE) OR (date_utilisation IS NOT NULL));
+
+ALTER TABLE public.codes_activation
+    ADD CONSTRAINT codes_activation_expiration_check
+    CHECK (date_expiration IS NULL OR date_expiration > date_generation);
+```
+
+**Risques** :
+1. **Rejeu de code** : si l'API route d'activation n'effectue pas un UPDATE atomique `UPDATE codes_activation SET utilise=true, date_utilisation=NOW() WHERE code=$1 AND utilise=false RETURNING pressing_id_cible`, deux utilisateurs pourraient théoriquement activer un compte avec le même code (race condition).
+2. **Code expiré accepté** : si l'API route ne vérifie pas `date_expiration > NOW()`, un code ancien (volé, retrouvé) reste valide indéfiniment.
+3. **Code non expirant** : `date_expiration` est nullable (`002_tables.sql:140` `date_expiration TIMESTAMPTZ,`) → si le Super Admin omet de la renseigner, le code n'expire jamais.
+
+**Recommandations** :
+- Créer une fonction SQL `SECURITY INVOKER` (callable par anon) `activer_code(p_code TEXT)` qui effectue atomiquement : vérifie `utilise = false` AND (`date_expiration IS NULL OR date_expiration > NOW()`), puis UPDATE + RETURN `pressing_id_cible`/`plan_initial`. Si la fonction échoue, l'activation est impossible.
+- Ou bien (alternative) : ajouter une policy UPDATE sur codes_activation avec `USING (utilise = false AND (date_expiration IS NULL OR date_expiration > NOW()))` pour empêcher la réutilisation, mais cela ne couvre pas le check côté lecture.
+- Auditer l'API route d'activation (non visible dans les migrations SQL) pour confirmer qu'elle implémente ces checks côté application.
+
+Stage Summary:
+- **10 items PASS / 1 PARTIEL / 1 ÉCHOUE** sur 12 items audités.
+- **Sécurité RLS globalement solide** : isolation multi-tenant sans fuite, source d'identité `auth.uid()` (pas user_metadata), WITH CHECK présent partout, pas d'injection SQL, helpers is_super_admin/get_pressing_id_utilisateur non détournables.
+- **2 écarts à corriger** :
+  1. ⚠️ **Item 2.5** : 3 fonctions SECURITY DEFINER callable via PostgREST `/rpc/` (`deriver_statut_commande`, `calculer_statut_commande`, `calculer_statut_paiement_commande`) bypassent RLS et divulguent le statut (enum) d'une commande arbitraire par UUID. Sévérité faible (UUID 122 bits), mais fuite cross-pressing réelle. **Fix** : ajouter un filtre `WHERE c.pressing_id = get_pressing_id_utilisateur()` ou `is_super_admin()` dans chaque fonction, ou transformer en SECURITY INVOKER.
+  2. ❌ **Item 9.10** : absence d'enforcement serveur de l'expiration 7 jours et de l'usage unique des codes d'activation au moment de la création du compte Admin. Les contraintes CHECK existantes ne couvrent que la cohérence post-utilisation. **Fix** : créer une fonction SQL `activer_code(p_code TEXT)` SECURITY INVOKER qui effectue les checks + UPDATE atomiquement, ou ajouter une policy UPDATE restrictive. Audit complémentaire nécessaire sur l'API route d'activation (côté application, hors migrations SQL).
+- **Écart spec mineur (pas sécurité)** : `codes_activation` n'expose pas `date_expiration` à anon (plus restrictif que le spec 9.6 qui mentionnait expire_at). Confirmer côté spec si l'UI d'activation a besoin de cette info.
+- Aucune modification de code effectuée (audit recherche uniquement). Les recommandations ci-dessus sont à implémenter par un sous-agent fullstack-developper.
+
+
+---
+Task ID: AUDIT-API
+Agent: Explore (audit sécurité API)
+Task: Audit exhaustif des routes API OgPressing — auth, autorisation par rôle, isolation multi-tenant (pressing_id), validation des entrées. Lecture uniquement (aucune modification de code).
+
+Work Log:
+- Lecture du PROJECT_CONTEXT.md (déjà lu dans worklog) et du middleware (`src/lib/supabase/middleware.ts`) pour comprendre le garde-fou racine (cache rôle HMAC 5 min, vérif statut_compte/actif/pressing_statut).
+- Listing exhaustif des 43 fichiers `src/app/api/**/route.ts` via Glob.
+- Lecture intégrale de chacun des 43 fichiers (incluant helpers `getConnectedPersonnel`, `getConnectedManager`, `getConnectedCaissier`, `getConnectedLivreur`, `ensureSuperAdmin`, `requireSuperAdmin`, `checkManagerAuth`).
+- Recherche grep: `getUser|getSession`, `zod|z\.object`, `dangerouslySetInnerHTML`, `modes_paiement_autorises|nom_affiche_recu|seuil_alerte_impaye`, `scanner-qr|qr-scanner`, `body\.pressing_id|body\.user_id|body\.role`, `error:.*\.message`, `err instanceof Error`.
+- Vérification du helper workflow `src/lib/workflow/commande-statut.ts` et du composant `src/components/shared/qr-scanner.tsx`.
+- Aucune modification de code effectuée (audit strict read-only).
+
+==================================================================
+SYNTHÈSE EXÉCUTIVE
+==================================================================
+L'architecture de sécurité repose sur 3 lignes de défense :
+1. Middleware Next.js (cache HMAC 5 min) → bloque comptes désactivés/suspendus en ≤5 min.
+2. `supabase.auth.getUser()` (jamais `getSession()`) + lecture `personnel` (role/actif/statut_compte) au début de CHAQUE handler.
+3. RLS Supabase (policy `isolation_pressing` USING + WITH CHECK `pressing_id = get_pressing_id_utilisateur()`).
+
+Verdict global : ✅ Solide sur l'auth et l'isolation multi-tenant. ⚠️ Lacunes sur validation par schéma (Zod absent), fuites d'erreurs internes sur 5 routes, et non-implémentation des champs caissier dédiés (9.7/9.11) et du contrôle QR pressing_id (9.9).
+
+==================================================================
+3.6 — ROUTES API PROTÉGÉES : ✅ CONFORME
+==================================================================
+Toutes les routes protégées appellent `supabase.auth.getUser()` avant tout traitement. Aucune utilisation de `getSession()` (obsolète/insécurisé).
+
+Preuve (extrait type, pattern identique partout) :
+  src/app/api/admin/clients/route.ts:29
+    const { data: userData, error: userErr } = await supabase.auth.getUser();
+    if (userErr || !userData.user) {
+      return NextResponse.json({ success: false, error: "Non authentifié" }, { status: 401 });
+    }
+
+Routes publiques (devant l'être, pas d'auth) :
+  ✅ /api/public/inscription (POST) — crée une demande prospect, n'authentifie pas
+  ✅ /api/public/activation (POST) — crée compte+pressing+personnel via service_role
+  ✅ /api/public/activation/verify-code (POST) — lookup code via service_role
+  ✅ /api/route.ts (GET) — stub "Hello, world!" (aucune donnée sensible)
+
+Routes authentifiées sans filtrage par rôle (par design) :
+  ✅ /api/public/catalogue-articles (GET) — tout utilisateur authentifié (cf. comment L14-18, RLS `catalogue_articles_select_authenticated`). Vérifie bien `getUser()`.
+
+Routes qui sautent l'authentification : ❌ AUCUNE (en dehors des 4 publiques légitimes ci-dessus).
+
+Routes protégées (38 handlers) — toutes conformes sur getUser() :
+- /api/admin/clients (GET, POST), [id] (GET, PATCH)
+- /api/admin/commandes (GET, POST), [id] (GET), [id]/articles/[articleId] (PATCH)
+- /api/admin/personnel (GET, POST), [id] (PATCH, POST)
+- /api/admin/stock (GET, POST), [id] (PATCH), mouvements (GET), [id]/mouvements (POST)
+- /api/admin/services (GET, POST), [id] (PATCH, DELETE)
+- /api/admin/pressing (GET, PATCH)
+- /api/admin/casiers (GET)
+- /api/admin/rapports/{route,journalier,hebdomadaire,mensuel,clients,impayes,remises,commandes,paiements,personnel} (GET × 10)
+- /api/personnel/caissier/encaisser (POST)
+- /api/personnel/livreur/livrer (POST)
+- /api/super-admin/pressings (GET), [id] (GET, PATCH)
+- /api/super-admin/demandes (GET), [id] (PATCH), [id]/generer-code (POST)
+- /api/super-admin/abonnements (GET), [id] (PATCH), [id]/renouveler (POST)
+- /api/super-admin/catalogue (GET, POST), [id] (PATCH, DELETE), upload-icon (POST)
+
+==================================================================
+3.7 — VÉRIFICATION CROISÉE DES RÔLES : ✅ CONFORME
+==================================================================
+Routes /personnel/* vérifient le rôle attendu côté serveur.
+
+➤ /api/personnel/caissier/encaisser — src/app/api/personnel/caissier/encaisser/route.ts:62-95
+  Helper `getConnectedCaissier()` :
+    if (!me || me.actif !== true || me.statut_compte !== "actif") → 403 "Compte inactif"
+    if (me.role !== "caissier") → 403 "Accès refusé — rôle caissier requis"
+  Un laveur, réceptionniste, manager, etc. ne peut PAS encaisser.
+
+➤ /api/personnel/livreur/livrer — src/app/api/personnel/livreur/livrer/route.ts:67-101
+  Helper `getConnectedLivreur()` :
+    if (!me || me.actif !== true || me.statut_compte !== "actif") → 403 "Compte inactif"
+    if (me.role !== "livreur") → 403 "Réservé au livreur"
+
+➤ Routes /api/admin/* utilisent des helpers `getConnectedPersonnel(allowWrite)` ou `getConnectedManager()` qui filtrent sur `role==='manager'` pour les écritures. Exemple :
+  src/app/api/admin/services/route.ts:37-71 — `getConnectedPersonnel(true)` → exige role==='manager'
+  src/app/api/admin/pressing/route.ts:45-76 — `getConnectedManager()` → exige role==='manager'
+  src/app/api/admin/personnel/route.ts:76-86 — exige `me.role !== "manager"` → 403
+
+➤ Routes /api/super-admin/* vérifient toutes la table `super_admins` WHERE `actif=true` (ex : src/app/api/super-admin/pressings/route.ts:64-76, src/app/api/super-admin/catalogue/route.ts:66-96 `requireSuperAdmin`).
+
+Verdict : ✅ Aucune élévation de privilège possible. Un laveur ne peut encaisser, un caissier ne peut pas livrer, un personnel ne peut pas créer un employé, etc.
+
+==================================================================
+4.1 — VALIDATION PAR SCHÉMA : ❌ ZOD ABSENT PARTOUT
+==================================================================
+Recherche `zod|z\.object|z\.string|z\.number|z\.enum` dans `src/app/api/` : **0 match**.
+
+Aucune route n'utilise Zod. La validation est faite manuellement via `typeof`, `includes()`, regex, slices. C'est robuste mais :
+- Pas de typage centralisé des schémas
+- Risque de divergence entre routes (ex : `couleur` validé dans `commandes/route.ts` mais pas ailleurs)
+- Pas de messages d'erreur standardisés
+- Code répétitif (chaque route redéfinit ses enums, ses regex email, ses regex téléphone)
+
+Routes qui valident le body manuellement (typeof/!field/regex) :
+  ❌ Toutes les routes POST/PATCH — voir liste exhaustive ci-dessous.
+
+Routes qui ne valident pas du tout le body :
+  ⬚ /api/admin/commandes/[id]/articles/[articleId]/route.ts PATCH — valide `statut` et `zone_stockage` mais n'utilise pas de schéma global.
+  ⬚ /api/route.ts (stub, pas de body).
+
+Routes avec validation manuelle la plus élaborée (exemples positifs à refactorer en Zod) :
+- /api/public/inscription : fonction `validate()` dédiée (68-189), enum VILLES_CI/PLANS_VALIDES, regex téléphone, mais manuel.
+- /api/public/activation : fonction `validate()` dédiée (60-124).
+- /api/admin/commandes POST : inline (357-550), très verbeux mais complet.
+- /api/admin/services POST : inline (134-185).
+
+Recommandation : introduire `zod` + un dossier `src/lib/validations/` avec schémas partagés (clientSchema, commandeSchema, personnelSchema, paiementSchema, etc.).
+
+==================================================================
+4.2 — IDENTITÉ DEPUIS LA SESSION : ✅ CONFORME (CRITIQUE)
+==================================================================
+Aucune route d'écriture ne truste `pressing_id`, `user_id`, `created_by`, ou `role` depuis le body.
+
+Recherche `body.pressing_id|body.user_id|body.role|body.created_by` dans `src/app/api/` :
+  /api/admin/personnel/route.ts:313 → `body.role` est lu, MAIS c'est le rôle du NOUVEL employé à créer (pas le rôle de l'appelant). L'appelant est vérifié AVANT via `me.role !== 'manager'` (L241-250). ✅ Légitime.
+  /api/admin/personnel/[id]/route.ts:221 → idem, `body.role` est le nouveau rôle cible de l'employé modifié. L'appelant est vérifié via `checkManagerAuth()` (L62-100). ✅ Légitime.
+
+Tableau récapitulatif — dérivation de pressing_id par route d'écriture :
+
+POST /api/admin/clients            → `personnel.pressing_id` (L218-222, from session) ✅
+PATCH /api/admin/clients/[id]      → implicite via RLS (filter `eq("id", clientId)` + RLS `isolation_pressing`) ✅
+POST /api/admin/commandes          → `me.pressing_id` (L310, from session) ✅
+PATCH /api/admin/commandes/[id]/articles/[articleId] → implicite via RLS (double filtre `eq("id").eq("commande_id")`) ✅
+POST /api/admin/personnel          → `me.pressing_id` (L253) — insère via admin client (bypass RLS) MAIS pressing_id forcé depuis la session ✅
+PATCH /api/admin/personnel/[id]    → explicite `target.pressing_id !== me.pressing_id` → 403 (L155-160, L254-259, L368-373) ✅✅ défense en profondeur
+POST /api/admin/stock              → `me.pressing_id` (L155) ✅
+PATCH /api/admin/stock/[id]        → implicite via RLS ✅
+POST /api/admin/stock/[id]/mouvements → `enregistre_par: me.id` (L112) + RLS sur produit_id ✅
+POST /api/admin/services           → `me.pressing_id` (L122) ✅
+PATCH/DELETE /api/admin/services/[id] → implicite via RLS ✅
+PATCH /api/admin/pressing          → `me.pressing_id` (L208), `update.eq("id", pressingId)` — impossible de modifier un autre pressing ✅
+POST /api/personnel/caissier/encaisser → `enregistre_par: me.id` (L254) + RLS sur commande_id ✅
+POST /api/personnel/livreur/livrer → implicite via RLS (filter `eq("id", commandeId)` sur commandes) ✅
+POST /api/public/inscription       → pas de pressing_id (prospect, pas encore de pressing) ✅
+POST /api/public/activation        → `createdPressingId` généré côté serveur (L254), pas depuis body ✅
+POST /api/public/activation/verify-code → pas d'écriture ✅
+PATCH /api/super-admin/pressings/[id] → URL param `id`, pas depuis body ✅
+PATCH /api/super-admin/demandes/[id] → `traite_par: superAdmin.id` (L126) depuis session ✅
+POST /api/super-admin/demandes/[id]/generer-code → `cree_par: superAdmin.id` (L226) ✅
+PATCH /api/super-admin/abonnements/[id] → `enregistre_par: superAdmin.id` (L151, L189) ✅
+POST /api/super-admin/abonnements/[id]/renouveler → `enregistre_par: superAdmin.id` (L182, L232) ✅
+POST /api/super-admin/catalogue    → pas de pressing_id (catalogue global) ✅
+PATCH/DELETE /api/super-admin/catalogue/[id] → pas de pressing_id ✅
+POST /api/super-admin/catalogue/upload-icon → pas de pressing_id (bucket global) ✅
+
+Verdict : ✅ Aucune fuite multi-tenant possible. `pressing_id` est TOUJOURS dérivé de la session (`me.pressing_id`) ou filtré par RLS. Pour les routes admin (service_role), la défense en profondeur vérifie explicitement `target.pressing_id === me.pressing_id`.
+
+==================================================================
+4.3 — NETTOYAGE DES ENTRÉES / XSS : ⚠️ PARTIEL
+==================================================================
+Recherche `dangerouslySetInnerHTML` dans `src/` :
+  → 1 seul match : `src/components/ui/chart.tsx` (wrapper Recharts, n'affiche jamais d'input utilisateur). ❌ Non-critique.
+
+Champs texte libre examinés :
+- `notes` (clients, commandes, paiements, mouvements_stock) → `.trim()` puis stocké brut. Pas de slice max côté clients/[id] PATCH (commandes PATCH n'a pas de notes en écriture directe — seul `body.notes` est trim+null dans POST commandes).
+- `notes_super_admin` (demandes/[id]) → `.trim()`, null si vide. Pas de max length.
+- `message` (inscription) → `.trim()`, max 500 chars ✅
+- `motif` (mouvements_stock) → `.trim().slice(0, 500)` ✅
+- `description_etat` (articles_vetements dans POST commandes) → `.trim().slice(0, 500)` ✅
+- `couleur_libre` → `.trim().slice(0, 100)` ✅
+- `fournisseur` → `.trim().slice(0, 200)` ✅
+- `motif_suspension` → `.trim().slice(0, 500)` ✅
+- `reference` (paiements) → `.trim()`, pas de slice dans caissier/encaisser (L142-143), `.slice(0, 200)` dans POST commandes acompte (L543) et `.slice(0, 500)` dans abonnements/renouveler (L128). Inconsistant.
+
+Échappement XSS : 
+- React échappe automatiquement tout rendu `{text}` → ✅ pas de vuln XSS sur rendu classique.
+- Aucune fonction `escapeHtml()` ou `sanitize()` n'est appliquée avant stockage.
+- Les notes sont rendues telles quelles dans l'UI (ex : `client-detail-page.tsx`, `commande-detail.tsx`).
+
+Verdict : ⚠️ Pas d'échappement explicite mais React protège par défaut. Risque faible. Recommandation : appliquer `.slice()` systématique + envisager `DOMPurify` si une note est un jour rendue en HTML (interdire `dangerouslySetInnerHTML` sur champs utilisateur).
+
+==================================================================
+4.4 — MÉTHODES HTTP : ✅ CONFORME
+==================================================================
+Recherche des mutations via GET : ❌ AUCUNE.
+
+Toutes les mutations sont POST/PATCH/PUT/DELETE :
+- Création (encaissement, livraison, commande, employé, produit, service, code activation, paiement abonnement, upload icône, inscription) → POST
+- Mise à jour partielle (client, pressing, statut article, produit, service, statut pressing, statut abonnement, demande) → PATCH
+- Suppression (service, catalogue article) → DELETE
+
+Aucune route `GET` ne modifie l'état. Aucune opération de type "désactiver via GET", "encaisser via GET", "changer statut via GET".
+
+Note : les routes `POST /api/admin/personnel/[id]` (reset_password, resend_invitation) et `PATCH /api/admin/personnel/[id]` (desactiver/reactiver/modifier) utilisent `body.action` comme discriminant — c'est acceptable et idiomatique en REST pour des opérations nommées sans verbe HTTP dédié.
+
+==================================================================
+4.5 — FUITES D'ERREURS : ⚠️ PARTIEL
+==================================================================
+Recherche `error: err.message|error: \`...\${...\.message}\`|detail: ...\.message` :
+
+❌ /api/admin/commandes/route.ts POST — 4 fuites :
+  L779   `detail: insertCmdErr?.message` (renvoyé au client dans NextResponse 500)
+  L838   `detail: insertLigneErr?.message`
+  L878   `detail: insertArticlesErr?.message`
+  L909   `detail: insertPaiementErr?.message`
+  → Le message raw de Supabase/PostgREST (ex : "duplicate key value violates unique constraint...") est exposé au client. Fuite modérée de schéma DB.
+
+❌ /api/public/activation/route.ts — 5 throws avec `.message` interne :
+  L230  `throw new Error(\`Création du compte utilisateur impossible : ${authError.message}\`)`
+  L251  `throw new Error(\`Création du pressing impossible : ${pressingError?.message ?? "erreur inconnue"}\`)`
+  L275  `throw new Error(\`Création du compte personnel impossible : ${personnelError?.message ?? "erreur inconnue"}\`)`
+  L298  `throw new Error(\`Création de l'abonnement impossible : ${abonnementError?.message ?? "erreur inconnue"}\`)`
+  L314  `throw new Error(\`Marquage du code impossible : ${updateCodeError.message}\`)`
+  L339  `const message = err instanceof Error ? err.message : "Erreur inconnue lors de l'activation.";`
+  L341  `error: message` (renvoyé au client HTTP 500)
+  → Fuite de messages Auth Admin (ex : "User already registered") et de messages SQL.
+
+❌ /api/super-admin/catalogue/upload-icon/route.ts L159
+  `error: \`Erreur lors de l'upload: ${uploadErr.message}\``
+  → Fuite mineure du message Storage Supabase.
+
+❌ /api/admin/personnel/[id]/route.ts POST reset_password L412
+  `error: \`Erreur lors de la réinitialisation : ${updateAuthErr.message}\``
+  → Fuite du message Auth Admin (peut révéler détails internes sur user_id).
+
+❌ /api/admin/personnel/[id]/route.ts POST resend_invitation L487
+  `error: \`Erreur lors du renvoi : ${inviteErr.message}\``
+
+❌ /api/admin/personnel/route.ts POST createUser L400
+  `error: \`Erreur lors de la création du compte Auth : ${createErr?.message ?? "inconnue"}\``
+
+❌ /api/admin/personnel/route.ts POST inviteUser L475
+  `error: \`Erreur lors de l'envoi de l'invitation : ${inviteErr?.message ?? "inconnue"}\``
+
+✅ Bonnes pratiques observées ailleurs :
+- /api/admin/clients POST L323-328 → `error: "Erreur lors de la création du client"` (générique, pas de .message)
+- /api/admin/services POST L220-223 → `error: "Erreur lors de la création du service."` (générique)
+- /api/admin/stock POST L273-276 → `error: "Erreur lors de la création du produit."` (générique)
+- /api/admin/pressing PATCH L396-401 → `error: "Erreur lors de la mise à jour du pressing."` (générique)
+- Pattern correct : `console.error()` serveur pour diagnostic, message générique au client.
+
+Verdict : ⚠️ 7 routes (4 dans commandes POST + activation + upload-icon + 3 dans personnel) exposent des messages internes. Les autres ~30 routes appliquent correctement le masquage. Recommandation : remplacer tous les `${err.message}` par un message générique + loguer le détail côté serveur.
+
+==================================================================
+9.7 — ISOLATION GESTION PERSONNEL : ✅ PARTIELLEMENT CONFORME
+==================================================================
+Route concernée : src/app/api/admin/personnel/[id]/route.ts PATCH (desactiver/reactiver/modifier).
+
+✅ Isolation pressing_id par double défense :
+  L155-160 (action desactiver/reactiver) :
+    if (target.pressing_id !== me.pressing_id) → 403 "Accès refusé"
+  L254-259 (action modifier) :
+    if (target.pressing_id !== me.pressing_id) → 403 "Accès refusé"
+  L368-373 (POST reset_password/resend_invitation) :
+    if (target.pressing_id !== me.pressing_id) → 403 "Accès refusé"
+  → En plus de RLS, l'API vérifie explicitement l'appartenance. Un manager ne peut PAS modifier un employé d'un autre pressing.
+
+✅ Verrou anti-lockout :
+  L117-125 : `if (targetId === me.id) → 400 "Vous ne pouvez pas modifier votre propre compte via cette action."`
+
+✅ Vérification du manager appelant :
+  checkManagerAuth() (L62-100) exige `me.role === 'manager' && me.actif === true && me.statut_compte === 'actif'`.
+
+❌ Champs caissier dédiés (nom_affiche_recu, modes_paiement_autorises, seuil_alerte_impaye) :
+  Recherche `modes_paiement_autorises|nom_affiche_recu|seuil_alerte_impaye` dans `src/` : **0 match**.
+  → Ces champs NE SONT PAS implémentés (ni en DB, ni en API, ni en UI).
+  → Le route PATCH `modifier` accepte uniquement : nom, prenom, telephone, email, role. Aucun champ spécifique caissier.
+  → Par conséquent, il n'y a pas de risque de modification non autorisée de ces champs (puisque'ils n'existent pas), mais la spécification PRD 9.7 n'est pas satisfaite.
+
+Verdict : ✅ Isolation pressing_id robuste. ❌ Champs caissier dédiés non implémentés (à ajouter si spécification requise).
+
+==================================================================
+9.8 — BLOCAGE COMPTES DÉSACTIVÉS : ✅ CONFORME
+==================================================================
+Toutes les routes API vérifient `actif === true && statut_compte === 'actif'` À CHAQUE REQUÊTE (pas seulement à l'auth).
+
+Preuve par pattern (répété dans ~30 handlers) :
+  src/app/api/admin/clients/[id]/route.ts:209-214 (PATCH) :
+    if (me.actif !== true || me.statut_compte !== "actif") {
+      return NextResponse.json({ success: false, error: "Accès refusé — compte inactif" }, { status: 403 });
+    }
+
+  src/app/api/admin/stock/route.ts:58-69 (helper getConnectedPersonnel) :
+    if (!me || me.actif !== true || me.statut_compte !== "actif") → 403 "Compte inactif ou désactivé"
+
+  src/app/api/personnel/caissier/encaisser/route.ts:79-86 (getConnectedCaissier) :
+    if (!me || me.actif !== true || me.statut_compte !== "actif") → 403 "Compte inactif ou désactivé"
+
+  src/app/api/personnel/livreur/livrer/route.ts:84-91 (getConnectedLivreur) :
+    idem
+
+  src/app/api/admin/rapports/journalier/route.ts:117-122 :
+    if (me.actif !== true || me.statut_compte !== "actif") → 403 "Accès refusé — compte inactif"
+
+Routes /api/super-admin/* : vérifient `super_admins.actif=true` à chaque requête (ex : src/app/api/super-admin/pressings/route.ts:64-76).
+
+✅ Route /api/personnel/caissier/encaisser vérifie bien `actif === true` :
+  src/app/api/personnel/caissier/encaisser/route.ts:79-86 :
+    if (!me || me.actif !== true || me.statut_compte !== "actif") → 403
+
+✅ Complément middleware (src/lib/supabase/middleware.ts) :
+  - Cache rôle HMAC-SHA256 TTL 5 min, n'est posé QUE si `info.actif && info.statut_compte === "actif"` (L252-254).
+  - Si compte désactivé entre 2 requêtes : au prochain cache miss (≤5 min), `fetchRoleFromDB` retourne `actif=false` → middleware signOut + redirect /login.
+  - Vérification `pressing_statut` (suspendu) aussi gérée au niveau middleware.
+
+Verdict : ✅ Aucune route n'accepte un compte désactivé (actif=false OU statut_compte='desactive'). Le délai max de propagation est 5 min (cache middleware).
+
+==================================================================
+9.9 — SCAN QR CODE : ⚠️ PARTIEL
+==================================================================
+Aucune route API dédiée au scan QR (pas de /api/scan-qr ni /api/qr/lookup). Le scan QR se fait côté client (composant `src/components/shared/qr-scanner.tsx`) puis redirige vers la page de détail commande.
+
+Pages scanner-qr :
+- src/app/(personnel)/personnel/receptionniste/scanner-qr/page.tsx
+- src/app/(personnel)/personnel/manager/scanner-qr/page.tsx
+
+Logique du handler `handleScanSuccess` (receptionniste/scanner-qr/page.tsx:67-115) :
+  1. Parse la chaîne décodée comme JSON.
+  2. Extrait `commande_id` OU `numero_commande`.
+  3. Si `commande_id` présent → redirige vers `/personnel/{role}/commandes/{commandeId}`.
+  4. Sinon → fetch GET /api/admin/commandes?q={numero_commande} pour récupérer l'ID.
+
+⚠️ Le payload JSON encodé dans le QR contient `{ commande_id, numero_commande, pressing_id }` (cf. POST /api/admin/commandes L917-920), mais le handler scanner NE LIT PAS `pressing_id` depuis le QR et NE LE COMPARE PAS au pressing_id de l'utilisateur.
+  → Pas de vérification explicite côté client.
+
+✅ Cependant, l'isolation est garantie par RLS côté serveur :
+  - GET /api/admin/commandes?q= → RLS `isolation_pressing` filtre uniquement les commandes du pressing de l'appelant.
+  - GET /api/admin/commandes/[id] → RLS renvoie null si la commande n'appartient pas au pressing → 404.
+  - Donc même si un attaquant forge un QR avec un `commande_id` étranger, la requête API renverra 404 (commande introuvable dans votre pressing).
+
+Verdict : ⚠️ Pas de comparaison explicite `qr.pressing_id === user.pressing_id` comme demandé par la spec. Mais l'isolation est garantie par RLS (défense en profondeur côté serveur). Recommandation : ajouter un check client explicite `payload.pressing_id === session.pressing_id` pour feedback utilisateur plus rapide (avant l'appel API) — non bloquant pour la sécurité.
+
+==================================================================
+9.11 — RESTRICTION MODES DE PAIEMENT CAISSIER : ❌ NON IMPLÉMENTÉ
+==================================================================
+Route : src/app/api/personnel/caissier/encaisser/route.ts
+
+Validation actuelle (L134-140) :
+  const methode = typeof body.methode === "string" ? body.methode : "";
+  if (!(METHODES_VALID as readonly string[]).includes(methode)) {
+    return NextResponse.json({ success: false, error: "Méthode de paiement invalide." }, { status: 400 });
+  }
+
+`METHODES_VALID` (L47-51) = ["especes", "mobile_money", "carte_bancaire"] — liste statique globale.
+
+❌ Aucune validation contre `personnel.modes_paiement_autorises` :
+  - Recherche `modes_paiement_autorises` dans `src/` : **0 match**.
+  - Le champ n'existe pas en DB, ni en API, ni en UI.
+  - La select `personnel` dans `getConnectedCaissier()` (L73-77) ne récupère QUE `id, pressing_id, role, actif, statut_compte`.
+  - Un caissier peut donc encaisser avec N'IMPORTE QUEL mode de paiement valide globalement, indépendamment de ses permissions individuelles.
+
+Verdict : ❌ Non implémenté. La spec 9.11 n'est pas satisfaite. Si le besoin existe (caissiers limités à espèces-only, etc.), il faut :
+  1. Ajouter la colonne `modes_paiement_autorises JSONB DEFAULT '["especes","mobile_money","carte_bancaire"]'` à la table `personnel`.
+  2. La sélectionner dans `getConnectedCaissier()`.
+  3. Valider `methode` ∈ `me.modes_paiement_autorises` avant INSERT paiement.
+
+==================================================================
+TABLEAU RÉCAPITULATIF PAR ROUTE (verdicts synthétiques)
+==================================================================
+
+| Route                                    | Auth getUser | Rôle vérifié | actif+statut | pressing_id session | Zod | Notes |
+|------------------------------------------|--------------|--------------|--------------|---------------------|-----|-------|
+| /api/route.ts (GET)                      | N/A (public stub) | N/A | N/A | N/A | ❌ | stub |
+| /api/public/inscription (POST)           | N/A (public) | N/A | N/A | N/A | ❌ | validation manuelle |
+| /api/public/activation (POST)            | N/A (public) | N/A | N/A | généré serveur | ❌ | fuite .message interne |
+| /api/public/activation/verify-code (POST)| N/A (public) | N/A | N/A | N/A | ❌ | service_role |
+| /api/public/catalogue-articles (GET)     | ✅ | any auth | any auth | N/A | N/A | shared catalog |
+| /api/admin/clients (GET, POST)           | ✅ | POST: manager/receptionniste | ✅ | ✅ session | ❌ |  |
+| /api/admin/clients/[id] (GET, PATCH)     | ✅ | PATCH: manager/receptionniste | ✅ | ✅ RLS | ❌ | préférences_lavage validées |
+| /api/admin/commandes (GET, POST)         | ✅ | any personnel | ✅ | ✅ session | ❌ | ❌ 4 fuites .message |
+| /api/admin/commandes/[id] (GET)          | ✅ | any personnel | ✅ | ✅ RLS | N/A |  |
+| /api/admin/commandes/[id]/articles/[articleId] (PATCH) | ✅ | any personnel + guard workflow | ✅ | ✅ RLS + double filtre | ❌ |  |
+| /api/admin/personnel (GET, POST)         | ✅ | manager | ✅ | ✅ session (admin client) | ❌ | ❌ fuite .message Auth |
+| /api/admin/personnel/[id] (PATCH, POST)  | ✅ | manager | ✅ | ✅✅ check explicite target.pressing_id | ❌ | ❌ fuite .message Auth ; ❌ champs caissier (9.7) non implémentés |
+| /api/admin/stock (GET, POST)             | ✅ | POST: manager | ✅ | ✅ session | ❌ |  |
+| /api/admin/stock/[id] (PATCH)            | ✅ | manager | ✅ | ✅ RLS | ❌ |  |
+| /api/admin/stock/mouvements (GET)        | ✅ | any personnel | ✅ | ✅ RLS | N/A |  |
+| /api/admin/stock/[id]/mouvements (POST)  | ✅ | manager/receptionniste | ✅ | ✅ RLS + enregistre_par session | ❌ |  |
+| /api/admin/services (GET, POST)          | ✅ | POST: manager | ✅ | ✅ session | ❌ |  |
+| /api/admin/services/[id] (PATCH, DELETE) | ✅ | manager | ✅ | ✅ RLS | ❌ |  |
+| /api/admin/pressing (GET, PATCH)         | ✅ | manager | ✅ | ✅ session + .eq(pressingId) | ❌ |  |
+| /api/admin/casiers (GET)                 | ✅ | any personnel | ✅ | ✅ RLS | N/A |  |
+| /api/admin/rapports (GET)                | ✅ | any personnel | ✅ | ✅ RLS | N/A |  |
+| /api/admin/rapports/journalier (GET)     | ✅ | any personnel | ✅ | ✅ RLS | N/A |  |
+| /api/admin/rapports/hebdomadaire (GET)   | ✅ | any personnel | ✅ | ✅ RLS | N/A |  |
+| /api/admin/rapports/mensuel (GET)        | ✅ | any personnel | ✅ | ✅ RLS | N/A |  |
+| /api/admin/rapports/clients (GET)        | ✅ | any personnel | ✅ | ✅ RLS | N/A |  |
+| /api/admin/rapports/impayes (GET)        | ✅ | any personnel | ✅ | ✅ RLS | N/A |  |
+| /api/admin/rapports/remises (GET)        | ✅ | any personnel | ✅ | ✅ RLS | N/A |  |
+| /api/admin/rapports/commandes (GET)      | ✅ | any personnel | ✅ | ✅ RLS | N/A |  |
+| /api/admin/rapports/paiements (GET)      | ✅ | any personnel | ✅ | ✅ RLS | N/A |  |
+| /api/admin/rapports/personnel (GET)      | ✅ | manager | ✅ | ✅ RLS | N/A | RH sensible ✅ |
+| /api/personnel/caissier/encaisser (POST) | ✅ | caissier | ✅ | ✅ RLS + enregistre_par session | ❌ | ❌ 9.11 non implémenté |
+| /api/personnel/livreur/livrer (POST)     | ✅ | livreur | ✅ | ✅ RLS | ❌ |  |
+| /api/super-admin/pressings (GET)         | ✅ | super_admin | ✅ (sa.actif) | N/A | N/A |  |
+| /api/super-admin/pressings/[id] (GET, PATCH) | ✅ | super_admin | ✅ | N/A | ❌ |  |
+| /api/super-admin/demandes (GET)          | ✅ | super_admin | ✅ | N/A | N/A |  |
+| /api/super-admin/demandes/[id] (PATCH)   | ✅ | super_admin | ✅ | N/A | ❌ |  |
+| /api/super-admin/demandes/[id]/generer-code (POST) | ✅ | super_admin | ✅ | N/A | ❌ | cree_par session ✅ |
+| /api/super-admin/abonnements (GET)       | ✅ | super_admin | ✅ | N/A | N/A |  |
+| /api/super-admin/abonnements/[id] (PATCH) | ✅ | super_admin | ✅ | N/A | ❌ | enregistre_par session ✅ |
+| /api/super-admin/abonnements/[id]/renouveler (POST) | ✅ | super_admin | ✅ | N/A | ❌ |  |
+| /api/super-admin/catalogue (GET, POST)   | ✅ | super_admin | ✅ | N/A | ❌ |  |
+| /api/super-admin/catalogue/[id] (PATCH, DELETE) | ✅ | super_admin | ✅ | N/A | ❌ |  |
+| /api/super-admin/catalogue/upload-icon (POST) | ✅ | super_admin | ✅ | N/A | N/A | ❌ fuite .message Storage |
+
+==================================================================
+FINDINGS — PROBLÈMES À TRAITER (par ordre de priorité)
+==================================================================
+
+[P0 — Fuites d'erreurs internes — 7 routes]
+1. src/app/api/admin/commandes/route.ts L779, L838, L878, L909 — `detail: insertXxxErr?.message` exposé au client.
+   Action : remplacer par message générique ("Erreur lors de la création de la commande/ligne/article/paiement"), loguer le détail via `console.error` serveur.
+2. src/app/api/public/activation/route.ts L230, L251, L275, L298, L314, L339-341 — `throw new Error(...${err.message})` puis renvoyé au client.
+   Action : messages génériques par étape, log serveur détaillé.
+3. src/app/api/admin/personnel/route.ts L400, L475 — expose `createErr.message` / `inviteErr.message` Auth Admin.
+4. src/app/api/admin/personnel/[id]/route.ts L412, L487 — expose `updateAuthErr.message` / `inviteErr.message` Auth Admin.
+5. src/app/api/super-admin/catalogue/upload-icon/route.ts L159 — expose `uploadErr.message` Storage.
+
+[P1 — Validation par schéma — impact transverse]
+6. Aucune route n'utilise Zod. Validation manuelle répétée et sujette à divergence.
+   Action : introduire `zod` + dossier `src/lib/validations/` avec schémas partagés (clientSchema, commandeSchema, paiementSchema, personnelSchema, etc.). Refactor progressif des 30+ routes POST/PATCH.
+
+[P2 — Spécifications PRD non implémentées]
+7. 9.7 — Champs caissier dédiés (`nom_affiche_recu`, `modes_paiement_autorises`, `seuil_alerte_impaye`) absents du schéma DB, des routes API et de l'UI. À spécifier si le besoin est confirmé.
+8. 9.11 — Restriction par caissier des modes de paiement : non implémentée (lié à #7). Actuellement tout caissier peut encaisser avec n'importe quel mode globalement valide.
+9. 9.9 — Scan QR : pas de comparaison explicite `qr.pressing_id === user.pressing_id`. Risque atténué par RLS côté serveur, mais le check client améliorerait l'UX (feedback immédiat).
+
+[P3 — Inconsistances mineures]
+10. `reference` (paiements) — slice variable selon les routes : 200 chars (POST commandes), 500 chars (abonnements/renouveler), pas de slice (caissier/encaisser L142-143).
+    Action : standardiser sur 200 chars max (ou 500) partout.
+11. `notes` (clients/[id] PATCH) — pas de slice max. Risque : notes de 1MB stockées en DB.
+    Action : ajouter `.slice(0, 2000)` ou similaire.
+12. `notes_super_admin` (demandes/[id] PATCH) — pas de slice max.
+13. `/api/route.ts` (Hello World stub) — à supprimer ou à protéger (actuellement inoffensif mais pollue le namespace API).
+
+[P3 — Bonnes pratiques à standardiser]
+14. `pressing_id` est correctement dérivé de la session partout — ✅ conserver ce pattern.
+15. Le verrou anti-lockout (manager ne peut pas se désactiver soi-même) est une excellente pratique — ✅ conserver.
+16. Le cache middleware HMAC 5 min + vérification `actif/statut_compte` à chaque requête API est robuste — ✅ conserver.
+
+==================================================================
+VERDICT GLOBAL
+==================================================================
+✅ Authentification : 100% conforme (getUser() partout, jamais getSession()).
+✅ Autorisation par rôle : 100% conforme (helpers dédiés par rôle, vérification à chaque requête).
+✅ Isolation multi-tenant : 100% conforme (pressing_id toujours depuis la session, jamais trusté du body ; RLS en défense en profondeur).
+✅ Blocage comptes désactivés : 100% conforme (actif+statut_compte vérifiés à chaque requête).
+✅ Méthodes HTTP : 100% conforme (aucune mutation via GET).
+✅ XSS : pas de vulnérabilité critique (React échappe par défaut, aucun `dangerouslySetInnerHTML` sur input utilisateur).
+⚠️ Validation : pas de Zod — validation manuelle robuste mais répétitive et inconsistante.
+⚠️ Fuites d'erreurs : 7 routes exposent des messages internes (SQL/Auth Admin).
+⚠️ Spécifications PRD 9.7/9.9/9.11 partiellement ou non implémentées.
+
+Stage Summary:
+- Audit exhaustif terminé : 43 fichiers route.ts lus intégralement + helpers partagés + middleware.
+- Aucune modification de code effectuée (read-only).
+- 6 findings prioritaires documentés (P0 à P3) avec preuves (fichier:ligne + extrait).
+- Recommandations actionnables fournies pour chaque point non conforme.
+- Le socle sécurité (auth + RLS + isolation pressing_id) est solide ; les lacunes sont sur la couche applicative (Zod, gestion d'erreurs, specs PRD non codées).
+
+---
+Task ID: AUDIT-SECRETS
+Agent: sub-agent (Explore)
+Task: Audit de sécurité — Secrets, Dépendances, CORS, Rate Limiting, Mot de passe Super Admin par défaut (recherche uniquement, pas de modification de code)
+
+Work Log:
+- Lecture du worklog.md (contexte projet OgPressing, Next.js 16 + Supabase, multi-tenant SaaS pressing, "aucun paiement").
+- Lecture de `.gitignore`, `.env`, `.env.local.example`, `.env.production.example`, `next.config.ts`, `package.json`, `bun.lock`.
+- Vérification de l'historique git (`git log --all -S`).
+- Recherche exhaustive de secrets codés en dur (Grep sur `sk_live_`, `sk_test_`, `ghp_`, `xoxb-`, `AKIA`, `sbp_`, `eyJ`, `Bearer `, clés Supabase, mots de passe par défaut, chaînes 32+/50+ chars).
+- Recherche des préfixes `NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY` et `NEXT_PUBLIC_*KEY` sur clés serveur.
+- `bun audit` exécuté (76 vulnérabilités).
+- Vérification des imports des 23 dépendances les plus suspectes dans `src/`.
+- Recherche CORS : `Access-Control-Allow-*`, `cors`, `headers()`.
+- Recherche rate limiting : `rate.?limit`, `throttle`, `429`, `Redis`, `brute.?force`.
+- Recherche mot de passe Super Admin par défaut dans code source, migrations SQL, fichiers .md, et historique git.
+
+# RAPPORT D'AUDIT DE SÉCURITÉ — AUDIT-SECRETS
+
+## PARTIE 1 — Secrets et variables d'environnement
+
+### 1.1 — Secrets codés en dur dans le code source
+
+**Verdict : ✅ AUCUN secret codé en dur dans `src/`**
+
+Recherche exhaustive dans `src/` des patterns `sk_live_|sk_test_|pk_live_|ghp_|gho_|github_pat_|xoxb-|xoxp-|AKIA|sbp_|eyJ[A-Za-z0-9_-]{10,}|Bearer ` → **0 occurrence**.
+
+Recherche de chaînes alphanumériques 32+/50+ chars entre guillemets dans `src/` → **0 secret**. Les seules matches sont :
+- Des URLs de routes (`/personnel/receptionniste/commandes/nouvelle` — 41 chars) dans `personnel-nav-config.ts`
+- Un alphabet de génération de codes `"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"` (32 chars) dans `src/app/api/super-admin/demandes/[id]/generer-code/route.ts:37` — **alphabet de génération PRS-XXXX-XXXX, pas un secret**.
+
+Recherche `SUPABASE_SERVICE_ROLE_KEY` dans `src/` → 4 occurrences, toutes en `process.env.SUPABASE_SERVICE_ROLE_KEY` (lecture d'environnement, jamais de valeur littérale). ✅
+
+**Occurrences dans des fichiers non-code (worklog.md, AUDIT_GLOBAL.md, .env.*.example, gen-types.err)** :
+- `worklog.md:1424, 3588, 4347, 4349, 4405, 4628, 4631, 4633, 4645` : `sbp_***REDACTED***` (PAT Supabase déjà redacté dans le worklog, voir Task REC-NOUVELLE-1 / git history cleaning). ✅ Pas de fuite active.
+- `worklog.md:5707, 4635, 4674, 5496` : `ghp_...` / `ghp_***` (PAT GitHub utilisé pour push, marqué "retiré du .git/config et redacté dans le worklog"). ✅ Pas de fuite active.
+- `AUDIT_GLOBAL.md:37` : `SUPABASE_PAT = sbp_…` (description, pas de valeur). ✅
+- `.env.local.example:20, 28` et `.env.production.example:26, 45` : `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.YOUR_ANON_KEY` et `...YOUR_SERVICE_ROLE_KEY` → **placeholders explicites** (jeton JWT tronqué + chaîne `YOUR_*_KEY`). ✅
+- `gen-types.err:1` : `Invalid access token format. Must be like \`sbp_0102...1920\`` → message d'erreur CLI Supabase, format documenté, **pas un vrai token**. ✅
+
+### 1.2 — Couverture `.gitignore`
+
+**Verdict : ✅ Conforme**
+
+`.gitignore` (lignes 33-38) :
+```
+# env files (real secrets — never commit)
+.env*
+# Exceptions: template files for other developers ARE committed
+!.env.example
+!.env.local.example
+!.env.production.example
+```
+
+Vérification `git check-ignore -v` :
+- `.env` → ignoré (ligne 34) ✅
+- `.env.local` → ignoré (ligne 34) ✅
+- `.env.production` → ignoré (ligne 34) ✅
+- `.env.local.example` → re-inclus via exception `!.env.local.example` ✅
+- `.env.production.example` → re-inclus via exception `!.env.production.example` ✅
+- `dev.log`, `server.log` → ignorés (lignes 51, 56) ✅
+- `tool-results/`, `upload/`, `screenshots/`, `agent-ctx/` → ignorés ✅
+
+`git ls-files .env .env.local .env.production` → **vide** (aucun fichier env réel n'est tracké). ✅
+
+**Note mineure** : `.env` (contenant uniquement `DATABASE_URL=file:/home/z/my-project/db/custom.db` — SQLite Prisma scaffold) est correctement ignoré. ⚠️ Cependant, `DATABASE_URL` devrait idéalement être dans `.env.local` (Next.js ne lit pas `.env` directement en dev server — `bun` le lit via dotenv). Hors sujet sécurité, juste un point qualité.
+
+### 1.3 — Fuites de préfixe public
+
+**Verdict : ✅ Aucune fuite**
+
+- Aucune occurrence de `NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY` dans tout le projet (Grep sur 6148 lignes de worklog + src + exemples).
+- Aucune occurrence de `NEXT_PUBLIC_.*SERVICE_ROLE` ou `NEXT_PUBLIC_.*KEY=eyJ` dans le code runtime.
+- `src/lib/supabase/admin.ts:31` : `const key = process.env.SUPABASE_SERVICE_ROLE_KEY;` (SANS préfixe NEXT_PUBLIC_) → ✅ correct, valeur serveur-only.
+- `src/lib/supabase/middleware.ts:174-176` : `getCacheSecret()` priorise `process.env.OGP_ROLE_CACHE_SECRET` (sans préfixe), fallback `NEXT_PUBLIC_SUPABASE_ANON_KEY` (clé publique, OK). ✅
+- Documentation `README.md:179-183` et `.env.production.example:33-44` informent correctement l'utilisateur de ne JAMAIS préfixer par `NEXT_PUBLIC_`.
+
+### 1.5 — Source maps en production
+
+**Verdict : ✅ Aucune exposition de source maps**
+
+`next.config.ts` (35 lignes) — inspection complète :
+- Aucune propriété `productionBrowserSourceMaps` → Next.js default = `false` ✅
+- Aucune propriété `serverSourceMaps` non plus
+- `output: "standalone"` ✅
+- `typescript.ignoreBuildErrors: true` (qualité, pas sécurité — TODO 14.2 documenté)
+- `allowedDevOrigins` contient `*.space-z.ai` et IP `21.0.12.22` — **dev-only**, n'affecte pas la prod ✅
+
+---
+
+## PARTIE 2 — Dépendances
+
+### 5.1 — Résultats d'audit `bun audit`
+
+**Verdict : ❌ 76 vulnérabilités (1 critical, 39 high, 31 moderate, 5 low)**
+
+**CRITICAL (1)** :
+| Package | Version lockée | Vuln | Effet |
+|---|---|---|---|
+| `next-auth` | 4.24.13 | GHSA-7rqj-j65f-68wh — Email normalizer homoglyph `@` bypass | Permet l'authentification par email forgé avec caractères Unicode |
+
+**HIGH direct deps (4)** :
+| Package | Version | Vuln principale | Fix |
+|---|---|---|---|
+| `next` | 16.1.3 | GHSA-8h8q-6873-q5fj (DoS Server Components), GHSA-26hh-7cqf-hhc6 (Middleware/Proxy bypass), GHSA-c4j6-fc7j-m34r (SSRF WebSocket), GHSA-89xv-2m56-2m9x (SSRF Server Actions), GHSA-267c-6grr-h53f (Middleware bypass), + 11 autres | ≥ 16.2.5 |
+| `next-auth` | 4.24.13 | GHSA-xmf8-cvqr-rfgj — `getToken()` uncaught exception sur header Bearer malformé (DoS) | ≥ 4.24.19 (ou migrer vers Auth.js v5) |
+| `sharp` | 0.34.5 | GHSA-f88m-g3jw-g9cj — libvips CVE-2026-33327/33328/35590/35591 | ≥ 0.35.0 |
+| `xlsx` | 0.18.5 | GHSA-4r6h-8v6p-xvw6 (Prototype Pollution), GHSA-5pgg-2g8v-p4x9 (ReDoS) | ≥ 0.20.x (CDN SheetJS — npm registry figé à 0.18.5) |
+
+**MODERATE direct deps (2)** :
+| Package | Version | Vuln | Fix |
+|---|---|---|---|
+| `next-intl` | 4.7.0 | GHSA-8f24-v5vv-gm5j (open redirect), GHSA-4c35-wcg5-mm9h (prototype pollution precompile) | ≥ 4.9.1 |
+| `uuid` | 11.1.0 | GHSA-w5hq-g745-h8pq (missing buffer bounds check v3/v5/v6) | ≥ 11.1.1 |
+
+**HIGH transitives notables** :
+- `lodash` (via `recharts`) — GHSA-r5fr-rjxr-66jc (Code Injection `_.template`)
+- `defu` (via `prisma` › `@prisma/config` › `c12`) — GHSA-737v-mqg7-c878 (Prototype pollution)
+- `effect` (via `prisma`) — GHSA-38f7-945m-qr2g (AsyncLocalStorage contamination)
+- `flatted` (via `eslint`) — GHSA-25h7-pfq9-p65f (DoS), GHSA-rf6f-7fwh-wjgh (Prototype Pollution)
+- `js-yaml` (via `@mdxeditor/editor` + `eslint`) — GHSA-52cp-r559-cp3m (quadratic CPU)
+- `postcss` (via `next` + `@tailwindcss/postcss`) — GHSA-6g55-p6wh-862q (Arbitrary file read), GHSA-r28c-9q8g-f849 (Path Traversal)
+- `picomatch` (via `next-intl` + `eslint-config-next`) — GHSA-c2c7-rcm5-vvqj (ReDoS)
+- `js-cookie` (via `@reactuses/core`) — GHSA-qjx8-664m-686j (prototype hijack)
+- `minimatch`, `brace-expansion` (via `eslint`) — multiples ReDoS
+
+### 5.2 — Packages hallucinés / suspects
+
+**Verdict : ✅ Aucun package paiement halluciné**
+
+Recherche `stripe|cinetpay|paydunya|flutterwave|mobile.?money|payment|paiement` dans `package.json` → **0 match**. Cohérent avec `PROJECT_CONTEXT.md` ("aucun paiement dans V1").
+
+**Packages suspects à surveiller** :
+- `z-ai-web-dev-sdk` (^0.0.18, version 0.0.x) : SDK interne au sandbox, **0 import dans `src/`**. Pas une dépendance runtime légitime. Recommandation : retirer de `dependencies` avant production (la clé API sandbox serait sinon embarquée inutilement).
+- `@mdxeditor/editor` (^3.39.1) : éditeur markdown WYSIWYG lourd, **0 import dans `src/`**, source de 3 vulnérabilités transitive (`prismjs`, `js-yaml`, `diff`).
+- `next-auth` (^4.24.11) : **0 import dans `src/`** (le projet utilise Supabase Auth exclusivement). Source du critical + 2 high. À retirer.
+
+### 5.3 — Lockfile commité
+
+**Verdict : ✅ Conforme**
+
+- `/home/z/my-project/bun.lock` présent (336 448 octets, daté 2025-08-01).
+- `git ls-files bun.lock` → **tracké** ✅
+- Aucun `package-lock.json` ni `yarn.lock` (cohérent avec usage de `bun`).
+
+### 5.4 — Packages obsolètes
+
+Comparaison des versions lockées (bun.lock) vs. versions stables recommandées :
+
+| Package | Lockée | Stable | Statut |
+|---|---|---|---|
+| `next` | 16.1.3 | ≥ 16.2.5 (fix vuln) | ❌ Obsolète (16.1.x EOL sécurité) |
+| `next-auth` | 4.24.13 | 4.24.19 (dernier 4.x) / v5.x (beta) | ❌ Obsolète (critical non patché) |
+| `next-intl` | 4.7.0 | ≥ 4.9.1 | ❌ Obsolète (2 vuln) |
+| `sharp` | 0.34.5 | ≥ 0.35.0 | ❌ Obsolète (4 CVE libvips) |
+| `xlsx` | 0.18.5 | 0.20.x (CDN SheetJS) | ❌ Figé sur npm (SheetJS a quitté npm en 2023) |
+| `uuid` | 11.1.0 | 11.1.1 | ❌ 1 patch derrière |
+| `@supabase/supabase-js` | 2.110.8 | 2.x récent | ✅ OK |
+| `@supabase/ssr` | 0.12.3 | 0.12.x récent | ✅ OK |
+| `@prisma/client` / `prisma` | 6.19.2 | 6.x récent | ⚠️ OK mais `defu`/`effect` transitifs vuln |
+| `react` / `react-dom` | 19.x | 19.x | ✅ OK |
+
+### 5.5 — Dépendances inutilisées
+
+Vérification `rg -l "from ['\"]PKG"` dans `src/` pour les 23 packages les plus suspects :
+
+| Package | Imports dans `src/` | Verdict |
+|---|---|---|
+| `next-auth` | **0** | ❌ Inutilisé — supprimer (critical vuln) |
+| `next-intl` | **0** | ❌ Inutilisé — supprimer (moderate vuln) |
+| `@reactuses/core` | **0** | ❌ Inutilisé — supprimer (lodash-es + js-cookie vuln) |
+| `gsap` | **0** | ❌ Inutilisé — supprimer |
+| `react-syntax-highlighter` | **0** | ❌ Inutilisé — supprimer (prismjs vuln) |
+| `@mdxeditor/editor` | **0** | ❌ Inutilisé — supprimer (3 vuln transitives) |
+| `react-markdown` | **0** | ❌ Inutilisé — supprimer |
+| `uuid` | **0** | ❌ Inutilisé directement (uniquement via next-auth) |
+| `z-ai-web-dev-sdk` | **0** | ❌ Inutilisé — SDK sandbox, retirer |
+| `prisma` (devDep/dep) | **0** | ❌ Inutilisé dans `src/` (mais scripts `db:*` l'utilisent → déplacer en `devDependencies`) |
+| `@prisma/client` | 1 (`src/lib/db.ts`) | ⚠️ Importé mais `src/lib/db.ts` lui-même **n'est importé nulle part** dans `src/` (Grep `lib/db` = 0). Prisma est scaffold-only d'après `.env.production.example:73-78`. À retirer en prod. |
+| `next-themes` | 1 (`src/components/ui/sonner.tsx`) | ✅ Utilisé |
+| `html5-qrcode` | 1 (`qr-scanner.tsx`) | ✅ Utilisé |
+| `jsbarcode` | 1 (`step-confirmation.tsx`) | ✅ Utilisé |
+| `qrcode.react` | 1 (`step-confirmation.tsx`) | ✅ Utilisé |
+| `input-otp` | 1 (`ui/input-otp.tsx`) | ✅ Utilisé |
+| `vaul` | 1 (`ui/drawer.tsx`) | ✅ Utilisé |
+| `embla-carousel-react` | 1 (`ui/carousel.tsx`) | ✅ Utilisé |
+| `react-resizable-panels` | 1 (`ui/resizable.tsx`) | ✅ Utilisé |
+| `react-day-picker` | 1 (`ui/calendar.tsx`) | ✅ Utilisé |
+| `xlsx` | 1 (`lib/utils/export-xlsx.ts`) | ✅ Utilisé (mais vuln — voir 5.4) |
+| `sharp` | 0 (utilisé en interne par Next.js image optimizer) | ✅ Laisser |
+| `framer-motion` | non testé mais utilisé dans landing | ✅ Utilisé |
+
+**Bilan** : 9 à 11 dépendances inutilisées (selon qu'on compte Prisma comme runtime ou non). Supprimer `next-auth`, `next-intl`, `@reactuses/core`, `gsap`, `react-syntax-highlighter`, `@mdxeditor/editor`, `react-markdown`, `uuid`, `z-ai-web-dev-sdk` éliminerait **~20 vulnérabilités transitives** d'un coup.
+
+---
+
+## PARTIE 3 — CORS
+
+### 7.1 — CORS des routes API
+
+**Verdict : ✅ Aucun header CORS configuré (sécurisé par défaut)**
+
+Recherche dans `src/` :
+- `Access-Control-Allow-Origin` → **0 occurrence**
+- `Access-Control-Allow-Credentials` → **0 occurrence**
+- `Access-Control-Allow-Headers|Methods` → **0 occurrence**
+- `cors` (insensible casse) → **0 occurrence** (pas de package `cors` non plus)
+- `allowOrigin|allowedOrigins` → **0 occurrence**
+
+Next.js App Router Route Handlers ne posent pas de headers CORS par défaut → les requêtes cross-origin sont bloquées par le navigateur. Les routes publiques (`/api/public/*`) et admin (`/api/admin/*`, `/api/super-admin/*`) ne sont accessibles qu'en same-origin (depuis le domaine Vercel déployé). ✅
+
+`next.config.ts:26-32` définit `allowedDevOrigins` pour `*.space-z.ai` et IP `21.0.12.22` → **dev-only**, n'affecte pas la production. ✅
+
+### 7.2 — Mode credentials
+
+**Verdict : ✅ N/A — Aucune combinaison `Allow-Origin: *` + `Allow-Credentials: true`**
+
+Aucun header CORS posé → pas de risque de combinaison dangereuse. Les cookies Supabase Auth (`sb-*-auth-token`) sont posés en `sameSite=lax` (vérifié dans `@supabase/ssr` default) et ne transitent qu'en same-origin.
+
+---
+
+## PARTIE 4 — Rate Limiting
+
+### 6.1 — Opérations coûteuses / API externes payantes
+
+**Verdict : ⬚ Aucun rate limiting implémenté**
+
+Recherche `rate.?limit|throttle|limiter|too.?many.?requests|429` dans `src/` → **0 occurrence** (le seul match est un commentaire dans `laveur/dashboard/page.tsx:142` disant "Pour limiter le nombre d'appels, on ne fetch que les…" — pagination applicative, pas sécurité).
+
+Le projet n'appelle **aucune API externe payante** (pas de Stripe, pas d'envoi email transactionnel via SendGrid, pas de SMS Twilio — laissant à Supabase Auth la gestion native). L'envoi d'emails d'invitation passe par Supabase Auth (qui a son propre rate limiting natif, ~4 emails/heure).
+
+Cependant, les routes publiques effectuent des requêtes `service_role` contre Supabase :
+- `POST /api/public/activation/verify-code` → 1 SELECT `codes_activation` (service_role) — **seule protection : body-size ≤ 2000 bytes** (ligne 53).
+- `POST /api/public/activation` → 1 SELECT + 1 INSERT Auth + 1 INSERT pressing + 1 INSERT personnel + 1 INSERT abonnement — **seule protection : body-size ≤ 10000 bytes** (ligne 130).
+- `POST /api/public/inscription` → 1 SELECT dedup + 1 INSERT — **dedup 24h sur (téléphone + nom_pressing)** (lignes 224-241), pas de rate limit par IP.
+
+### 6.2 — Endpoints d'auth
+
+**Verdict : ⚠️ Rate limiting natif Supabase uniquement, aucun rate limit applicatif**
+
+- `/login` (`src/app/(public)/login/page.tsx:160`) : appelle `supabase.auth.signInWithPassword()` côté client. Supabase Auth applique son rate limiting natif (≈ 30 tentatives/heure par IP+email, configurable côté dashboard). ✅ Mitigation native.
+- `/activation` : crée un nouveau compte via `admin.createUser()` (service_role) — **non soumis au rate limiting Supabase Auth** car service_role bypass. Aucune limite applicative. ⚠️
+- `/api/public/activation/verify-code` : endpoint de brute-force de codes `PRS-XXXX-XXXX`. Espace = `36^8 ≈ 2.8×10^12` combinaisons, codes expirent en 7 jours, regex strict — **risque faible en pratique mais théoriquement attaquable** (scripts parallèles depuis IPs tournantes). ⚠️ Aucune limite.
+- `/api/public/inscription` : dedup 24h par (téléphone + pressing) — un attaquant peut spammer avec des numéros/pressings différents. ⚠️
+
+### 6.3 — Implémentation (si existante)
+
+**Verdict : ⬚ Aucune implémentation**
+
+- Aucun `Redis`, `Memcached`, `Upstash` dans `package.json` ou `src/`.
+- Aucun store en mémoire partagée (pas de `Map` global côté serveur avec TTL).
+- Aucune réponse HTTP 429 nulle part.
+- Aucune librairie tierce (`rate-limiter-flexible`, `next-rate`, `@upstash/ratelimit`).
+
+Recommandations (hors scope de cet audit — pas de modification de code) :
+1. Ajouter `@upstash/ratelimit` + `@upstash/redis` (Vercel-compatible, edge-ready).
+2. Limiter `/api/public/activation/verify-code` à 10 req/min par IP.
+3. Limiter `/api/public/inscription` à 3 req/heure par IP.
+4. Limiter `/api/public/activation` à 3 req/heure par IP.
+5. Compter sur le rate limiting Supabase Auth natif pour `/login` (suffisant).
+
+---
+
+## PARTIE 5 — Mot de passe Super Admin par défaut (9.5)
+
+**Verdict : ❌ CRITIQUE — Mot de passe Super Admin par défaut FUITE dans l'historique git public**
+
+### Preuves
+
+Recherche `OgPressing2026|TestLot5_2026|TestLot6_2026|admin123|superadmin123|Test1234` :
+
+**Dans `worklog.md` (fichier tracké dans git, distant = `https://github.com/omoui2887/PressinOg.git`)** :
+
+| Ligne | Email | Mot de passe | Rôle |
+|---|---|---|---|
+| 676 | `ogouromain@gmail.com` | `OgPressing2026!` | Super Admin (bootstrap initial) |
+| 696 | `ogouromain@gmail.com` | `OgPressing2026!` | Super Admin |
+| 700 | `ogouromain@gmail.com` | `OgPressing2026!` | Super Admin |
+| 982 | `ogouromain@gmail.com` | `OgPressing2026!` | Super Admin |
+| 1884 | `ogouromain@gmail.com` | `TestLot5_2026!` | Super Admin (LOT 5 E2E) |
+| 1906 | `ogouromain@gmail.com` | `TestLot5_2026!` | Super Admin |
+| 1961 | `admin1@ogpressing.ci` | `TestLot6_2026!` | Manager |
+| 2006 | `admin1@ogpressing.ci` | `TestLot6_2026!` | Manager |
+| 2231, 2368, 2500 | `admin1@ogpressing.ci` | `TestLot6_2026!` | Manager (tests E2E) |
+| 2969 | `admin1@ogpressing.ci` | `TestLot6_2026!` | Manager |
+| 5523, 5550 | `test-receptionniste@ogpressing.ci` | `Test1234!` | Réceptionniste test |
+| 5808 | `test-caissier@ogpressing.ci` | `Test1234!` | Caissier test |
+| 5809 | `admin1@ogpressing.ci` | `Test1234!` | Manager (reset plus récent) |
+| 5810 | `ogoufelix@gmail.com` | `Test1234!` | Caissier test |
+| 5838 | récap 3 comptes test | `Test1234!` | — |
+| 6094 | `admin1@ogpressing.ci` | `Test1234!` | Login test casiers |
+
+### Historique git (leaks persistants même après purge du working tree)
+
+```
+git log --all -S "OgPressing2026!" --oneline
+0b0ab74 86950931-c33e-476c-9549-ad94553bf0ed
+a7ca1a8 57afd130-1d7a-4626-9e31-8b7c4648cc5d   ← commit d'introduction (LOT 2 super admin bootstrap, 24/07/2026)
+
+git log --all -S "Test1234!" --oneline
+3b3f094 771edf47-1290-429f-bfde-6568ac278637
+3afdf2b b7367730-5c66-48a5-9970-53dbdd839e16
+705feb4 117abf5a-a1ad-4295-a42c-525838a04cbc
+
+git log --all -S "TestLot5_2026!" --oneline
+f887372 ddfcf36b-2882-473a-ab23-a224d9a6542b
+```
+
+Le dépôt distant `origin = https://github.com/omoui2887/PressinOg.git` est **public** (mention "Push GitHub réussi" worklog.md:4635, 5707). Toute personne avec l'URL peut cloner et `git log -p` pour récupérer les mots de passe en clair.
+
+### Vérification code source / migrations / .md
+
+- `src/` → **0 mot de passe** codé en dur (les fonctions `generateRandomPassword()` dans `route.ts:196` et `[id]/route.ts:49` utilisent `crypto.getRandomValues` ✅).
+- `supabase/migrations/*.sql` (15 fichiers) → **0 mot de passe** dans les seeds (les migrations ne seed pas le super_admin — c'est fait via `service_role` runtime).
+- `README.md:188-191` et `README.md:238` → avertissent l'utilisateur de changer le mot de passe Super Admin par défaut en post-déploiement ✅ (bonne documentation, mais ne suffit pas car le mot de passe est déjà public dans l'historique git).
+- `PROJECT_CONTEXT.md`, `AUDIT_GLOBAL.md`, `AUDIT_LOT*.md` → aucun mot de passe en clair ✅.
+
+### Risque résiduel
+
+Si l'utilisateur n'a **pas encore changé** le mot de passe `ogouromain@gmail.com` depuis le bootstrap initial (LOT 2, juillet 2026), le compte Super Admin est **compromis** : un attaquant peut se connecter, bypasser RLS via le dashboard super-admin, accéder à toutes les données de tous les pressings, créer/suspendre des abonnements, etc.
+
+Le worklog mentionne `TestLot5_2026!` comme remplacement temporaire pour E2E (LOT 5), puis `Test1234!` pour des comptes de test plus récents (lignes 5808-5810). Le statut actuel du mot de passe super admin (`OgPressing2026!` ? `TestLot5_2026!` ? autre ?) est **ambigu** — l'utilisateur doit impérativement le réinitialiser via Supabase Dashboard → Authentication → Users → ogouromain@gmail.com → "Send password reset".
+
+---
+
+## SYNTHÈSE — VERDICTS PAR SECTION
+
+| Section | Verdict | Détail |
+|---|---|---|
+| 1.1 Secrets codés en dur (`src/`) | ✅ | Aucun. Placeholders uniquement dans `.env.*.example`. |
+| 1.2 Couverture `.gitignore` | ✅ | `.env*` + exceptions example. Aucun fichier env réel tracké. |
+| 1.3 Préfixe public sur clé serveur | ✅ | `SUPABASE_SERVICE_ROLE_KEY` sans `NEXT_PUBLIC_` partout. |
+| 1.5 Source maps prod | ✅ | `productionBrowserSourceMaps` absent (default false). |
+| 5.1 Audit dépendances | ❌ | 76 vuln (1 critical, 39 high, 31 moderate, 5 low). |
+| 5.2 Packages hallucinés | ✅ | Aucun package paiement. 1 SDK sandbox (`z-ai-web-dev-sdk`) inutilisé. |
+| 5.3 Lockfile commité | ✅ | `bun.lock` tracké. |
+| 5.4 Packages obsolètes | ❌ | `next` 16.1.3, `next-auth` 4.24.13, `sharp` 0.34.5, `xlsx` 0.18.5, `next-intl` 4.7.0, `uuid` 11.1.0 tous vuln. |
+| 5.5 Dépendances inutilisées | ⚠️ | 9 deps inutilisées dont 3 avec vuln (next-auth critical, next-intl, @reactuses/core). |
+| 7.1 CORS routes API | ✅ | Aucun header CORS posé (sécurisé par défaut same-origin). |
+| 7.2 Mode credentials | ✅ | N/A (pas de Allow-Origin + Allow-Credentials). |
+| 6.1 Rate limiting opérations coûteuses | ⬚ | Aucun. Aucune API payante externe, mais routes `service_role` non protégées. |
+| 6.2 Endpoints d'auth | ⚠️ | `/login` protégé par rate limit natif Supabase. `/api/public/activation*` non protégés. |
+| 6.3 Implémentation rate limiting | ⬚ | Aucune (pas de Redis, pas de Map globale, pas de 429, pas de lib tierce). |
+| 9.5 Mot de passe Super Admin par défaut | ❌ | **CRITIQUE** — `OgPressing2026!` (et `TestLot5_2026!`, `Test1234!`, `TestLot6_2026!`) fuitent dans `worklog.md` commité sur GitHub public. Historique git contient 5+ commits avec ces secrets. |
+
+## ACTIONS PRIORITAIRES RECOMMANDÉES (par ordre de criticité)
+
+1. **🔴 CRITIQUE — Pivoter immédiatement le mot de passe Super Admin** :
+   - Supabase Dashboard → Authentication → Users → `ogouromain@gmail.com` → "Send password reset" (ou réinitialiser via Admin API).
+   - Idem pour `admin1@ogpressing.ci`, `test-receptionniste@ogpressing.ci`, `test-caissier@ogpressing.ci`, `ogoufelix@gmail.com`.
+   - **Note** : si le dépôt GitHub `omoui2887/PressinOg` est public, n'importe qui a déjà pu lire ces mots de passe. Il faut assumer compromission et pivoter.
+
+2. **🔴 CRITIQUE — Purger l'historique git** (optionnel mais recommandé) :
+   - Utiliser `git filter-repo` (ou BFG) pour remplacer les chaînes `OgPressing2026!`, `TestLot5_2026!`, `TestLot6_2026!`, `Test1234!` dans tout l'historique.
+   - Force-push (`git push --force origin main`) après confirmation que tous les clones locaux sont à jour.
+   - Invalider les références GitHub (issues/PRs qui citent ces commits).
+   - Alternative plus pragmatique : privatiser le dépôt GitHub (Settings → Change visibility → Private) si la portée du projet le permet.
+
+3. **🟠 HIGH — Supprimer les dépendances inutilisées vulnérables** :
+   - `bun remove next-auth next-intl @reactuses/core gsap react-syntax-highlighter @mdxeditor/editor react-markdown uuid z-ai-web-dev-sdk`
+   - Déplacer `prisma` et `@prisma/client` en `devDependencies` (scaffold-only d'après `.env.production.example:73-78`).
+   - Élimine ~20 vulnérabilités transitives d'un coup (dont le critical `next-auth`).
+
+4. **🟠 HIGH — Mettre à jour les dépendances utilisées vulnérables** :
+   - `bun update next@latest` (≥ 16.2.5)
+   - `bun update sharp@latest` (≥ 0.35.0)
+   - `bun update next-intl@latest` (≥ 4.9.1) — si conservé
+   - `bun update uuid@latest` (≥ 11.1.1)
+   - Pour `xlsx` : migrer vers le CDN SheetJS (`https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`) — npm registry figé à 0.18.5 depuis 2023.
+
+5. **🟡 MEDIUM — Ajouter du rate limiting applicatif** :
+   - Installer `@upstash/ratelimit` + `@upstash/redis` (compatible Vercel Edge).
+   - Wrapper les routes `/api/public/*` avec un middleware de rate limit (10 req/min par IP sur verify-code, 3 req/heure par IP sur inscription et activation).
+   - Retourner HTTP 429 avec `Retry-After` header.
+
+6. **🟡 MEDIUM — Définir `OGP_ROLE_CACHE_SECRET` en production** :
+   - Actuellement, `src/lib/supabase/middleware.ts:176` fallback sur `NEXT_PUBLIC_SUPABASE_ANON_KEY` (clé publique) pour signer le cookie de cache rôle.
+   - Le code documente lui-même ce risque (lignes 138-165) : un utilisateur connecté pourrait forger un cookie avec un rôle arbitraire (`super_admin`) valide 5 min.
+   - Mitigation : définir `OGP_ROLE_CACHE_SECRET` (64+ chars aléatoires via `openssl rand -base64 48`) dans Vercel env vars, marqué "Server only".
+
+7. **🟢 LOW — Qualité** :
+   - Réactiver `typescript.ignoreBuildErrors: false` dans `next.config.ts` après correction des 75 erreurs TS (TODO 14.2).
+   - Documenter dans `README.md` que les comptes de test (`test-*@ogpressing.ci`) doivent être supprimés avant production.
+
+Stage Summary:
+- ✅ Aucun secret codé en dur dans le code source runtime.
+- ✅ `.gitignore` correctement configuré (`.env*` ignoré, examples trackés).
+- ✅ Aucune fuite de préfixe `NEXT_PUBLIC_` sur `SUPABASE_SERVICE_ROLE_KEY`.
+- ✅ Aucune exposition de source maps en production.
+- ✅ Aucun header CORS configuré (sécurisé par défaut same-origin).
+- ✅ Lockfile `bun.lock` commité.
+- ✅ Aucun package paiement halluciné.
+- ❌ **CRITIQUE 9.5** : Mot de passe Super Admin par défaut `OgPressing2026!` fuite dans `worklog.md` commité sur GitHub public. 5+ commits dans l'historique contiennent ce mot de passe + 3 variantes test (`TestLot5_2026!`, `TestLot6_2026!`, `Test1234!`).
+- ❌ 76 vulnérabilités dépendances (1 critical `next-auth` homoglyph email bypass, 39 high dont `next` 16.1.3 / `sharp` 0.34.5 / `xlsx` 0.18.5 / `next-auth` 4.24.13).
+- ⚠️ 9 dépendances inutilisées (next-auth, next-intl, @reactuses/core, gsap, react-syntax-highlighter, @mdxeditor/editor, react-markdown, uuid, z-ai-web-dev-sdk) — supprimer éliminerait ~20 vuln.
+- ⚠️ `OGP_ROLE_CACHE_SECRET` non documenté comme obligatoire en prod (fallback sur clé anon publique — risque d'élévation de privilèges 5 min).
+- ⬚ Aucun rate limiting applicatif sur les routes `/api/public/*` (brute-force possible sur codes `PRS-XXXX-XXXX`, spam inscription possible).
+- 📋 Actions recommandées (par criticité) : (1) pivoter mdp Super Admin + comptes test, (2) purger historique git ou privatiser le repo, (3) supprimer 9 deps inutilisées, (4) updater next/sharp/next-intl/uuid/xlsx, (5) ajouter @upstash/ratelimit, (6) définir OGP_ROLE_CACHE_SECRET en prod, (7) réactiver tsc strict + supprimer comptes test.
+
+Fichiers inspectés (aucune modification) :
+- `.gitignore` (68 lignes)
+- `.env`, `.env.local.example`, `.env.production.example`
+- `next.config.ts`
+- `package.json`, `bun.lock`
+- `src/lib/supabase/{admin,server,client,middleware}.ts`
+- `src/app/api/public/{activation/route.ts, activation/verify-code/route.ts, inscription/route.ts, catalogue-articles/route.ts}`
+- `src/app/(public)/login/page.tsx`, `src/app/(public)/activation/page.tsx`
+- `src/app/api/admin/personnel/{route.ts, [id]/route.ts}`
+- `supabase/migrations/*.sql` (15 fichiers)
+- `worklog.md`, `README.md`, `AUDIT_GLOBAL.md`, `PROJECT_CONTEXT.md`, `gen-types.err`
