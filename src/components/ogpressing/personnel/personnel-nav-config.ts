@@ -15,10 +15,10 @@
  *   - receptionniste : tableau de bord, nouvelle commande, commandes, clients, scanner QR
  *   - caissier       : tableau de bord, encaisser, clients (lecture)
  *   - laveur         : tableau de bord, mes commandes
- *   - repassage      : tableau de bord, mes commandes
+ *   - repassage      : tableau de bord, mes commandes, casiers
  *   - livreur        : tableau de bord, commandes à livrer
  *   - comptable      : tableau de bord, rapports, clients (lecture)
- *   - manager        : tableau de bord, nouvelle commande, commandes, clients, stock, rapports, scanner QR
+ *   - manager        : tableau de bord, nouvelle commande, commandes, casiers, clients, stock, rapports, scanner QR
  */
 import {
   LayoutDashboard,
@@ -29,6 +29,7 @@ import {
   Wallet,
   BarChart3,
   Package,
+  Archive,
   type LucideIcon,
 } from "lucide-react";
 import type { DashboardNavItem } from "@/components/ogpressing/dashboard-layout";
@@ -119,6 +120,11 @@ export const NAV_ITEMS_BY_ROLE: Record<PersonnelRole, PersonnelNavItem[]> = {
       label: "Mes commandes assignées",
       icon: List,
     },
+    {
+      href: "/personnel/repassage/casiers",
+      label: "Casiers",
+      icon: Archive,
+    },
   ],
   livreur: [
     {
@@ -166,6 +172,11 @@ export const NAV_ITEMS_BY_ROLE: Record<PersonnelRole, PersonnelNavItem[]> = {
       icon: List,
     },
     {
+      href: "/personnel/manager/casiers",
+      label: "Casiers",
+      icon: Archive,
+    },
+    {
       href: "/personnel/manager/clients",
       label: "Clients",
       icon: Users,
@@ -194,8 +205,13 @@ export const NAV_ITEMS_BY_ROLE: Record<PersonnelRole, PersonnelNavItem[]> = {
 export const MORE_ITEMS_BY_ROLE: Partial<
   Record<PersonnelRole, PersonnelNavItem[]>
 > = {
-  // Le Manager a 7 items → 5 principaux + 2 dans "Plus" (Stock, Scanner QR)
+  // Le Manager a 8 items → 5 principaux + 3 dans "Plus" (Casiers, Stock, Scanner QR)
   manager: [
+    {
+      href: "/personnel/manager/casiers",
+      label: "Casiers",
+      icon: Archive,
+    },
     {
       href: "/personnel/manager/stock",
       label: "Stock",
@@ -288,6 +304,11 @@ export const BOTTOM_NAV_MAIN_BY_ROLE: Record<
       href: "/personnel/repassage/commandes",
       label: "Mes commandes",
       icon: List,
+    },
+    {
+      href: "/personnel/repassage/casiers",
+      label: "Casiers",
+      icon: Archive,
     },
   ],
   livreur: [

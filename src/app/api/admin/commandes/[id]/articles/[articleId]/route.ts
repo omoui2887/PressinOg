@@ -6,8 +6,14 @@
  * réceptionniste, laveur, repassage) de faire avancer un article dans le
  * workflow : recu → en_traitement → lave → repasse → pret → retire/livre.
  *
- * Body JSON : { statut: StatutArticle }
- * Réponse    : { success: true, data: { id, statut } }
+ * Body JSON : {
+ *   statut: StatutArticle,                  // obligatoire
+ *   zone_stockage?: string | null,          // optionnel — casier (ex: "A1")
+ *                                            //   - renseigné quand statut cible = "pret"
+ *                                            //   - ignoré (forcé à null) pour les autres statuts
+ *                                            //   - format: 1-10 caractères alphanumériques
+ * }
+ * Réponse    : { success: true, data: { id, statut, zone_stockage, date_rangeement } }
  *
  * 🔒 SÉCURITÉ :
  *   - getSupabaseServer() (client anon + JWT) → RLS `isolation_pressing`.
@@ -28,6 +34,22 @@
  *   - Les rôles "manager" peuvent forcer une transition arbitraire
  *     (override manuel pour intervention).
  *   - 409 si transition refusée.
+ *
+ * 🗄️ GESTION DES CASIERS (CASIER-FIX-V1) :
+ *   - Si `statut` cible = "pret" et `zone_stockage` fourni : on enregistre
+ *     le casier + date_rangeement = NOW() + rangee_par = personnel connecté.
+ *   - Si `statut` cible = "pret" mais `zone_stockage` non fourni : on
+ *     accepte (le casier peut être assigné plus tard via un 2e PATCH ou
+ *     via la page Casiers).
+ *   - Si `statut` cible ≠ "pret" (recu, en_traitement, lave, repasse,
+ *     retire, livre) : `zone_stockage` est ignoré et forcé à NULL
+ *     (libération du casier). Cas particulier : pour "retire" et "livre",
+ *     on vide explicitement zone_stockage + date_rangeement + rangee_par
+ *     pour libérer le casier physique.
+ *   - Robustesse : si la colonne `zone_stockage` n'existe pas en DB
+ *     (migration 015 non appliquée), on retombe sur l'UPDATE simple sans
+ *     zone_stockage (l'erreur PostgREST est captée et l'UPDATE est retry
+ *     sans les colonnes de casier).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
@@ -47,6 +69,12 @@ type StatutArticleValid = (typeof STATUT_ARTICLE_VALID)[number];
 interface RouteParams {
   params: Promise<{ id: string; articleId: string }>;
 }
+
+/** Regex de validation du code casier (1-10 alphanumériques). */
+const ZONE_STOCKAGE_REGEX = /^[A-Za-z0-9]{1,10}$/;
+
+/** Statuts terminaux qui libèrent le casier. */
+const STATUTS_LIBERATION_CASIER = new Set<string>(["retire", "livre"]);
 
 export async function PATCH(
   request: NextRequest,
@@ -114,25 +142,81 @@ export async function PATCH(
 
   const statutValid = statut as StatutArticleValid;
 
+  // Validation du zone_stockage (optionnel, mais si fourni doit être valide)
+  const zoneStockageRaw = body.zone_stockage;
+  let zoneStockage: string | null = null;
+  if (zoneStockageRaw !== undefined && zoneStockageRaw !== null) {
+    if (typeof zoneStockageRaw !== "string") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "zone_stockage doit être une chaîne de caractères",
+        },
+        { status: 400 }
+      );
+    }
+    const trimmed = zoneStockageRaw.trim().toUpperCase();
+    if (trimmed === "") {
+      zoneStockage = null;
+    } else if (!ZONE_STOCKAGE_REGEX.test(trimmed)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "zone_stockage invalide : 1 à 10 caractères alphanumériques (ex: A1, B2, C10)",
+        },
+        { status: 400 }
+      );
+    } else {
+      zoneStockage = trimmed;
+    }
+  }
+
   // --- Fetch du statut actuel de l'article (pour valider la transition) ---
-  const { data: articleExistant, error: fetchErr } = await supabase
+  // On essaie d'abord avec les colonnes de casier (migration 015 appliquée),
+  // puis sans (fallback robuste).
+  const { data: articleExistantRiche, error: fetchErrRiche } = await supabase
     .from("articles_vetements")
-    .select("id, statut")
+    .select("id, statut, zone_stockage")
     .eq("id", articleId)
     .eq("commande_id", commandeId)
     .maybeSingle();
 
-  if (fetchErr) {
-    console.error(
-      "[api/admin/commandes/[id]/articles/[articleId]] Erreur SELECT article:",
-      fetchErr
-    );
-    return NextResponse.json(
-      { success: false, error: "Erreur lors de la récupération de l'article" },
-      { status: 500 }
-    );
-  }
-  if (!articleExistant) {
+  let statutActuel: string | null;
+  let casierColumnExists = true;
+
+  if (fetchErrRiche) {
+    // La colonne zone_stockage n'existe probablement pas (migration 015
+    // non appliquée). On retente sans cette colonne.
+    casierColumnExists = false;
+    const { data: articleExistantMin, error: fetchErrMin } = await supabase
+      .from("articles_vetements")
+      .select("id, statut")
+      .eq("id", articleId)
+      .eq("commande_id", commandeId)
+      .maybeSingle();
+
+    if (fetchErrMin) {
+      console.error(
+        "[api/admin/commandes/[id]/articles/[articleId]] Erreur SELECT article (minimal):",
+        fetchErrMin
+      );
+      return NextResponse.json(
+        { success: false, error: "Erreur lors de la récupération de l'article" },
+        { status: 500 }
+      );
+    }
+    if (!articleExistantMin) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Article introuvable (vérifiez l'ID et la commande associée)",
+        },
+        { status: 404 }
+      );
+    }
+    statutActuel = articleExistantMin.statut as string | null;
+  } else if (!articleExistantRiche) {
     return NextResponse.json(
       {
         success: false,
@@ -140,9 +224,9 @@ export async function PATCH(
       },
       { status: 404 }
     );
+  } else {
+    statutActuel = articleExistantRiche.statut as string | null;
   }
-
-  const statutActuel = articleExistant.statut as string | null;
 
   // --- Guard de transition (WORKFLOW-FIX-V1) ---
   // Vérifie que from → to est autorisé par la matrice. Les managers peuvent
@@ -171,14 +255,84 @@ export async function PATCH(
     );
   }
 
+  // --- Construction du payload UPDATE ---
+  // Si la migration 015 n'est pas appliquée, on fait un UPDATE simple sans
+  // les colonnes de casier (la fonctionnalité casier est désactivée mais
+  // le workflow continue de fonctionner).
+  const nowIso = new Date().toISOString();
+
+  // Statuts qui libèrent le casier (retire, livre) → on vide les champs
+  const libereCasier = STATUTS_LIBERATION_CASIER.has(statutValid);
+
+  // Pour "pret" : on applique zone_stockage si fourni
+  // Pour "retire"/"livre" : on vide zone_stockage, date_rangeement, rangee_par
+  // Pour les autres statuts : on ne touche pas au casier existant
+  //   (sauf si l'appelant a explicitement passé zone_stockage=null pour le vider)
+  let updatePayload: Record<string, unknown>;
+  let updateSelect = "id, statut";
+
+  if (casierColumnExists) {
+    updateSelect = "id, statut, zone_stockage, date_rangeement";
+
+    if (statutValid === "pret") {
+      if (zoneStockageRaw === undefined) {
+        // Pas de champ zone_stockage dans le body → on garde le casier
+        // existant (peut être assigné plus tard). On met juste à jour le statut.
+        updatePayload = { statut: statutValid };
+      } else if (zoneStockage === null) {
+        // zone_stockage explicitement null → libérer le casier
+        // (bouton "Libérer le casier" dans l'UI CommandeDetail).
+        updatePayload = {
+          statut: statutValid,
+          zone_stockage: null,
+          date_rangeement: null,
+          rangee_par: null,
+        };
+      } else {
+        // zone_stockage fourni et valide → assigner le casier
+        updatePayload = {
+          statut: statutValid,
+          zone_stockage: zoneStockage,
+          date_rangeement: nowIso,
+          rangee_par: me.id,
+        };
+      }
+    } else if (libereCasier) {
+      // retire / livre → libération du casier
+      updatePayload = {
+        statut: statutValid,
+        zone_stockage: null,
+        date_rangeement: null,
+        rangee_par: null,
+      };
+    } else {
+      // recu / en_traitement / lave / repasse
+      // Si l'appelant a explicitement passé zone_stockage=null, on vide.
+      // Sinon on ne touche pas au casier.
+      if (zoneStockageRaw === null) {
+        updatePayload = {
+          statut: statutValid,
+          zone_stockage: null,
+          date_rangeement: null,
+          rangee_par: null,
+        };
+      } else {
+        updatePayload = { statut: statutValid };
+      }
+    }
+  } else {
+    // Migration 015 non appliquée — UPDATE simple
+    updatePayload = { statut: statutValid };
+  }
+
   // UPDATE avec double filtre id + commande_id (sécurité défensive en plus
   // de RLS). RLS isole par pressing via la commande parent.
   const { data: updated, error: updateErr } = await supabase
     .from("articles_vetements")
-    .update({ statut: statutValid })
+    .update(updatePayload)
     .eq("id", articleId)
     .eq("commande_id", commandeId)
-    .select("id, statut")
+    .select(updateSelect)
     .maybeSingle();
 
   if (updateErr) {
