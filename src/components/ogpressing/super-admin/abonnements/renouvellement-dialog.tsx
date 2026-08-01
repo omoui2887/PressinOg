@@ -26,6 +26,14 @@
  *   3. L'API insère une ligne dans `paiements` (abonnement_id renseigné) et
  *      met à jour l'abonnement (date_fin + 1 mois, statut='actif', etc.).
  *
+ * 🔒 SÉCURITÉ (REMEDIATE-STORAGE — AUDIT Conclusion #2) :
+ *   Le bucket `justificatifs` est désormais PRIVÉ (migration 016) et accessible
+ *   UNIQUEMENT au Super Admin via la policy RLS `justificatifs_select_sa`.
+ *   La colonne `justificatif_url` stocke désormais le PATH Storage (plus une
+ *   URL publique ou une signed URL permanente). La lecture se fait via la
+ *   route serveur /api/super-admin/abonnements/[id]/justificatif-url qui
+ *   génère une signed URL valide 1 HEURE (et non 10 ans comme avant).
+ *
  * Submit : on success, toast + appelle onRenewed (le parent rafraîchit la liste).
  */
 "use client";
@@ -165,9 +173,14 @@ export function RenouvellementDialog({
   }
 
   /**
-   * Upload le justificatif vers le bucket Storage `justificatifs`.
-   * Retourne l'URL publique (ou signed URL) du fichier, ou null si l'upload
-   * échoue ou si aucun fichier n'a été fourni.
+   * Upload le justificatif vers le bucket Storage PRIVÉ `justificatifs`.
+   * Retourne le PATH Storage (pas une URL publique ni une signed URL permanente)
+   * du fichier, ou null si l'upload échoue ou si aucun fichier n'a été fourni.
+   *
+   * 🔒 Le bucket `justificatifs` est privé et accessible uniquement au Super
+   *    Admin (RLS policy `justificatifs_select_sa`). La lecture se fait via
+   *    la route serveur /api/super-admin/abonnements/[id]/justificatif-url
+   *    qui génère une signed URL valide 1 heure.
    */
   async function uploadJustificatif(): Promise<string | null> {
     if (!form.justificatif) return null;
@@ -187,20 +200,10 @@ export function RenouvellementDialog({
       if (upErr) {
         throw upErr;
       }
-      // On tente l'URL publique ; si le bucket n'est pas public, on demande
-      // une signed URL valable 10 ans (pour usage archive).
-      const { data: pub } = supabase.storage
-        .from("justificatifs")
-        .getPublicUrl(path);
-      if (pub?.publicUrl) return pub.publicUrl;
-
-      const { data: signed, error: sErr } = await supabase.storage
-        .from("justificatifs")
-        .createSignedUrl(path, 60 * 60 * 24 * 365 * 10);
-      if (sErr || !signed?.signedUrl) {
-        throw sErr ?? new Error("Signed URL indisponible");
-      }
-      return signed.signedUrl;
+      // On retourne le PATH Storage (pas une URL publique ni une signed URL
+      // permanente). La lecture se fera via la route serveur dédiée qui
+      // génère une signed URL valide 1 heure (cf. REMEDIATE-STORAGE).
+      return path;
     } catch (err) {
       console.warn(
         "[renouvellement] Échec upload justificatif (continuons sans) :",

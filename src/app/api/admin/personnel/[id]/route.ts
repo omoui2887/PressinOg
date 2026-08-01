@@ -6,8 +6,11 @@
  * PATCH — actions sur le statut + modification des infos :
  *   Body { action: "desactiver" }   → statut='desactive', actif=false, date_desactivation=NOW()
  *   Body { action: "reactiver" }    → statut='actif', actif=true, date_desactivation=NULL
- *   Body { action: "modifier", nom, prenom, telephone, email, role }
+ *   Body { action: "modifier", nom, prenom, telephone, email, role,
+ *          modes_paiement_autorises?, nom_affiche_recu?, seuil_alerte_impaye? }
  *                                   → UPDATE nom_complet, telephone, email, role
+ *                                     + champs caissier si la cible est/become caissier
+ *                                     (AUDIT 9.7 — fix migration 019)
  *
  * POST — actions sur l'authentification (nécessitent service_role) :
  *   Body { action: "reset_password" }
@@ -28,6 +31,10 @@
  *   - Les opérations Auth (reset password, resend invitation) utilisent
  *     getSupabaseAdmin() (service_role) car ces opérations Admin Auth sont
  *     impossibles avec la clé anon.
+ *   - FIX AUDIT 9.7 : les champs caissier (modes_paiement_autorises,
+ *     nom_affiche_recu, seuil_alerte_impaye) ne sont acceptés QUE si la
+ *     cible est caissier (role courant OU nouveau role transmis dans le
+ *     body). Sinon → 400 "Ces champs ne s'appliquent qu'aux caissiers".
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
@@ -44,6 +51,27 @@ const ROLES_VALID_SET = new Set([
   "livreur",
   "comptable",
 ]);
+
+/**
+ * Modes de paiement autorisés dans le champ JSONB du même nom
+ * (AUDIT 9.7 — migration 019). L'enum `methode_paiement` (migration 001)
+ * ne contient que 3 valeurs (especes, mobile_money, carte_bancaire),
+ * mais le champ `modes_paiement_autorises` accepte un sur-ensemble
+ * pour permettre une extension future sans casser la base.
+ */
+const MODES_PAIEMENT_VALIDES = new Set([
+  "especes",
+  "mobile_money",
+  "carte",
+  "cheque",
+  "virement",
+]);
+
+/** Sélecteur de colonnes renvoyé après un UPDATE (commun à plusieurs actions). */
+const PERSONNEL_SELECT_AFTER_UPDATE =
+  "id, nom_complet, email, telephone, role, methode_creation, statut_compte, " +
+  "date_invitation, date_activation, date_desactivation, actif, created_at, " +
+  "modes_paiement_autorises, nom_affiche_recu, seuil_alerte_impaye";
 
 /** Génère un mot de passe aléatoire sécurisé de 10 caractères. */
 function generateRandomPassword(): string {
@@ -210,7 +238,7 @@ export async function PATCH(
     });
   }
 
-  // ---- Action: modifier (infos personnelles + rôle) ----
+  // ---- Action: modifier (infos personnelles + rôle + champs caissier) ----
   if (action === "modifier") {
     const nom = typeof body.nom === "string" ? body.nom.trim() : "";
     const prenom = typeof body.prenom === "string" ? body.prenom.trim() : "";
@@ -234,13 +262,20 @@ export async function PATCH(
       );
     }
 
-    const email = emailRaw || null;
-    const nomComplet = `${prenom} ${nom}`;
+    // ---- Champs caissier optionnels (AUDIT 9.7 — migration 019) ----
+    // Trois champs dédiés : modes_paiement_autorises, nom_affiche_recu,
+    // seuil_alerte_impaye. Ils ne sont acceptés QUE si la cible est
+    // caissier (role courant) ou DEVIENT caissier (nouveau role).
+    const aChampsCaissier =
+      body.modes_paiement_autorises !== undefined ||
+      body.nom_affiche_recu !== undefined ||
+      body.seuil_alerte_impaye !== undefined;
 
-    // Vérifie que la cible existe + appartient au même pressing
+    // Vérifie que la cible existe + appartient au même pressing.
+    // On récupère aussi `role` pour valider la condition caissier.
     const { data: target } = await supabase
       .from("personnel")
-      .select("id, pressing_id, email, telephone")
+      .select("id, pressing_id, email, telephone, role")
       .eq("id", targetId)
       .maybeSingle();
 
@@ -257,6 +292,112 @@ export async function PATCH(
         { status: 403 }
       );
     }
+
+    // Condition caissier : role courant OU nouveau role
+    const estOuDevientCaissier =
+      target.role === "caissier" || role === "caissier";
+    if (aChampsCaissier && !estOuDevientCaissier) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Ces champs ne s'appliquent qu'aux caissiers. L'employé ciblé n'est pas caissier et ne le devient pas via cette modification.",
+          code: "CHAMPS_CAISSIER_SUR_NON_CAISSIER",
+        },
+        { status: 400 }
+      );
+    }
+
+    // ---- Validation des champs caissier fournis ----
+    const updateCaissier: Record<string, unknown> = {};
+
+    if (body.modes_paiement_autorises !== undefined) {
+      const rawModes = body.modes_paiement_autorises;
+      if (!Array.isArray(rawModes)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "modes_paiement_autorises doit être un tableau de chaînes.",
+          },
+          { status: 400 }
+        );
+      }
+      // Filtre les éléments non-string (sécurité)
+      const modes = rawModes.filter(
+        (m): m is string => typeof m === "string" && m.length > 0
+      );
+      if (modes.length === 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "modes_paiement_autorises doit contenir au moins un mode de paiement.",
+          },
+          { status: 400 }
+        );
+      }
+      const invalides = modes.filter((m) => !MODES_PAIEMENT_VALIDES.has(m));
+      if (invalides.length > 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `modes_paiement_autorises contient des valeurs invalides : ${invalides.join(", ")}. Valeurs attendues : especes, mobile_money, carte, cheque, virement.`,
+          },
+          { status: 400 }
+        );
+      }
+      // Doublon : on déduplique pour éviter les entrées répétées.
+      const modesUniques = Array.from(new Set(modes));
+      updateCaissier.modes_paiement_autorises = modesUniques;
+    }
+
+    if (body.nom_affiche_recu !== undefined) {
+      const nomAffiche =
+        typeof body.nom_affiche_recu === "string"
+          ? body.nom_affiche_recu.trim()
+          : "";
+      // Autorise la chaîne vide → on la convertit en NULL pour retomber
+      // sur nom_complet côté affichage reçu.
+      if (nomAffiche.length > 100) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "nom_affiche_recu ne peut pas dépasser 100 caractères.",
+          },
+          { status: 400 }
+        );
+      }
+      updateCaissier.nom_affiche_recu = nomAffiche || null;
+    }
+
+    if (body.seuil_alerte_impaye !== undefined) {
+      const seuilRaw = body.seuil_alerte_impaye;
+      const seuil =
+        typeof seuilRaw === "number"
+          ? seuilRaw
+          : parseInt(String(seuilRaw ?? ""), 10);
+      if (
+        !Number.isFinite(seuil) ||
+        !Number.isInteger(seuil) ||
+        seuil < 0 ||
+        seuil > 1_000_000
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "seuil_alerte_impaye doit être un entier entre 0 et 1 000 000 FCFA.",
+          },
+          { status: 400 }
+        );
+      }
+      updateCaissier.seuil_alerte_impaye = seuil;
+    }
+
+    const email = emailRaw || null;
+    const nomComplet = `${prenom} ${nom}`;
 
     // Anti-doublon (email/téléphone) — exclut l'employé courant
     if (email || telephone) {
@@ -291,11 +432,10 @@ export async function PATCH(
         telephone,
         email,
         role,
+        ...updateCaissier,
       })
       .eq("id", targetId)
-      .select(
-        "id, nom_complet, email, telephone, role, methode_creation, statut_compte, date_invitation, date_activation, date_desactivation, actif, created_at"
-      )
+      .select(PERSONNEL_SELECT_AFTER_UPDATE)
       .maybeSingle();
 
     if (updateErr) {
@@ -406,10 +546,11 @@ export async function POST(
 
     if (updateAuthErr) {
       console.error("[api/admin/personnel/[id] POST reset_password] Auth error:", updateAuthErr);
+      // Sécurité (audit #8) : masque le message Supabase brut.
       return NextResponse.json(
         {
           success: false,
-          error: `Erreur lors de la réinitialisation : ${updateAuthErr.message}`,
+          error: "Erreur interne du serveur",
         },
         { status: 500 }
       );
@@ -481,10 +622,11 @@ export async function POST(
 
     if (inviteErr) {
       console.error("[api/admin/personnel/[id] POST resend_invitation] error:", inviteErr);
+      // Sécurité (audit #8) : masque le message Supabase brut.
       return NextResponse.json(
         {
           success: false,
-          error: `Erreur lors du renvoi : ${inviteErr.message}`,
+          error: "Erreur interne du serveur",
         },
         { status: 500 }
       );

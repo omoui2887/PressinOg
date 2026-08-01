@@ -78,13 +78,19 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
     return null
   }
 
+  // Sécurité (audit #9 / CSS-injection) : échappe l'`id` avant de l'insérer
+  // dans un sélecteur CSS via dangerouslySetInnerHTML. Sans cela, un id
+  // user-controlled contenant des méta-caractères CSS (espaces, [, ], {, })
+  // pourrait casser le sélecteur voire injecter du CSS arbitraire.
+  const safeId = escapeChartId(id)
+
   return (
     <style
       dangerouslySetInnerHTML={{
         __html: Object.entries(THEMES)
           .map(
             ([theme, prefix]) => `
-${prefix} [data-chart=${id}] {
+${prefix} [data-chart=${safeId}] {
 ${colorConfig
   .map(([key, itemConfig]) => {
     const color =
@@ -100,6 +106,18 @@ ${colorConfig
       }}
     />
   )
+}
+
+/**
+ * Échappe un identifiant pour usage sûr dans un sélecteur CSS.
+ * Utilise `CSS.escape` (disponible dans tous les navigateurs modernes) ou,
+ * à défaut, remplace tout caractère non alphanumérique par `-`.
+ */
+function escapeChartId(id: string): string {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+    return CSS.escape(id)
+  }
+  return id.replace(/[^a-zA-Z0-9_-]/g, "-")
 }
 
 const ChartTooltip = RechartsPrimitive.Tooltip

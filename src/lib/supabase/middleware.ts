@@ -39,8 +39,21 @@ import { NextResponse, type NextRequest } from "next/server";
 const PROTECTED_PREFIXES = ["/super-admin", "/admin", "/personnel"] as const;
 
 /** Routes d'authentification : si l'utilisateur est déjà connecté et y
- * accède, on le redirige automatiquement vers son dashboard. */
-const AUTH_ROUTES = ["/", "/login", "/activation"] as const;
+ * accède, on le redirige automatiquement vers son dashboard.
+ *
+ * `/auth/callback` est inclus (AUDIT_SECURITE.md Conclusion #7) pour :
+ *   - S'assurer que le middleware ne bloque jamais cette route publique
+ *     (échange du code PKCE Supabase).
+ *   - Si un utilisateur DÉJÀ authentifié clique sur un lien d'invitation
+ *     (ex : session précédente encore valide), il est redirigé vers son
+ *     dashboard courant plutôt que de tenter un échange de code qui
+ *     échouerait. */
+const AUTH_ROUTES = [
+  "/",
+  "/login",
+  "/activation",
+  "/auth/callback",
+] as const;
 
 /** Rôles du personnel (miroir de l'enum PostgreSQL `role_personnel`).
  * Utilisé pour (a) valider le segment de rôle dans l'URL /personnel/{role}/*
@@ -557,8 +570,15 @@ export function createMiddlewareClient(
 export async function updateSession(
   request: NextRequest
 ): Promise<NextResponse> {
-  // 🔒 Garde-fou : si les vars d'env Supabase ne sont pas configurées,
-  // on laisse passer la requête sans auth (pour ne pas casser tout le site).
+  // 🔒 Garde-fou SÉCURISÉ (fail-closed) : si les vars d'env Supabase ne sont
+  // pas configurées, on NE LAISSE PAS PASSER les routes protégées — on
+  // redirige vers /login avec une erreur config. Les routes publiques
+  // (landing, /login, /activation) restent accessibles pour permettre à
+  // l'utilisateur de voir le site et comprendre le problème.
+  //
+  // AVANT : ce bloc retournait NextResponse.next() pour TOUTES les routes,
+  // ce qui désactivait silencieusement l'auth en cas de var d'env manquante
+  // (vulnérabilité CRITIQUE — voir AUDIT_SECURITE.md Conclusion #3).
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (
@@ -566,9 +586,24 @@ export async function updateSession(
     !supabaseAnonKey ||
     supabaseAnonKey === "REPLACE_WITH_ANON_KEY"
   ) {
+    const pathname = request.nextUrl.pathname;
+    const isProtected = PROTECTED_PREFIXES.some(
+      (p) => pathname === p || pathname.startsWith(p + "/")
+    );
+    if (isProtected) {
+      console.error(
+        "[updateSession][FATAL] Supabase env vars manquantes — " +
+          "redirection vers /login (route protégée bloquée)."
+      );
+      const loginUrl = request.nextUrl.clone();
+      loginUrl.pathname = "/login";
+      loginUrl.searchParams.set("error", "config_incomplete");
+      return NextResponse.redirect(loginUrl);
+    }
+    // Route publique : on laisse passer (pas d'auth requise de toute façon)
     console.warn(
-      "[updateSession] Supabase env vars manquantes — middleware skip " +
-        "(auth désactivée temporairement). Configurez .env.local pour activer l'auth."
+      "[updateSession] Supabase env vars manquantes — route publique " +
+        "autorisée sans auth. Configurez .env.local pour activer l'auth."
     );
     return NextResponse.next({ request });
   }

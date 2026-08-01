@@ -153,10 +153,11 @@ export async function POST(request: NextRequest) {
       "[api/super-admin/catalogue/upload-icon] Erreur upload:",
       uploadErr
     );
+    // Sécurité (audit #8) : masque le message Supabase brut.
     return NextResponse.json(
       {
         success: false,
-        error: `Erreur lors de l'upload: ${uploadErr.message}`,
+        error: "Erreur interne du serveur",
       },
       { status: 500 }
     );

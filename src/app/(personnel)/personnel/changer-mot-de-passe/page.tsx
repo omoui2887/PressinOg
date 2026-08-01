@@ -175,9 +175,10 @@ export default function ChangerMotDePassePage() {
         .maybeSingle();
 
       if (persError) {
+        // Sécurité : ne pas logger l'objet Error complet (stack trace) côté navigateur.
         console.error(
           "[changer-mot-de-passe] Erreur lookup personnel :",
-          persError
+          persError.message
         );
         // On laisse l'utilisateur tenter — s'il n'a vraiment pas de ligne,
         // l'UPDATE échouera silencieusement et le toast d'erreur s'affichera.
@@ -293,9 +294,10 @@ export default function ChangerMotDePassePage() {
         .eq("user_id", userId);
 
       if (updatePersError) {
+        // Sécurité : ne pas logger l'objet Error complet (stack trace) côté navigateur.
         console.error(
           "[changer-mot-de-passe] Erreur UPDATE personnel :",
-          updatePersError
+          updatePersError.message
         );
         // Le mot de passe a été changé côté Auth, mais on n'a pas pu
         // mettre à jour le flag. L'utilisateur sera de nouveau redirigé
@@ -321,7 +323,8 @@ export default function ChangerMotDePassePage() {
       setStatus({ kind: "redirecting", target });
       window.location.assign(target);
     } catch (err) {
-      console.error("[changer-mot-de-passe] Erreur inattendue :", err);
+      // Sécurité : ne pas logger l'objet Error complet (stack trace) côté navigateur.
+      console.error("[changer-mot-de-passe] Erreur inattendue :", err instanceof Error ? err.message : "erreur");
       setGlobalError("Une erreur est survenue. Réessayez.");
       setStatus({ kind: "form" });
     }

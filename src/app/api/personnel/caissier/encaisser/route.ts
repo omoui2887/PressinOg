@@ -16,6 +16,11 @@
  *     statut_compte="actif"
  *   - RLS isole automatiquement par pressing_id : le caissier ne peut
  *     encaisser que les commandes de son propre pressing
+ *   - RESTRICTION MODES PAIEMENT (AUDIT 9.11 — fix migration 019) :
+ *     la méthode de paiement doit être (a) un enum valide (METHODES_VALID)
+ *     ET (b) présent dans `me.modes_paiement_autorises` (JSONB array
+ *     propre à chaque caissier). Un caissier peut ainsi être restreint
+ *     à 'especes' + 'mobile_money' uniquement, par exemple.
  *
  * ⚙️ LOGIQUE :
  *   1. Fetch la commande par id (RLS filtre par pressing)
@@ -50,12 +55,58 @@ const METHODES_VALID: readonly MethodePaiement[] = [
   "carte_bancaire",
 ];
 
+/**
+ * Modes autorisés par défaut si le champ `modes_paiement_autorises` du
+ * caissier est absent (par exemple, base pas encore migrée — migration 019).
+ * On reste permissif par défaut pour ne pas bloquer l'encaissement sur une
+ * base non migrée ; la migration 019 remplit explicitement cette valeur
+ * pour tous les caissiers existants.
+ */
+const MODES_AUTORISES_DEFAUT: readonly string[] = [
+  "especes",
+  "mobile_money",
+  "carte",
+  "carte_bancaire",
+  "cheque",
+  "virement",
+];
+
 interface EncaisserBody {
   commande_id?: unknown;
   montant?: unknown;
   methode?: unknown;
   reference?: unknown;
   notes?: unknown;
+}
+
+/**
+ * Normalise `modes_paiement_autorises` (JSONB renvoyé par Supabase).
+ *
+ * Le client Supabase retourne le JSONB soit :
+ *   - déjà parsé en array JavaScript (cas normal),
+ *   - sous forme de chaîne JSON si la conversion a échoué,
+ *   - ou null/undefined si la colonne n'existe pas (pré-migration 019).
+ *
+ * On retourne toujours un `string[]` valide, en ignorant les éléments
+ * non-string pour résister à une corruption JSONB éventuelle.
+ */
+function normaliserModesAutorises(raw: unknown): string[] {
+  if (!raw) return [...MODES_AUTORISES_DEFAUT];
+  let arr: unknown;
+  if (typeof raw === "string") {
+    try {
+      arr = JSON.parse(raw);
+    } catch {
+      return [...MODES_AUTORISES_DEFAUT];
+    }
+  } else {
+    arr = raw;
+  }
+  if (!Array.isArray(arr) || arr.length === 0) {
+    return [...MODES_AUTORISES_DEFAUT];
+  }
+  const filtré = arr.filter((x): x is string => typeof x === "string");
+  return filtré.length > 0 ? filtré : [...MODES_AUTORISES_DEFAUT];
 }
 
 /** Authentifie le caissier et retourne son row personnel + le client Supabase. */
@@ -72,7 +123,11 @@ async function getConnectedCaissier() {
   }
   const { data: me } = await supabase
     .from("personnel")
-    .select("id, pressing_id, role, actif, statut_compte")
+    // FIX AUDIT 9.11 : on lit `modes_paiement_autorises` pour valider
+    // que le caissier est habilité à encaisser avec la méthode demandée.
+    .select(
+      "id, pressing_id, role, actif, statut_compte, modes_paiement_autorises"
+    )
     .eq("user_id", userData.user.id)
     .maybeSingle();
 
@@ -132,10 +187,32 @@ export async function POST(request: NextRequest) {
   }
 
   const methode = typeof body.methode === "string" ? body.methode : "";
+  // 1re validation : format (la méthode est un enum connu).
   if (!(METHODES_VALID as readonly string[]).includes(methode)) {
     return NextResponse.json(
       { success: false, error: "Méthode de paiement invalide." },
       { status: 400 }
+    );
+  }
+
+  // 2e validation (FIX AUDIT 9.11) : autorisation par caissier.
+  // Le caissier ne peut encaisser qu'avec un mode listé dans son champ
+  // `modes_paiement_autorises` (JSONB, migration 019). Si la colonne
+  // est absente/null (pré-migration), on retombe sur MODES_AUTORISES_DEFAUT.
+  const modesAutorises = normaliserModesAutorises(
+    (me as { modes_paiement_autorises?: unknown } | null)?.modes_paiement_autorises
+  );
+  if (!modesAutorises.includes(methode)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: `Mode de paiement "${methode}" non autorisé pour ce caissier.`,
+        code: "MODE_PAIEMENT_NON_AUTORISE",
+        details: {
+          modes_autorises: modesAutorises,
+        },
+      },
+      { status: 403 }
     );
   }
 
