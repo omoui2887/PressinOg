@@ -394,10 +394,11 @@ export async function POST(request: NextRequest) {
 
     if (createErr || !createdUser.user) {
       console.error("[api/admin/personnel POST] createUser error:", createErr);
+      // Sécurité (audit #8) : masque le message Supabase brut.
       return NextResponse.json(
         {
           success: false,
-          error: `Erreur lors de la création du compte Auth : ${createErr?.message ?? "inconnue"}`,
+          error: "Erreur interne du serveur",
         },
         { status: 500 }
       );
@@ -456,11 +457,42 @@ export async function POST(request: NextRequest) {
 
   // ---- methode === "lien_invitation" ----
 
-  const redirectTo =
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    request.nextUrl.origin ??
-    "http://localhost:3000";
-  const inviteRedirect = `${redirectTo}/personnel/changer-mot-de-passe`;
+  // 🔒 SÉCURITÉ (AUDIT_SECURITE.md Conclusion #7) : on NE fait PLUS confiance
+  // à request.nextUrl.origin (spoofable via header Host) ni à un fallback
+  // hardcoded. Si NEXT_PUBLIC_SITE_URL n'est pas configuré, on refuse
+  // l'invitation plutôt que d'exposer un risque d'open redirect qui
+  // permettrait à un attaquant de faire partir l'email avec un lien
+  // https://evil.com/?code=<PKCE> et de voler le code d'invitation.
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  if (!siteUrl || !siteUrl.startsWith("https://") && !siteUrl.startsWith("http://localhost:")) {
+    console.error(
+      "[api/admin/personnel POST] NEXT_PUBLIC_SITE_URL non configuré ou non sécurisé — " +
+        "invitation refusée pour éviter un open redirect."
+    );
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          "Configuration serveur incomplète (NEXT_PUBLIC_SITE_URL manquant). " +
+          "Impossible d'envoyer une invitation par email.",
+      },
+      { status: 500 }
+    );
+  }
+  // 🔒 SÉCURITÉ (AUDIT_SECURITE.md Conclusion #7) :
+  // Le `redirectTo` passé à Supabase pointe vers /auth/callback (et NON
+  // plus directement vers /personnel/changer-mot-de-passe). Supabase
+  // génèrera un email contenant un lien de la forme :
+  //   https://app.ogpressing.com/auth/callback?code=<PKCE>&next=/personnel/changer-mot-de-passe
+  // La route /auth/callback se charge alors :
+  //   1. d'échanger le code PKCE contre une session (cookie httpOnly),
+  //   2. de valider `next` contre une whitelist stricte (anti open redirect),
+  //   3. de rediriger vers `next` (/personnel/changer-mot-de-passe) en
+  //      propageant les cookies de session.
+  // Avant cette correction, /personnel/changer-mot-de-passe était appelée
+  // sans session → getUser() retournait null → le middleware redirigeait
+  // vers /login → le flux d'invitation était CASSÉ.
+  const inviteRedirect = `${siteUrl}/auth/callback?next=/personnel/changer-mot-de-passe`;
 
   const { data: invitedUser, error: inviteErr } =
     await admin.auth.admin.inviteUserByEmail(email, {
@@ -469,10 +501,11 @@ export async function POST(request: NextRequest) {
 
   if (inviteErr || !invitedUser) {
     console.error("[api/admin/personnel POST] inviteUser error:", inviteErr);
+    // Sécurité (audit #8) : masque le message Supabase brut.
     return NextResponse.json(
       {
         success: false,
-        error: `Erreur lors de l'envoi de l'invitation : ${inviteErr?.message ?? "inconnue"}`,
+        error: "Erreur interne du serveur",
       },
       { status: 500 }
     );

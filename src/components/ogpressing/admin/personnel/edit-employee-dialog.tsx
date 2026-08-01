@@ -3,19 +3,25 @@
  * ------------------------------------------
  * Dialog de modification d'un employé existant.
  *
- * Champs éditables : Nom, Prénom, Téléphone, Email, Rôle.
+ * Champs éditables communs : Nom, Prénom, Téléphone, Email, Rôle.
+ * Champs éditables spécifiques au rôle "caissier" (AUDIT 9.7 — migration 019) :
+ *   - Nom affiché sur les reçus (nom_affiche_recu, TEXT)
+ *   - Modes de paiement autorisés (modes_paiement_autorises, JSONB array)
+ *   - Seuil d'alerte impayé (seuil_alerte_impaye, INTEGER FCFA)
+ *
  * Le nom_complet en DB est reconstruit comme "{prenom} {nom}".
  *
  * Submit : PATCH /api/admin/personnel/[id] { action: "modifier", ... }
  * → toast succès + callback onUpdated (rafraîchir la liste).
  *
  * 🔒 L'API vérifie en défense en profondeur que l'appelant est manager
- *    actif du même pressing. RLS isole par pressing_id.
+ *    actif du même pressing. RLS isole par pressing_id. L'API rejette
+ *    les champs caissier (400) si la cible n'est pas caissier.
  */
 "use client";
 
 import { useState, useEffect } from "react";
-import { Pencil, Loader2, ArrowRight } from "lucide-react";
+import { Pencil, Loader2, ArrowRight, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -28,6 +34,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Select,
   SelectContent,
@@ -39,7 +47,12 @@ import { toast } from "sonner";
 import {
   type RolePersonnel,
   type Employe,
+  type ModePaiementCaissier,
   ROLE_PERSONNEL_LABELS,
+  MODES_PAIEMENT_CAISSIER,
+  MODE_PAIEMENT_LABELS,
+  MODES_AUTORISES_DEFAUT,
+  SEUIL_ALERTE_IMPAYE_DEFAUT,
 } from "./personnel-helpers";
 
 interface EditEmployeeDialogProps {
@@ -73,6 +86,13 @@ export function EditEmployeeDialog({
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<RolePersonnel>("receptionniste");
 
+  // Champs caissier (AUDIT 9.7 — migration 019)
+  const [nomAfficheRecu, setNomAfficheRecu] = useState("");
+  const [modesAutorises, setModesAutorises] = useState<ModePaiementCaissier[]>(
+    MODES_AUTORISES_DEFAUT
+  );
+  const [seuilAlerte, setSeuilAlerte] = useState<string>("");
+
   // Quand le dialog s'ouvre, initialise les champs depuis l'employé
   useEffect(() => {
     if (open) {
@@ -85,8 +105,37 @@ export function EditEmployeeDialog({
       setTelephone(employe.telephone ?? "");
       setEmail(employe.email ?? "");
       setRole(employe.role);
+
+      // Init champs caissier (avec fallback sur valeurs par défaut si
+      // l'employé n'a pas encore ces colonnes — base pré-migration 019).
+      setNomAfficheRecu(employe.nom_affiche_recu ?? "");
+      // On ne conserve que les modes valides connus côté UI ; si la colonne
+      // contient des valeurs inattendues (corruption / base non migrée),
+      // on retombe sur le défaut "tous autorisés".
+      const modesRecus = Array.isArray(employe.modes_paiement_autorises)
+        ? employe.modes_paiement_autorises.filter((m): m is ModePaiementCaissier =>
+            (MODES_PAIEMENT_CAISSIER as readonly string[]).includes(m)
+          )
+        : [];
+      setModesAutorises(
+        modesRecus.length > 0 ? modesRecus : MODES_AUTORISES_DEFAUT
+      );
+      setSeuilAlerte(
+        typeof employe.seuil_alerte_impaye === "number"
+          ? String(employe.seuil_alerte_impaye)
+          : String(SEUIL_ALERTE_IMPAYE_DEFAUT)
+      );
     }
   }, [open, employe]);
+
+  /** Bascule un mode de paiement dans la sélection du caissier. */
+  function toggleMode(mode: ModePaiementCaissier) {
+    setModesAutorises((prev) =>
+      prev.includes(mode)
+        ? prev.filter((m) => m !== mode)
+        : [...prev, mode]
+    );
+  }
 
   async function handleSubmit() {
     if (!nom.trim() || !prenom.trim() || !telephone.trim()) {
@@ -94,19 +143,52 @@ export function EditEmployeeDialog({
       return;
     }
 
+    // Validation spécifique caissier (uniquement si role === "caissier")
+    if (role === "caissier") {
+      if (modesAutorises.length === 0) {
+        toast.error(
+          "Au moins un mode de paiement doit être autorisé pour ce caissier."
+        );
+        return;
+      }
+      const seuilNum = parseInt(seuilAlerte || "0", 10);
+      if (
+        !Number.isFinite(seuilNum) ||
+        !Number.isInteger(seuilNum) ||
+        seuilNum < 0 ||
+        seuilNum > 1_000_000
+      ) {
+        toast.error(
+          "Le seuil d'alerte impayé doit être un entier entre 0 et 1 000 000 FCFA."
+        );
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
+      const payload: Record<string, unknown> = {
+        action: "modifier",
+        nom: nom.trim(),
+        prenom: prenom.trim(),
+        telephone: telephone.trim(),
+        email: email.trim().toLowerCase(),
+        role,
+      };
+
+      // On n'envoie les champs caissier QUE si le role est "caissier".
+      // Cela évite le rejet 400 "CHAMPS_CAISSIER_SUR_NON_CAISSIER" côté API
+      // lorsque l'admin change un caissier vers un autre rôle.
+      if (role === "caissier") {
+        payload.modes_paiement_autorises = modesAutorises;
+        payload.nom_affiche_recu = nomAfficheRecu.trim();
+        payload.seuil_alerte_impaye = parseInt(seuilAlerte || "0", 10);
+      }
+
       const res = await fetch(`/api/admin/personnel/${employe.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "modifier",
-          nom: nom.trim(),
-          prenom: prenom.trim(),
-          telephone: telephone.trim(),
-          email: email.trim().toLowerCase(),
-          role,
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
 
@@ -143,6 +225,8 @@ export function EditEmployeeDialog({
       setSubmitting(false);
     }
   }
+
+  const estCaissier = role === "caissier";
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -212,7 +296,7 @@ export function EditEmployeeDialog({
             />
             {!email && (
               <p className="text-xs text-muted-foreground">
-                Laissez vide si l'employé n'a pas d'email.
+                Laissez vide si l&apos;employé n&apos;a pas d&apos;email.
               </p>
             )}
           </div>
@@ -239,6 +323,93 @@ export function EditEmployeeDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {/* ---- Champs spécifiques au rôle caissier (AUDIT 9.7) ---- */}
+          {estCaissier && (
+            <div className="space-y-4 rounded-md border border-amber-200 bg-amber-50/50 p-3 dark:border-amber-900 dark:bg-amber-950/20">
+              <div className="flex items-start gap-2">
+                <Info className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400" />
+                <p className="text-xs text-amber-900 dark:text-amber-200">
+                  Ces champs ne s&apos;appliquent qu&apos;aux caissiers. Ils
+                  contrôlent les modes de paiement que ce caissier est
+                  habilité à encaisser et le seuil de tolérance des soldes
+                  impayés.
+                </p>
+              </div>
+
+              {/* Nom affiché sur les reçus */}
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-nom-recu">
+                  Nom affiché sur les reçus
+                </Label>
+                <Input
+                  id="edit-nom-recu"
+                  value={nomAfficheRecu}
+                  onChange={(e) => setNomAfficheRecu(e.target.value)}
+                  placeholder="Laisser vide pour utiliser le nom complet"
+                  maxLength={100}
+                  disabled={submitting}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Si vide, le nom complet ({prenom || "Prénom"} {nom || "Nom"})
+                  sera utilisé sur les reçus.
+                </p>
+              </div>
+
+              {/* Modes de paiement autorisés */}
+              <div className="space-y-2">
+                <Label>Modes de paiement autorisés</Label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {MODES_PAIEMENT_CAISSIER.map((mode) => {
+                    const checked = modesAutorises.includes(mode);
+                    return (
+                      <label
+                        key={mode}
+                        htmlFor={`edit-mode-${mode}`}
+                        className="flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+                      >
+                        <Checkbox
+                          id={`edit-mode-${mode}`}
+                          checked={checked}
+                          onCheckedChange={() => toggleMode(mode)}
+                          disabled={submitting}
+                        />
+                        <span>{MODE_PAIEMENT_LABELS[mode]}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {modesAutorises.length === 0 && (
+                  <Alert variant="destructive" className="py-2">
+                    <AlertDescription className="text-xs">
+                      Au moins un mode de paiement doit être sélectionné.
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
+
+              {/* Seuil d'alerte impayé */}
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-seuil">Seuil d&apos;alerte impayé (FCFA)</Label>
+                <Input
+                  id="edit-seuil"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={1000000}
+                  step={100}
+                  value={seuilAlerte}
+                  onChange={(e) => setSeuilAlerte(e.target.value)}
+                  placeholder="5000"
+                  disabled={submitting}
+                />
+                <p className="text-xs text-muted-foreground">
+                  En-dessous de ce montant, un solde impayé est considéré
+                  comme acceptable (tolérance arrondi / micro-solde).
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         <DialogFooter className="gap-2">

@@ -418,7 +418,7 @@ export default function ActivationPage() {
       });
       setStep(2);
     } catch (err) {
-      console.error("[activation] Échec vérification code d'activation:", err);
+      console.error("[activation] Échec vérification code d'activation:", err instanceof Error ? err.message : "erreur");
       if (err instanceof Error && err.name === "AbortError") {
         setCodeError(
           "La vérification prend trop de temps. Vérifiez votre connexion internet et réessayez."
@@ -537,7 +537,7 @@ export default function ActivationPage() {
       // complet et initialiser correctement la session côté serveur.
       window.location.href = "/admin/dashboard";
     } catch (err) {
-      console.error("[activation] Erreur lors de la création du compte:", err);
+      console.error("[activation] Erreur lors de la création du compte:", err instanceof Error ? err.message : "erreur");
       if (err instanceof Error && err.name === "AbortError") {
         setSubmitError(
           "La création du compte prend trop de temps. Vérifiez votre connexion et réessayez."

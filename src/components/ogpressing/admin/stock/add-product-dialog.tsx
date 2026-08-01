@@ -10,6 +10,14 @@
  * Au submit :
  *   1. Upload FDS vers bucket Storage `fds` (échec non bloquant)
  *   2. POST /api/admin/stock avec fds_url
+ *
+ * 🔒 SÉCURITÉ (REMEDIATE-STORAGE — AUDIT Conclusion #2) :
+ *   Le bucket `fds` est désormais PRIVÉ (migration 016). Le path d'upload
+ *   est préfixé par le pressing_id : `fds/{pressing_id}/{timestamp}-{random}.pdf`
+ *   pour que la policy RLS `fds_select_isolation` puisse isoler les FDS par
+ *   pressing. La colonne `fds_url` stocke désormais le PATH (plus l'URL
+ *   publique). La lecture se fait via /api/admin/stock/[id]/fds-url qui
+ *   génère une signed URL valide 1 heure (cf. fetchFdsSignedUrl).
  */
 "use client";
 
@@ -99,14 +107,45 @@ export function AddProductDialog({
 
   const { control, handleSubmit, reset, formState: { errors } } = form;
 
-  /** Upload la FDS vers le bucket Storage `fds`. Retourne l'URL publique ou null. */
+  /**
+   * Récupère le pressing_id de l'utilisateur connecté (côté client, via la
+   * table `personnel` soumise à RLS). Utilisé pour préfixer le path d'upload
+   * des FDS afin que la policy RLS `fds_select_isolation` puisse isoler les
+   * fichiers par pressing.
+   */
+  async function getMyPressingId(): Promise<string | null> {
+    const supabase = getSupabaseBrowser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data: personnel } = await supabase
+      .from("personnel")
+      .select("pressing_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    return personnel?.pressing_id ?? null;
+  }
+
+  /**
+   * Upload la FDS vers le bucket Storage PRIVÉ `fds`.
+   * Retourne le PATH Storage (pas une URL publique) ou null si échec.
+   *
+   * Le path est préfixé par le pressing_id (`fds/{pressing_id}/{filename}`)
+   * pour que la policy RLS `fds_select_isolation` autorise l'upload et la
+   * lecture au seul pressing propriétaire.
+   */
   async function uploadFds(): Promise<string | null> {
     if (!fdsFile) return null;
     setUploading(true);
     try {
       const supabase = getSupabaseBrowser();
+      const pressingId = await getMyPressingId();
+      if (!pressingId) {
+        throw new Error("Impossible de déterminer votre pressing");
+      }
       const ext = fdsFile.name.split(".").pop() || "pdf";
-      const path = `fds/${Date.now()}-${Math.random()
+      const path = `fds/${pressingId}/${Date.now()}-${Math.random()
         .toString(36)
         .slice(2, 8)}.${ext}`;
       const { error: upErr } = await supabase.storage
@@ -117,9 +156,9 @@ export function AddProductDialog({
           contentType: "application/pdf",
         });
       if (upErr) throw upErr;
-      const { data: pub } = supabase.storage.from("fds").getPublicUrl(path);
-      if (pub?.publicUrl) return pub.publicUrl;
-      return null;
+      // On retourne le PATH (pas l'URL publique — le bucket est privé).
+      // La lecture se fera via /api/admin/stock/[id]/fds-url (signed URL).
+      return path;
     } catch (err) {
       console.warn("[stock] Échec upload FDS (continuons sans) :", err);
       toast.warning("FDS non uploadée", {
@@ -129,6 +168,33 @@ export function AddProductDialog({
       return null;
     } finally {
       setUploading(false);
+    }
+  }
+
+  /**
+   * Récupère une signed URL (1 heure) pour la FDS d'un produit via la route
+   * serveur /api/admin/stock/[id]/fds-url. La route vérifie l'authentification,
+   * le rattachement au pressing, et applique la RLS Storage.
+   *
+   * Retourne l'URL signée ou null en cas d'erreur.
+   */
+  async function fetchFdsSignedUrl(produitId: string): Promise<string | null> {
+    try {
+      const res = await fetch(`/api/admin/stock/${produitId}/fds-url`, {
+        method: "GET",
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success || !data.data?.url) {
+        throw new Error(data.error || "Signed URL FDS indisponible");
+      }
+      return data.data.url as string;
+    } catch (err) {
+      console.warn("[stock] Échec fetchFdsSignedUrl :", err);
+      toast.error("FDS inaccessible", {
+        description:
+          err instanceof Error ? err.message : "Erreur inconnue",
+      });
+      return null;
     }
   }
 
@@ -180,7 +246,10 @@ export function AddProductDialog({
       setFdsFile(null);
       return;
     }
-    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+    // Sécurité (audit #4) : refuse tout fichier dont le MIME n'est pas
+    // exactement "application/pdf", indépendamment de l'extension.
+    // Avant : `&&` laissait passer malware.pdf (MIME piégé + extension .pdf).
+    if (file.type !== "application/pdf") {
       toast.error("Fichier invalide", {
         description: "La FDS doit être un fichier PDF.",
       });

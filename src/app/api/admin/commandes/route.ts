@@ -772,11 +772,11 @@ export async function POST(request: NextRequest) {
       "[api/admin/commandes] Erreur INSERT commandes:",
       insertCmdErr
     );
+    // Sécurité (audit #8) : on ne renvoie pas err.message au client.
     return NextResponse.json(
       {
         success: false,
-        error: "Erreur lors de la création de la commande",
-        detail: insertCmdErr?.message,
+        error: "Erreur interne du serveur",
       },
       { status: 500 }
     );
@@ -831,11 +831,11 @@ export async function POST(request: NextRequest) {
         insertLigneErr
       );
       await rollbackCommande(supabase, commandeId);
+      // Sécurité (audit #8) : on ne renvoie pas err.message au client.
       return NextResponse.json(
         {
           success: false,
-          error: "Erreur lors de la création d'une ligne de commande",
-          detail: insertLigneErr?.message,
+          error: "Erreur interne du serveur",
         },
         { status: 500 }
       );
@@ -871,11 +871,11 @@ export async function POST(request: NextRequest) {
         insertArticlesErr
       );
       await rollbackCommande(supabase, commandeId);
+      // Sécurité (audit #8) : on ne renvoie pas err.message au client.
       return NextResponse.json(
         {
           success: false,
-          error: "Erreur lors de la création des articles vêtements",
-          detail: insertArticlesErr?.message,
+          error: "Erreur interne du serveur",
         },
         { status: 500 }
       );
@@ -902,11 +902,11 @@ export async function POST(request: NextRequest) {
         insertPaiementErr
       );
       await rollbackCommande(supabase, commandeId);
+      // Sécurité (audit #8) : on ne renvoie pas err.message au client.
       return NextResponse.json(
         {
           success: false,
-          error: "Erreur lors de l'enregistrement de l'acompte",
-          detail: insertPaiementErr?.message,
+          error: "Erreur interne du serveur",
         },
         { status: 500 }
       );

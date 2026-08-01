@@ -368,6 +368,16 @@ export interface Database {
           date_desactivation: string | null;
           actif: boolean;
           cree_par: string | null;
+          // Champs dédiés aux caissiers (AUDIT 9.7 — migration 019).
+          // modes_paiement_autorises : JSONB array non-vide d'éléments
+          //   parmi ['especes','mobile_money','carte','cheque','virement'].
+          //   Default = tous les modes. Contrainte CHECK côté DB.
+          // nom_affiche_recu : nom à imprimer sur les reçus (nullable,
+          //   fallback sur nom_complet côté application).
+          // seuil_alerte_impaye : entier 0..1 000 000 FCFA, default 5000.
+          modes_paiement_autorises: string[];
+          nom_affiche_recu: string | null;
+          seuil_alerte_impaye: number;
           created_at: string;
           updated_at: string;
         };
@@ -388,6 +398,11 @@ export interface Database {
           date_desactivation?: string | null;
           actif?: boolean;
           cree_par?: string | null;
+          // Champs caissier (migration 019) — optionnels à l'insert,
+          // des DEFAULT sont définis côté DB.
+          modes_paiement_autorises?: string[];
+          nom_affiche_recu?: string | null;
+          seuil_alerte_impaye?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -408,6 +423,10 @@ export interface Database {
           date_desactivation?: string | null;
           actif?: boolean;
           cree_par?: string | null;
+          // Champs caissier (migration 019).
+          modes_paiement_autorises?: string[];
+          nom_affiche_recu?: string | null;
+          seuil_alerte_impaye?: number;
           created_at?: string;
           updated_at?: string;
         };

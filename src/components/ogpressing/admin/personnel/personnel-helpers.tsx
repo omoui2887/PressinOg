@@ -47,7 +47,44 @@ export interface Employe {
   date_desactivation: string | null;
   actif: boolean;
   created_at: string;
+  // Champs caissier (AUDIT 9.7 — migration 019).
+  // Optionnels car la liste des employés peut provenir d'un SELECT qui
+  // ne projette pas ces colonnes (rétro-compatibilité).
+  modes_paiement_autorises?: string[];
+  nom_affiche_recu?: string | null;
+  seuil_alerte_impaye?: number;
 }
+
+/**
+ * Modes de paiement autorisés dans le champ `modes_paiement_autorises`
+ * (AUDIT 9.7 — migration 019). L'ordre est utilisé pour l'affichage
+ * des checkboxes dans la dialog d'édition.
+ */
+export const MODES_PAIEMENT_CAISSIER = [
+  "especes",
+  "mobile_money",
+  "carte",
+  "cheque",
+  "virement",
+] as const;
+
+export type ModePaiementCaissier = (typeof MODES_PAIEMENT_CAISSIER)[number];
+
+export const MODE_PAIEMENT_LABELS: Record<ModePaiementCaissier, string> = {
+  especes: "Espèces",
+  mobile_money: "Mobile Money",
+  carte: "Carte bancaire",
+  cheque: "Chèque",
+  virement: "Virement",
+};
+
+/** Seuil par défaut si la colonne seuil_alerte_impaye est absente/null. */
+export const SEUIL_ALERTE_IMPAYE_DEFAUT = 5000;
+
+/** Modes autorisés par défaut (tous) — utilisé à l'init du formulaire. */
+export const MODES_AUTORISES_DEFAUT: ModePaiementCaissier[] = [
+  ...MODES_PAIEMENT_CAISSIER,
+];
 
 // ---- Libellés des rôles ----
 export const ROLE_PERSONNEL_LABELS: Record<RolePersonnel, string> = {

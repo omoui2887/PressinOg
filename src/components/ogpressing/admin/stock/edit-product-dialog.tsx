@@ -5,6 +5,14 @@
  * prix d'achat, fournisseur, date d'expiration, FDS (re-upload).
  *
  * Au submit : PATCH /api/admin/stock/[id]
+ *
+ * 🔒 SÉCURITÉ (REMEDIATE-STORAGE — AUDIT Conclusion #2) :
+ *   Le bucket `fds` est désormais PRIVÉ (migration 016). Le path d'upload
+ *   est préfixé par le pressing_id : `fds/{pressing_id}/{timestamp}-{random}.pdf`
+ *   pour que la policy RLS `fds_select_isolation` puisse isoler les FDS par
+ *   pressing. La colonne `fds_url` stocke désormais le PATH (plus l'URL
+ *   publique). La lecture se fait via /api/admin/stock/[id]/fds-url qui
+ *   génère une signed URL valide 1 heure (cf. fetchFdsSignedUrl).
  */
 "use client";
 
@@ -75,6 +83,7 @@ export function EditProductDialog({
   const [uploading, setUploading] = useState(false);
   const [fdsFile, setFdsFile] = useState<File | null>(null);
   const [removeFds, setRemoveFds] = useState(false);
+  const [viewingFds, setViewingFds] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -102,13 +111,45 @@ export function EditProductDialog({
 
   if (!produit) return null;
 
+  /**
+   * Récupère le pressing_id de l'utilisateur connecté (côté client, via la
+   * table `personnel` soumise à RLS). Utilisé pour préfixer le path d'upload
+   * des FDS afin que la policy RLS `fds_select_isolation` puisse isoler les
+   * fichiers par pressing.
+   */
+  async function getMyPressingId(): Promise<string | null> {
+    const supabase = getSupabaseBrowser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data: personnel } = await supabase
+      .from("personnel")
+      .select("pressing_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    return personnel?.pressing_id ?? null;
+  }
+
+  /**
+   * Upload la FDS vers le bucket Storage PRIVÉ `fds`.
+   * Retourne le PATH Storage (pas une URL publique) ou null si échec.
+   *
+   * Le path est préfixé par le pressing_id (`fds/{pressing_id}/{filename}`)
+   * pour que la policy RLS `fds_select_isolation` autorise l'upload et la
+   * lecture au seul pressing propriétaire.
+   */
   async function uploadFds(): Promise<string | null> {
     if (!fdsFile) return null;
     setUploading(true);
     try {
       const supabase = getSupabaseBrowser();
+      const pressingId = await getMyPressingId();
+      if (!pressingId) {
+        throw new Error("Impossible de déterminer votre pressing");
+      }
       const ext = fdsFile.name.split(".").pop() || "pdf";
-      const path = `fds/${Date.now()}-${Math.random()
+      const path = `fds/${pressingId}/${Date.now()}-${Math.random()
         .toString(36)
         .slice(2, 8)}.${ext}`;
       const { error: upErr } = await supabase.storage
@@ -119,8 +160,9 @@ export function EditProductDialog({
           contentType: "application/pdf",
         });
       if (upErr) throw upErr;
-      const { data: pub } = supabase.storage.from("fds").getPublicUrl(path);
-      return pub?.publicUrl ?? null;
+      // On retourne le PATH (pas l'URL publique — le bucket est privé).
+      // La lecture se fera via /api/admin/stock/[id]/fds-url (signed URL).
+      return path;
     } catch (err) {
       console.warn("[stock] Échec upload FDS :", err);
       toast.warning("FDS non uploadée", {
@@ -129,6 +171,47 @@ export function EditProductDialog({
       return null;
     } finally {
       setUploading(false);
+    }
+  }
+
+  /**
+   * Récupère une signed URL (1 heure) pour la FDS d'un produit via la route
+   * serveur /api/admin/stock/[id]/fds-url. La route vérifie l'authentification,
+   * le rattachement au pressing, et applique la RLS Storage.
+   *
+   * Retourne l'URL signée ou null en cas d'erreur.
+   */
+  async function fetchFdsSignedUrl(produitId: string): Promise<string | null> {
+    try {
+      const res = await fetch(`/api/admin/stock/${produitId}/fds-url`, {
+        method: "GET",
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success || !data.data?.url) {
+        throw new Error(data.error || "Signed URL FDS indisponible");
+      }
+      return data.data.url as string;
+    } catch (err) {
+      console.warn("[stock] Échec fetchFdsSignedUrl :", err);
+      toast.error("FDS inaccessible", {
+        description:
+          err instanceof Error ? err.message : "Erreur inconnue",
+      });
+      return null;
+    }
+  }
+
+  /** Ouvre la FDS du produit dans un nouvel onglet via signed URL serveur. */
+  async function handleViewFds() {
+    if (!produit) return;
+    setViewingFds(true);
+    try {
+      const url = await fetchFdsSignedUrl(produit.id);
+      if (url) {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+    } finally {
+      setViewingFds(false);
     }
   }
 
@@ -180,7 +263,10 @@ export function EditProductDialog({
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+    // Sécurité (audit #4) : refuse tout fichier dont le MIME n'est pas
+    // exactement "application/pdf", indépendamment de l'extension.
+    // Avant : `&&` laissait passer malware.pdf (MIME piégé + extension .pdf).
+    if (file.type !== "application/pdf") {
       toast.error("Fichier invalide", { description: "La FDS doit être un PDF." });
       return;
     }
@@ -362,15 +448,15 @@ export function EditProductDialog({
               {produit.fds_url && !removeFds && !fdsFile ? (
                 <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-3">
                   <FileText className="size-5 shrink-0 text-primary" />
-                  <a
-                    href={produit.fds_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex flex-1 items-center gap-1 text-sm text-primary hover:underline"
+                  <button
+                    type="button"
+                    onClick={handleViewFds}
+                    disabled={viewingFds}
+                    className="flex flex-1 items-center gap-1 text-sm text-primary hover:underline disabled:opacity-60"
                   >
-                    Voir la FDS actuelle
-                    <ExternalLink className="size-3" />
-                  </a>
+                    {viewingFds ? "Génération…" : "Voir la FDS actuelle"}
+                    {!viewingFds && <ExternalLink className="size-3" />}
+                  </button>
                   <button
                     type="button"
                     onClick={() => setRemoveFds(true)}
@@ -416,11 +502,11 @@ export function EditProductDialog({
                 type="button"
                 variant="outline"
                 onClick={() => onOpenChange(false)}
-                disabled={submitting || uploading}
+                disabled={submitting || uploading || viewingFds}
               >
                 Annuler
               </Button>
-              <Button type="submit" disabled={submitting || uploading}>
+              <Button type="submit" disabled={submitting || uploading || viewingFds}>
                 {submitting || uploading ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />

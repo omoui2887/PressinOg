@@ -63,5 +63,9 @@ server.log
 /screenshots/
 /agent-ctx/
 
+# Worklog contains developer notes that may include credentials/secrets — never commit
+worklog.md
+agent-ctx/
+
 # Tool result artifacts
 tool-results/

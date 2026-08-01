@@ -260,7 +260,10 @@ export default function LoginPage() {
         // Message français renvoyé par l'API (erreur métier connue).
         message = err.message;
       } else {
-        console.error("[login] Erreur inattendue :", err);
+        // Sécurité : ne pas logger l'objet Error complet (stack trace) côté
+        // navigateur — uniquement le message, lisible via F12 mais sans
+        // révéler de chemins internes ou de détails Supabase.
+        console.error("[login] Erreur inattendue :", err instanceof Error ? err.message : "erreur");
         message = "Une erreur est survenue. Veuillez réessayer.";
       }
       setGlobalError(message);

@@ -227,7 +227,8 @@ export async function POST(req: NextRequest) {
         );
       }
       console.error("[activation] Erreur createUser :", authError);
-      throw new Error(`Création du compte utilisateur impossible : ${authError.message}`);
+      // Sécurité (audit #8) : ne pas fuiter le message Supabase brut.
+      throw new Error("Erreur interne du serveur");
     }
 
     createdUserId = authUser.user.id;
@@ -248,7 +249,9 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (pressingError || !pressing) {
-      throw new Error(`Création du pressing impossible : ${pressingError?.message ?? "erreur inconnue"}`);
+      // Sécurité (audit #8) : log serveur seul, message générique au client.
+      console.error("[activation] Erreur INSERT pressing :", pressingError);
+      throw new Error("Erreur interne du serveur");
     }
 
     createdPressingId = pressing.id;
@@ -272,7 +275,9 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (personnelError || !personnel) {
-      throw new Error(`Création du compte personnel impossible : ${personnelError?.message ?? "erreur inconnue"}`);
+      // Sécurité (audit #8) : log serveur seul, message générique au client.
+      console.error("[activation] Erreur INSERT personnel :", personnelError);
+      throw new Error("Erreur interne du serveur");
     }
 
     createdPersonnelId = personnel.id;
@@ -295,7 +300,9 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (abonnementError || !abonnement) {
-      throw new Error(`Création de l'abonnement impossible : ${abonnementError?.message ?? "erreur inconnue"}`);
+      // Sécurité (audit #8) : log serveur seul, message générique au client.
+      console.error("[activation] Erreur INSERT abonnement :", abonnementError);
+      throw new Error("Erreur interne du serveur");
     }
 
     createdAbonnementId = abonnement.id;
@@ -311,7 +318,9 @@ export async function POST(req: NextRequest) {
       .eq("id", codeRow.id);
 
     if (updateCodeError) {
-      throw new Error(`Marquage du code impossible : ${updateCodeError.message}`);
+      // Sécurité (audit #8) : log serveur seul, message générique au client.
+      console.error("[activation] Erreur UPDATE code :", updateCodeError);
+      throw new Error("Erreur interne du serveur");
     }
 
     /* --- Succès --- */
@@ -336,9 +345,12 @@ export async function POST(req: NextRequest) {
       await supabase.auth.admin.deleteUser(createdUserId);
     }
 
-    const message = err instanceof Error ? err.message : "Erreur inconnue lors de l'activation.";
+    // Sécurité (audit #8) : les erreurs métier (email déjà utilisé, code
+    // invalide/expiré/déjà utilisé) sont renvoyées AVANT ce catch via
+    // NextResponse.json direct. Toute erreur atteignant ici est technique
+    // (Supabase, SQL, réseau) → message générique, détail loggé ci-dessus.
     return NextResponse.json<ApiResponse>(
-      { success: false, error: message },
+      { success: false, error: "Erreur interne du serveur" },
       { status: 500 }
     );
   }
