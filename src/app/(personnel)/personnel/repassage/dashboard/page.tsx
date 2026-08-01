@@ -42,6 +42,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/ogpressing/stat-card";
+import {
+  WorkflowStagesCard,
+  type WorkflowStageArticle,
+} from "@/components/ogpressing/workflow-stages-card";
 import { StatusBadge } from "@/components/shared";
 import {
   STATUT_LABELS,
@@ -52,6 +56,23 @@ import {
 import { formatFCFA, formatRelative } from "@/lib/utils/format";
 
 const BASE_PATH = "/personnel/repassage";
+
+/** Statuts de commande dont on souhaite afficher les articles dans la
+ *  carte "Étapes du workflow" du dashboard repassage.
+ *
+ *  On couvre les 3 macro-étapes pour que la carte affiche un panorama
+ *  complet (pas seulement l'étape repassage) : l'employé voit où en est
+ *  chaque vêtement dans le pipeline. */
+const WORKFLOW_STATUTS = [
+  "lave",
+  "repasse",
+  "pret",
+  "en_livraison",
+] as const;
+
+/** Nombre maximum de commandes détaillées par statut pour la carte
+ *  workflow. Limite l'explosion N+1 et garde la carte lisible. */
+const WORKFLOW_MAX_PAR_STATUT = 20;
 
 /** Borne supérieure sur le nombre de commandes "lave" détaillées pour le
  *  comptage des articles à repasser. Au-delà, le compteur est partiel. */
@@ -83,6 +104,15 @@ interface DashboardData {
 interface ArticleRow {
   id: string;
   statut: string;
+  ligne_id?: string | null;
+  code_qr?: string | null;
+  zone_stockage?: string | null;
+  created_at?: string | null;
+}
+
+interface LigneRow {
+  id: string;
+  description?: string | null;
 }
 
 interface CommandeDetailApiResponse {
@@ -90,8 +120,93 @@ interface CommandeDetailApiResponse {
   data?: {
     id: string;
     articles?: ArticleRow[];
+    lignes?: LigneRow[] | null;
   };
   error?: string;
+}
+
+/**
+ * Récupère une liste d'articles groupables par macro-étape pour alimenter
+ * la carte `WorkflowStagesCard`. Pour chaque statut de commande demandé,
+ * on fetch la liste des commandes puis le détail de chacune (articles +
+ * lignes) afin de construire des `WorkflowStageArticle` enrichis.
+ *
+ * Les fetchs par statut sont parallélisés via `Promise.all`. Le total
+ * d'articles est plafonné à ~`maxArticles` pour garder la carte lisible.
+ */
+async function fetchArticlesForWorkflow(
+  statuts: readonly string[],
+  maxParStatut = WORKFLOW_MAX_PAR_STATUT,
+  maxArticles = 80
+): Promise<WorkflowStageArticle[]> {
+  // 1. Liste des commandes par statut (en parallèle)
+  const listesParStatut = await Promise.all(
+    statuts.map(async (statut) => {
+      try {
+        const res = await fetch(
+          `/api/admin/commandes?statut=${statut}&pageSize=${maxParStatut}`,
+          { cache: "no-store" }
+        );
+        const json: CommandesApiResponse = await res.json();
+        if (!json.success) return [] as CommandeListItem[];
+        return json.data ?? ([] as CommandeListItem[]);
+      } catch {
+        return [] as CommandeListItem[];
+      }
+    })
+  );
+
+  // 2. Déduplication des commandes (un même id peut apparaître dans
+  //    plusieurs listes de statut)
+  const seen = new Set<string>();
+  const commandes: CommandeListItem[] = [];
+  for (const liste of listesParStatut) {
+    for (const c of liste) {
+      if (!seen.has(c.id)) {
+        seen.add(c.id);
+        commandes.push(c);
+      }
+    }
+  }
+
+  if (commandes.length === 0) return [];
+
+  // 3. Fetch du détail de chaque commande (en parallèle, borné)
+  const details = await Promise.allSettled(
+    commandes.map((c) =>
+      fetch(`/api/admin/commandes/${c.id}`, { cache: "no-store" })
+        .then((r) => r.json() as Promise<CommandeDetailApiResponse>)
+        .catch(() => ({ success: false }) as CommandeDetailApiResponse)
+    )
+  );
+
+  // 4. Construction du tableau d'articles
+  const all: WorkflowStageArticle[] = [];
+  for (let i = 0; i < commandes.length; i++) {
+    if (all.length >= maxArticles) break;
+    const res = details[i];
+    if (res.status !== "fulfilled") continue;
+    const detail = res.value;
+    if (!detail.success || !detail.data) continue;
+    const cmd = commandes[i];
+    const lignes = detail.data.lignes ?? [];
+    for (const a of detail.data.articles ?? []) {
+      if (all.length >= maxArticles) break;
+      const ligne = lignes.find((l) => l.id === a.ligne_id);
+      all.push({
+        id: a.id,
+        statut: a.statut,
+        commande_numero: cmd.numero_commande,
+        commande_id: cmd.id,
+        client_nom: cmd.client?.nom_complet ?? null,
+        description: ligne?.description ?? null,
+        code_qr: a.code_qr ?? null,
+        zone_stockage: a.zone_stockage ?? null,
+        created_at: a.created_at ?? null,
+      });
+    }
+  }
+  return all;
 }
 
 /* ------------------------------------------------------------------ */
@@ -102,6 +217,13 @@ export default function RepassageDashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Articles pour la carte "Étapes du workflow" (chargement indépendant
+  // pour ne pas ralentir le chargement initial du dashboard).
+  const [workflowArticles, setWorkflowArticles] = useState<
+    WorkflowStageArticle[]
+  >([]);
+  const [workflowLoading, setWorkflowLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -193,6 +315,28 @@ export default function RepassageDashboardPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  /**
+   * Fetch indépendant des articles pour la carte "Étapes du workflow".
+   * Lancé en parallèle du `fetchData` principal pour ne pas bloquer
+   * l'affichage des StatCards / Raccourci / File d'attente.
+   */
+  const fetchWorkflow = useCallback(async () => {
+    setWorkflowLoading(true);
+    try {
+      const articles = await fetchArticlesForWorkflow(WORKFLOW_STATUTS);
+      setWorkflowArticles(articles);
+    } catch (err) {
+      console.error("[repassage/dashboard] Erreur workflow:", err);
+      setWorkflowArticles([]);
+    } finally {
+      setWorkflowLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchWorkflow();
+  }, [fetchWorkflow]);
 
   /* ---------------- Sous-composant : 4 StatCards ---------------- */
 
@@ -411,13 +555,27 @@ export default function RepassageDashboardPage() {
       {/* 3. StatCards (4) */}
       {renderStatCards()}
 
-      {/* 4. Raccourci */}
+      {/* 4. Étapes du workflow — vue d'ensemble des vêtements groupés
+          par macro-étape (Prétraiter/Laver, Repasser/Emballer,
+          Livrer/Récupérer) */}
+      <WorkflowStagesCard
+        articles={workflowArticles}
+        highlightEtape="repasser_emballer"
+        basePath={BASE_PATH}
+        loading={workflowLoading}
+        title="Étapes du workflow"
+        description="Vue d'ensemble de l'avancement des vêtements"
+        emptyMessage="Aucun article en cours de traitement pour le moment."
+        maxPerStage={6}
+      />
+
+      {/* 5. Raccourci */}
       <section className="space-y-3">
         <h2 className="text-lg font-semibold text-foreground">Raccourci</h2>
         {renderShortcut()}
       </section>
 
-      {/* 5. File d'attente repassage */}
+      {/* 6. File d'attente repassage */}
       {renderFileAttente()}
     </div>
   );

@@ -1,13 +1,19 @@
 /**
- * OgPressing — CommandeDetail (client component, LOT 7.6)
- * --------------------------------------------------------
+ * OgPressing — CommandeDetail (client component, LOT 7.6 + CASIER-FIX-V1)
+ * ----------------------------------------------------------------------
  * Composant interactif de la page /admin/commandes/[id]. Reçoit le détail
  * complet de la commande (fetch côté Server Component via Supabase) et
  * gère :
  *   - Affichage read-only de toutes les infos (client, stats, articles,
  *     paiements, notes, dates)
  *   - Édition inline du statut de chaque article (Select → PATCH
- *     /api/admin/commandes/[id]/articles/[articleId])
+ *     /api/admin/commandes/[id]/articles/[articleId]) avec filtrage
+ *     dynamique des options selon le workflow (getAllowedNextStatutsArticle).
+ *   - Gestion des casiers de stockage (CASIER-FIX-V1) :
+ *       • Badge casier (icône Archive + code) sur chaque article rangé
+ *         (zone_stockage non-null).
+ *       • Dialog de saisie du code casier au passage à "pret".
+ *       • Bouton "Libérer le casier" (PATCH zone_stockage=null).
  *   - Boutons "Imprimer le ticket" et "Imprimer les étiquettes"
  *     (window.open + HTML, helpers dans `commande-print.ts`)
  *
@@ -20,11 +26,14 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  Archive,
+  ArchiveRestore,
   ArrowLeft,
   Calendar,
   CheckCircle2,
   Clock,
   CreditCard,
+  Loader2,
   Mail,
   MapPin,
   Package,
@@ -44,6 +53,15 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -58,6 +76,10 @@ import {
   ETAT_LABELS,
   ETAT_VARIANT,
 } from "@/components/ogpressing/admin/commande-wizard/article-labels";
+import {
+  getAllowedNextStatutsArticle,
+  STATUTS_ARTICLE,
+} from "@/lib/workflow/commande-statut";
 import {
   STATUT_LABELS,
   STATUT_PAIEMENT_LABELS,
@@ -78,24 +100,56 @@ interface CommandeDetailProps {
    *  Links are constructed as `${basePath}/commandes` (back) and
    *  `${basePath}/clients/{id}` (client detail). */
   basePath?: string;
+  /** Rôle du personnel connecté (ex: "manager", "receptionniste", ...).
+   *  Si "manager", les options du Select de statut article ne sont pas
+   *  filtrées par le workflow (override autorisé côté backend).
+   *  Optionnel : si non fourni, le filtrage workflow standard s'applique
+   *  (matrice TRANSITIONS_ARTICLE_AUTORISEES). */
+  role?: string;
 }
 
-/** Options du Select de statut article (7 valeurs de l'enum). */
-const STATUT_ARTICLE_OPTIONS = [
-  { value: "recu", label: "Reçu" },
-  { value: "en_traitement", label: "En traitement" },
-  { value: "lave", label: "Lavé" },
-  { value: "repasse", label: "Repassé" },
-  { value: "pret", label: "Prêt" },
-  { value: "retire", label: "Retiré" },
-  { value: "livre", label: "Livré" },
-];
+/**
+ * Toutes les options de statut article (libellés FR), dérivées du module
+ * workflow. Utilisé comme source, puis filtré dynamiquement pour chaque
+ * article via `getAllowedNextStatutsArticle(a.statut, role)`.
+ */
+const ALL_STATUT_ARTICLE_OPTIONS = STATUTS_ARTICLE.map((s) => ({
+  value: s,
+  label: STATUT_LABELS[s] ?? s,
+}));
 
-export function CommandeDetail({ commande, basePath = "/admin" }: CommandeDetailProps) {
+/** Regex de validation du code casier côté UI (1-10 alphanumériques).
+ *  En harmonie avec la validation backend (chk_zone_stockage_format). */
+const ZONE_STOCKAGE_REGEX = /^[A-Za-z0-9]{1,10}$/;
+
+export function CommandeDetail({
+  commande,
+  basePath = "/admin",
+  role,
+}: CommandeDetailProps) {
   // Copie locale des articles pour refléter les mises à jour de statut
   // sans devoir refetch toute la commande.
   const [articles, setArticles] = useState(commande.articles);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  // État du dialog de saisie du casier (ouvert quand l'utilisateur
+  // sélectionne "pret" dans le Select de statut d'un article). On ne
+  // PATCH pas immédiatement : on ouvre le dialog pour demander le code
+  // casier, puis on PATCH au clic sur "Confirmer" ou "Passer sans casier".
+  const [casierDialogArticleId, setCasierDialogArticleId] = useState<
+    string | null
+  >(null);
+  const [casierInputValue, setCasierInputValue] = useState("");
+  const [casierSubmitLoading, setCasierSubmitLoading] = useState(false);
+
+  // Article actuellement ciblé par le dialog casier (null si dialog fermé).
+  const casierDialogArticle = useMemo(
+    () =>
+      casierDialogArticleId
+        ? articles.find((a) => a.id === casierDialogArticleId) ?? null
+        : null,
+    [articles, casierDialogArticleId]
+  );
 
   // Map ligne_id → service.nom pour afficher le service de chaque article
   const ligneServiceMap = useMemo(() => {
@@ -112,10 +166,20 @@ export function CommandeDetail({ commande, basePath = "/admin" }: CommandeDetail
     commande.lignes.reduce((s, l) => s + l.prix_unitaire * l.quantite, 0);
   const remiseMontant = commande.montant_remise ?? Math.max(0, totalAvantRemise - commande.montant_total);
 
-  async function handleArticleStatutChange(
+  /**
+   * PATCH centralisé vers /api/admin/commandes/[id]/articles/[articleId].
+   * Gère la mise à jour locale de l'article à partir de la réponse serveur
+   * (statut, zone_stockage, date_rangeement) + toast succès/erreur.
+   *
+   * @param articleId      ID de l'article à mettre à jour.
+   * @param payload        Body JSON ({ statut, zone_stockage? }).
+   * @param successMessage Message de toast (ou null pour le défaut).
+   */
+  async function patchArticle(
     articleId: string,
-    newStatut: string
-  ) {
+    payload: { statut: string; zone_stockage?: string | null },
+    successMessage?: { title: string; description?: string }
+  ): Promise<boolean> {
     setUpdatingId(articleId);
     try {
       const res = await fetch(
@@ -123,29 +187,171 @@ export function CommandeDetail({ commande, basePath = "/admin" }: CommandeDetail
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ statut: newStatut }),
+          body: JSON.stringify(payload),
         }
       );
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.error || "Échec de la mise à jour");
       }
-      // Met à jour l'article localement
+      // Met à jour l'article localement à partir de la réponse serveur.
+      // Si le serveur a libéré le casier (zone_stockage: null), on vide
+      // aussi date_rangeement et range_par côté UI pour rester cohérent.
+      const updated = data.data ?? {};
+      const newZoneStockage =
+        updated.zone_stockage === undefined ? undefined : updated.zone_stockage;
+      const casierFreed = newZoneStockage === null;
       setArticles((prev) =>
         prev.map((a) =>
-          a.id === articleId ? { ...a, statut: data.data.statut } : a
+          a.id === articleId
+            ? {
+                ...a,
+                statut: updated.statut ?? a.statut,
+                zone_stockage:
+                  newZoneStockage === undefined
+                    ? a.zone_stockage
+                    : newZoneStockage,
+                date_rangeement:
+                  newZoneStockage === undefined
+                    ? a.date_rangeement
+                    : casierFreed
+                      ? null
+                      : (updated.date_rangeement ?? a.date_rangeement),
+                range_par:
+                  newZoneStockage === undefined
+                    ? a.range_par
+                    : casierFreed
+                      ? null
+                      : a.range_par,
+              }
+            : a
         )
       );
-      toast.success("Statut de l'article mis à jour", {
-        description: `Nouveau statut : ${
-          STATUT_LABELS[data.data.statut] ?? data.data.statut
-        }`,
-      });
+      toast.success(
+        successMessage?.title ?? "Statut de l'article mis à jour",
+        {
+          description:
+            successMessage?.description ??
+            `Nouveau statut : ${
+              STATUT_LABELS[updated.statut as string] ?? updated.statut
+            }`,
+        }
+      );
+      return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Erreur inconnue";
       toast.error("Échec de la mise à jour", { description: msg });
+      return false;
     } finally {
       setUpdatingId(null);
+    }
+  }
+
+  /**
+   * Handler du Select de statut article. Si la cible est "pret", on
+   * n'appelle pas immédiatement le PATCH : on ouvre le dialog de saisie
+   * du casier. L'utilisateur pourra alors :
+   *   - saisir un code casier puis "Confirmer" (PATCH pret + zone_stockage)
+   *   - cliquer "Passer sans casier" (PATCH pret sans zone_stockage)
+   *   - annuler (ferme le dialog, ne PATCH pas — le Select revient à sa
+   *     valeur initiale car `value` est lié à `a.statut` non modifié).
+   *
+   * Pour tous les autres statuts, on PATCH directement (le backend
+   * libérera automatiquement le casier pour "retire" / "livre").
+   */
+  function handleArticleStatutChange(articleId: string, newStatut: string) {
+    if (newStatut === "pret") {
+      const article = articles.find((a) => a.id === articleId);
+      // Pré-remplit l'input avec le casier actuel si l'article en a déjà un
+      // (cas : re-passage à "pret" alors qu'un casier est déjà assigné).
+      setCasierInputValue(article?.zone_stockage ?? "");
+      setCasierDialogArticleId(articleId);
+      return;
+    }
+    void patchArticle(articleId, { statut: newStatut });
+  }
+
+  /** Confirme l'assignation d'un casier à l'article du dialog. */
+  async function handleCasierConfirm() {
+    if (!casierDialogArticleId) return;
+    const raw = casierInputValue.trim().toUpperCase();
+    if (!raw) {
+      toast.error("Code casier requis", {
+        description:
+          "Saisissez un code casier (ex: A1) ou cliquez sur « Passer sans casier ».",
+      });
+      return;
+    }
+    if (!ZONE_STOCKAGE_REGEX.test(raw)) {
+      toast.error("Code casier invalide", {
+        description: "1 à 10 caractères alphanumériques (ex: A1, B2, C10).",
+      });
+      return;
+    }
+    setCasierSubmitLoading(true);
+    const ok = await patchArticle(
+      casierDialogArticleId,
+      { statut: "pret", zone_stockage: raw },
+      {
+        title: "Article rangé dans le casier",
+        description: `Statut : Prêt — Casier ${raw}`,
+      }
+    );
+    setCasierSubmitLoading(false);
+    if (ok) {
+      setCasierDialogArticleId(null);
+      setCasierInputValue("");
+    }
+  }
+
+  /** Passe l'article à "pret" sans assigner de casier. */
+  async function handleCasierSkip() {
+    if (!casierDialogArticleId) return;
+    setCasierSubmitLoading(true);
+    const ok = await patchArticle(
+      casierDialogArticleId,
+      { statut: "pret" },
+      {
+        title: "Article marqué comme prêt",
+        description: "Aucun casier assigné (à assigner plus tard).",
+      }
+    );
+    setCasierSubmitLoading(false);
+    if (ok) {
+      setCasierDialogArticleId(null);
+      setCasierInputValue("");
+    }
+  }
+
+  /** Ferme le dialog sans PATCH (annulation). */
+  function handleCasierClose() {
+    if (casierSubmitLoading) return; // pas d'annulation pendant l'envoi
+    setCasierDialogArticleId(null);
+    setCasierInputValue("");
+  }
+
+  /**
+   * Libère le casier d'un article "pret" sans changer son statut.
+   * PATCH avec `{ statut: "pret", zone_stockage: null }`.
+   *
+   * ⚠️ Note : selon l'état actuel du backend (CASIER-FIX-V1-BACKEND), un
+   * PATCH `statut=pret` + `zone_stockage=null` peut ne PAS libérer le
+   * casier (le backend le conserve). La mise à jour locale s'appuie sur
+   * la réponse serveur (`data.zone_stockage`) — si le backend ne libère
+   * pas, le badge restera affiché. À corriger côté backend si nécessaire.
+   */
+  async function handleLibererCasier(articleId: string) {
+    const ok = await patchArticle(
+      articleId,
+      { statut: "pret", zone_stockage: null },
+      {
+        title: "Casier libéré",
+        description: "L'article est toujours prêt, mais plus rattaché à un casier.",
+      }
+    );
+    if (!ok) {
+      // Le toast d'erreur est déjà géré dans patchArticle.
+      return;
     }
   }
 
@@ -395,6 +601,18 @@ export function CommandeDetail({ commande, basePath = "/admin" }: CommandeDetail
                 const serviceNom = a.ligne_id
                   ? ligneServiceMap.get(a.ligne_id) ?? "—"
                   : "—";
+                // Filtrage dynamique des options du Select selon le workflow
+                // (matrice TRANSITIONS_ARTICLE_AUTORISEES). Si `role` est
+                // "manager", toutes les options sont renvoyées (override).
+                const allowedStatuts = getAllowedNextStatutsArticle(
+                  a.statut,
+                  role
+                );
+                const allowedOptions = ALL_STATUT_ARTICLE_OPTIONS.filter((o) =>
+                  allowedStatuts.includes(o.value)
+                );
+                const isUpdating = updatingId === a.id;
+                const hasCasier = Boolean(a.zone_stockage);
                 return (
                   <li
                     key={a.id}
@@ -442,6 +660,40 @@ export function CommandeDetail({ commande, basePath = "/admin" }: CommandeDetail
                             {a.description_etat}
                           </p>
                         )}
+
+                        {/* Badge casier + métadonnées de rangement */}
+                        {hasCasier && (
+                          <div className="flex flex-wrap items-center gap-2 pt-1">
+                            <Badge
+                              variant="secondary"
+                              className="gap-1 font-mono font-semibold"
+                              title={`Casier de stockage : ${a.zone_stockage}`}
+                            >
+                              <Archive className="size-3" />
+                              {a.zone_stockage}
+                              <button
+                                type="button"
+                                onClick={() => handleLibererCasier(a.id)}
+                                disabled={isUpdating}
+                                aria-label={`Libérer le casier ${a.zone_stockage}`}
+                                title="Libérer le casier"
+                                className="ml-1 inline-flex size-4 items-center justify-center rounded-sm transition-colors hover:bg-secondary-foreground/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                              >
+                                {isUpdating ? (
+                                  <Loader2 className="size-3 animate-spin" />
+                                ) : (
+                                  <ArchiveRestore className="size-3" />
+                                )}
+                              </button>
+                            </Badge>
+                            <span className="text-[11px] text-muted-foreground">
+                              Rangé le {formatDateOnly(a.date_rangeement)}
+                              {a.range_par?.nom_complet
+                                ? ` par ${a.range_par.nom_complet}`
+                                : ""}
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       {/* Edition inline du statut */}
@@ -456,7 +708,7 @@ export function CommandeDetail({ commande, basePath = "/admin" }: CommandeDetail
                           onValueChange={(v) =>
                             handleArticleStatutChange(a.id, v)
                           }
-                          disabled={updatingId === a.id}
+                          disabled={isUpdating}
                         >
                           <SelectTrigger
                             className="h-8 w-[150px] text-xs"
@@ -465,13 +717,19 @@ export function CommandeDetail({ commande, basePath = "/admin" }: CommandeDetail
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {STATUT_ARTICLE_OPTIONS.map((opt) => (
+                            {allowedOptions.map((opt) => (
                               <SelectItem key={opt.value} value={opt.value}>
                                 {opt.label}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
+                        {isUpdating && (
+                          <Loader2
+                            className="size-4 shrink-0 animate-spin text-muted-foreground"
+                            aria-label="Mise à jour en cours"
+                          />
+                        )}
                       </div>
                     </div>
                   </li>
@@ -571,6 +829,113 @@ export function CommandeDetail({ commande, basePath = "/admin" }: CommandeDetail
           </CardContent>
         </Card>
       )}
+
+      {/* Dialog de saisie du casier (passage à "pret") */}
+      <Dialog
+        open={casierDialogArticleId !== null}
+        onOpenChange={(open) => {
+          if (!open) handleCasierClose();
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Archive className="size-5 text-secondary" />
+              Rangement en casier
+            </DialogTitle>
+            <DialogDescription>
+              {casierDialogArticle
+                ? `Article ${
+                    findArticleIndex(casierDialogArticle.id, articles) + 1
+                  } — ${articleDescription(
+                    casierDialogArticle
+                  )}. Saisissez le code du casier où cet article est rangé.`
+                : "Saisissez le code du casier où cet article est rangé."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <label
+              htmlFor="casier-input"
+              className="text-xs font-medium text-foreground"
+            >
+              Code casier
+            </label>
+            <Input
+              id="casier-input"
+              type="text"
+              inputMode="text"
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
+              placeholder="Ex: A1"
+              maxLength={10}
+              value={casierInputValue}
+              onChange={(e) => setCasierInputValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void handleCasierConfirm();
+                }
+              }}
+              disabled={casierSubmitLoading}
+              className="font-mono uppercase"
+              aria-describedby="casier-help"
+            />
+            <p id="casier-help" className="text-[11px] text-muted-foreground">
+              1 à 10 caractères alphanumériques (ex: A1, B2, C10). Le code
+              sera mis en majuscules automatiquement.
+            </p>
+          </div>
+
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => handleCasierClose()}
+              disabled={casierSubmitLoading}
+              className="sm:mr-auto"
+            >
+              Annuler
+            </Button>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleCasierSkip()}
+                disabled={casierSubmitLoading}
+              >
+                Passer sans casier
+              </Button>
+              <Button
+                type="button"
+                onClick={() => handleCasierConfirm()}
+                disabled={casierSubmitLoading}
+              >
+                {casierSubmitLoading ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Confirmation…
+                  </>
+                ) : (
+                  <>
+                    <Archive className="size-4" />
+                    Confirmer
+                  </>
+                )}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
+}
+
+/** Helper local : index d'un article dans la liste (0-based). */
+function findArticleIndex(
+  articleId: string,
+  articles: CommandeDetailData["articles"]
+) {
+  return articles.findIndex((a) => a.id === articleId);
 }

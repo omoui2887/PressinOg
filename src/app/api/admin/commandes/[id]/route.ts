@@ -96,6 +96,12 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     statut: string;
     photo_url: string | null;
     assigne_a: string | null;
+    /** Colonnes de casier (migration 015). Optionnelles : absentes si
+     *  la migration n'est pas appliquée (fallback ultra-minimal). */
+    zone_stockage?: string | null;
+    date_rangeement?: string | null;
+    rangee_par?: string | null;
+    range_par?: { id: string; nom_complet: string } | null;
     created_at: string;
     catalogue_article?: {
       id: string;

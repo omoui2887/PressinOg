@@ -279,3 +279,133 @@ export function expliquerRefusTransition(
     .join(", ");
   return `Transition interdite : "${STATUT_ARTICLE_LABELS[from] ?? from}" → "${STATUT_ARTICLE_LABELS[to] ?? to}". Statuts autorisés depuis "${STATUT_ARTICLE_LABELS[from] ?? from}" : ${allowedList}.`;
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Macro-étapes du workflow (vue employés)                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Les 3 macro-étapes du workflow de traitement des vêtements, telles
+ * qu'affichées dans les dashboards employés (cf. demande utilisateur) :
+ *
+ *   1. pretraiter_laver   — "Prétraiter / Laver"
+ *      Articles au statut: recu, en_traitement, lave
+ *      Rôle concerné     : laveur
+ *
+ *   2. repasser_emballer  — "Repasser / Emballer"
+ *      Articles au statut: repasse, pret
+ *      Rôle concerné     : repassage (+ rangement en casier)
+ *
+ *   3. livrer_recuperer   — "Livrer / Récupérer"
+ *      Articles au statut: en_livraison, livre, retire
+ *      Rôles concernés   : livreur, réceptionniste (retrait sur place)
+ *
+ * Ces macro-étapes permettent de grouper visuellement les articles par
+ * phase de traitement dans les dashboards, pour que chaque employé voie
+ * immédiatement où en est chaque vêtement dans le pipeline.
+ */
+export const ETAPES_TRAITEMENT = [
+  "pretraiter_laver",
+  "repasser_emballer",
+  "livrer_recuperer",
+] as const;
+
+export type EtapeTraitement = (typeof ETAPES_TRAITEMENT)[number];
+
+/** Libellés FR pour les 3 macro-étapes. */
+export const ETAPE_TRAITEMENT_LABELS: Record<EtapeTraitement, string> = {
+  pretraiter_laver: "Prétraiter / Laver",
+  repasser_emballer: "Repasser / Emballer",
+  livrer_recuperer: "Livrer / Récupérer",
+};
+
+/** Descriptions courtes pour les sous-titres des cartes. */
+export const ETAPE_TRAITEMENT_DESCRIPTIONS: Record<EtapeTraitement, string> = {
+  pretraiter_laver: "Articles reçus, en traitement ou lavés",
+  repasser_emballer: "Articles lavés à repasser et à ranger en casier",
+  livrer_recuperer: "Articles prêts à livrer ou à retirer",
+};
+
+/** Noms d'icônes Lucide associées à chaque macro-étape (pour rendu UI). */
+export const ETAPE_TRAITEMENT_ICONS: Record<
+  EtapeTraitement,
+  "Droplets" | "Wind" | "PackageCheck"
+> = {
+  pretraiter_laver: "Droplets",
+  repasser_emballer: "Wind",
+  livrer_recuperer: "PackageCheck",
+};
+
+/** Variante de couleur sémantique pour chaque macro-étape. */
+export const ETAPE_TRAITEMENT_VARIANTS: Record<
+  EtapeTraitement,
+  "warning" | "primary" | "secondary"
+> = {
+  pretraiter_laver: "warning",
+  repasser_emballer: "primary",
+  livrer_recuperer: "secondary",
+};
+
+/**
+ * Mappe un statut d'article vers sa macro-étape de traitement.
+ *
+ * @param statutArticle  Statut de l'article (recu, en_traitement, lave, ...).
+ * @returns              La macro-étape correspondante, ou null si le statut
+ *                       est inconnu.
+ */
+export function getEtapeTraitementArticle(
+  statutArticle: string | null | undefined
+): EtapeTraitement | null {
+  if (!statutArticle) return null;
+  switch (statutArticle) {
+    case "recu":
+    case "en_traitement":
+    case "lave":
+      return "pretraiter_laver";
+    case "repasse":
+    case "pret":
+      return "repasser_emballer";
+    case "en_livraison":
+    case "livre":
+    case "retire":
+      return "livrer_recuperer";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Liste des statuts d'article appartenant à une macro-étape donnée.
+ * Utile pour filtrer des listes d'articles côté UI.
+ */
+export const STATUTS_PAR_ETAPE: Record<EtapeTraitement, readonly string[]> = {
+  pretraiter_laver: ["recu", "en_traitement", "lave"],
+  repasser_emballer: ["repasse", "pret"],
+  livrer_recuperer: ["en_livraison", "livre", "retire"],
+};
+
+/**
+ * Regroupe une liste d'articles par macro-étape de traitement.
+ *
+ * @param articles  Liste d'articles (chaque article doit avoir un champ `statut`).
+ * @returns         Un objet avec les 3 macro-étapes comme clés et les tableaux
+ *                  d'articles correspondants comme valeurs.
+ */
+export function grouperArticlesParEtape<
+  T extends { statut: string | null | undefined }
+>(
+  articles: readonly T[]
+): Record<EtapeTraitement, T[]> {
+  const result: Record<EtapeTraitement, T[]> = {
+    pretraiter_laver: [],
+    repasser_emballer: [],
+    livrer_recuperer: [],
+  };
+  for (const a of articles) {
+    const etape = getEtapeTraitementArticle(a.statut);
+    if (etape) {
+      result[etape].push(a);
+    }
+  }
+  return result;
+}

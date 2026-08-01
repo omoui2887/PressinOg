@@ -87,6 +87,18 @@ export interface CommandeDetailArticle {
   statut: string;
   photo_url: string | null;
   assigne_a: string | null;
+  /** Code du casier de stockage (ex: "A1") quand l'article est propre et rangé.
+   *  Optionnel : absent si la migration 015 n'est pas appliquée. */
+  zone_stockage?: string | null;
+  /** Date à laquelle l'article a été rangé dans le casier.
+   *  Optionnel : absent si la migration 015 n'est pas appliquée. */
+  date_rangeement?: string | null;
+  /** Personnel (FK personnel.id) qui a rangé l'article dans le casier.
+   *  Optionnel : absent si la migration 015 n'est pas appliquée. */
+  rangee_par?: string | null;
+  /** Objet imbriqué du personnel qui a rangé l'article (nom lisible).
+   *  Optionnel : absent si la migration 015 n'est pas appliquée. */
+  range_par?: { id: string; nom_complet: string } | null;
   created_at: string;
   assigne: { id: string; nom_complet: string } | null;
 }

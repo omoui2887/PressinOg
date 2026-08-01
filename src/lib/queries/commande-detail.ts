@@ -55,15 +55,21 @@ const COMMANDE_BASE = `
 // Relations imbriquées pour les lignes et articles — version « riche »
 // avec JOIN catalogue_articles. Pas de hint de FK (PostgREST auto-résout
 // si une seule FK existe entre les deux tables).
+// Inclut les colonnes de casier (zone_stockage, date_rangeement, rangee_par)
+// ajoutées par la migration 015_casiers_stockage.sql.
 const LIGNES_RICHES = `lignes:commande_lignes(id, service_id, description, quantite, prix_unitaire, montant_ligne, created_at, service:services(id, nom, type))`;
 
-const ARTICLES_RICHES = `articles:articles_vetements(id, ligne_id, code_qr, catalogue_article_id, couleur, couleur_libre, etat, description_etat, statut, photo_url, assigne_a, created_at, catalogue_article:catalogue_articles(id, nom, slug, icone_url), assigne:personnel!articles_vetements_assigne_a_fkey(id, nom_complet))`;
+const ARTICLES_RICHES = `articles:articles_vetements(id, ligne_id, code_qr, catalogue_article_id, couleur, couleur_libre, etat, description_etat, statut, photo_url, assigne_a, zone_stockage, date_rangeement, rangee_par, created_at, catalogue_article:catalogue_articles(id, nom, slug, icone_url), assigne:personnel!articles_vetements_assigne_a_fkey(id, nom_complet), range_par:personnel!articles_vetements_rangee_par_fkey(id, nom_complet))`;
 
 // Version « minimale » — sans le JOIN catalogue_articles (garanti de
-// fonctionner même si la FK n'existe pas).
+// fonctionner même si la FK n'existe pas). Inclut les colonnes de casier.
 const LIGNES_MINIMAL = `lignes:commande_lignes(id, service_id, description, quantite, prix_unitaire, montant_ligne, created_at, service:services(id, nom, type))`;
 
-const ARTICLES_MINIMAL = `articles:articles_vetements(id, ligne_id, code_qr, catalogue_article_id, couleur, couleur_libre, etat, description_etat, statut, photo_url, assigne_a, created_at, assigne:personnel!articles_vetements_assigne_a_fkey(id, nom_complet))`;
+const ARTICLES_MINIMAL = `articles:articles_vetements(id, ligne_id, code_qr, catalogue_article_id, couleur, couleur_libre, etat, description_etat, statut, photo_url, assigne_a, zone_stockage, date_rangeement, rangee_par, created_at, assigne:personnel!articles_vetements_assigne_a_fkey(id, nom_complet), range_par:personnel!articles_vetements_rangee_par_fkey(id, nom_complet))`;
+
+// Version « ultra-minimale » — sans les colonnes de casier (migration 015
+// non appliquée). Garanti de fonctionner sur toutes les versions de DB.
+const ARTICLES_ULTRA_MINIMAL = `articles:articles_vetements(id, ligne_id, code_qr, catalogue_article_id, couleur, couleur_libre, etat, description_etat, statut, photo_url, assigne_a, created_at, assigne:personnel!articles_vetements_assigne_a_fkey(id, nom_complet))`;
 
 export interface CommandeDetailResult {
   /** La commande si trouvée, null sinon. */
@@ -112,7 +118,7 @@ export async function fetchCommandeDetail(
   // --- Tentative 2 : requête minimale (sans JOIN catalogue_articles) ---
   // La tentative 1 a produit une erreur PostgREST — probablement une
   // colonne `type_vetement_legacy` manquante ou une FK non résolvable.
-  // On retente avec les colonnes de base uniquement.
+  // On retente avec les colonnes de base uniquement + colonnes casier.
   console.warn(
     "[fetchCommandeDetail] Requête riche échouée, fallback minimal:",
     errRiche?.message ?? errRiche
@@ -128,13 +134,41 @@ export async function fetchCommandeDetail(
     .eq("id", commandeId)
     .maybeSingle();
 
-  if (errMin) {
-    console.error(
-      "[fetchCommandeDetail] Requête minimale aussi échouée:",
-      errMin
-    );
-    return { commande: null, error: errMin.message ?? String(errMin) };
+  if (!errMin && commandeMin) {
+    return { commande: commandeMin, error: null };
   }
 
-  return { commande: commandeMin, error: null };
+  if (!errMin && !commandeMin) {
+    // La commande n'existe pas ou RLS la masque.
+    return { commande: null, error: null };
+  }
+
+  // --- Tentative 3 : requête ultra-minimale (sans colonnes de casier) ---
+  // La tentative 2 a échoué — probablement parce que la migration 015
+  // (colonnes zone_stockage / date_rangeement / rangee_par) n'a pas été
+  // appliquée. On retente sans ces colonnes.
+  console.warn(
+    "[fetchCommandeDetail] Requête minimale échouée, fallback ultra-minimal:",
+    errMin?.message ?? errMin
+  );
+
+  const { data: commandeUltra, error: errUltra } = await supabase
+    .from("commandes")
+    .select(
+      `${COMMANDE_BASE},
+      ${LIGNES_MINIMAL},
+      ${ARTICLES_ULTRA_MINIMAL}`
+    )
+    .eq("id", commandeId)
+    .maybeSingle();
+
+  if (errUltra) {
+    console.error(
+      "[fetchCommandeDetail] Requête ultra-minimale aussi échouée:",
+      errUltra
+    );
+    return { commande: null, error: errUltra.message ?? String(errUltra) };
+  }
+
+  return { commande: commandeUltra, error: null };
 }
