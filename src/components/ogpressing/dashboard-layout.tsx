@@ -58,13 +58,42 @@ export interface DashboardNavItem {
   badge?: string;
 }
 
+/**
+ * Groupe de navigation (EMBELLISSEMENT §4 — sidebar regroupée par sections).
+ * Permet aux callers de passer une structure organisée au lieu d'une liste
+ * plate. Rétro-compatible : si `navGroups` n'est pas fourni, on retombe sur
+ * `navItems` (rendu plat avec un seul header de rôle).
+ *
+ * Groupes conventionnels (section 4 du prompt) :
+ *   - Activité       (POS, commandes, production)
+ *   - Relation client (clients, livraisons)
+ *   - Gestion        (personnel, stock, services et tarifs)
+ *   - Finances       (caisse, rapports)
+ *   - Paramètres     (configuration du pressing, abonnement)
+ */
+export interface DashboardNavGroup {
+  /** Libellé du groupe (ex : "Activité", "Finances"). Affiché en uppercase. */
+  label: string;
+  /** Items du groupe. */
+  items: DashboardNavItem[];
+}
+
 interface BrandInfo {
   name: string;
   logoUrl?: string | null;
 }
 
 interface DashboardLayoutProps {
-  navItems: DashboardNavItem[];
+  /**
+   * Liste plate de liens. Utilisée si `navGroups` n'est pas fourni.
+   * Rétro-compatibilité : les callers existants n'ont pas besoin de changer.
+   */
+  navItems?: DashboardNavItem[];
+  /**
+   * Groupes de navigation organisés par section. Si fourni, remplace
+   * `navItems` et affiche les liens regroupés sous des headers labellisés.
+   */
+  navGroups?: DashboardNavGroup[];
   user: { email?: string | null; nom?: string | null };
   roleLabel: string;
   brand?: BrandInfo;
@@ -74,6 +103,7 @@ interface DashboardLayoutProps {
 
 export function DashboardLayout({
   navItems,
+  navGroups,
   user,
   roleLabel,
   brand,
@@ -84,6 +114,13 @@ export function DashboardLayout({
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+
+  // Normalisation : si `navGroups` est fourni, on l'utilise. Sinon, on
+  // construit un groupe unique "Navigation" à partir de `navItems` pour
+  // garder un rendu rétro-compatible (header de rôle + liste plate).
+  const groups: DashboardNavGroup[] = navGroups ?? (navItems && navItems.length > 0
+    ? [{ label: roleLabel, items: navItems }]
+    : []);
 
   // Si une bottomNav est fournie, on l'utilise à la place du burger Sheet
   // sur mobile (pattern admin). Le burger reste utile uniquement quand il
@@ -153,55 +190,66 @@ export function DashboardLayout({
         </Link>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-        <p className="px-2 pb-2 pt-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+      {/* Nav — groupée par sections (EMBELLISSEMENT §4) */}
+      <nav className="flex-1 space-y-4 overflow-y-auto p-3">
+        {/* Bandeau de rôle en haut (cosmétique — repère de sécurité) */}
+        <p className="px-2 pb-1 pt-3 text-xs font-semibold uppercase tracking-wider text-landing-accent-deep">
           {roleLabel}
         </p>
-        {navItems.map((item) => {
-          const active = isActive(item.href);
-          const content = (
-            <span
-              className={cn(
-                "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all duration-fast ease-smooth",
-                active
-                  ? "bg-primary/10 text-primary font-semibold shadow-sm before:absolute before:left-0 before:top-1/2 before:h-6 before:-translate-y-1/2 before:w-1 before:rounded-full before:bg-primary before:transition-all before:duration-base"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground hover:translate-x-0.5 motion-reduce:hover:translate-x-0",
-                item.disabled && "pointer-events-none opacity-50"
-              )}
-            >
-              <item.icon className="size-4 shrink-0" />
-              <span className="flex-1">{item.label}</span>
-              {item.badge && (
+
+        {groups.map((group, gi) => (
+          <div key={group.label + gi} className="space-y-1">
+            {/* Header de section */}
+            <p className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+              {group.label}
+            </p>
+            {/* Items du groupe */}
+            {group.items.map((item) => {
+              const active = isActive(item.href);
+              const content = (
                 <span
                   className={cn(
-                    "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                    "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all duration-fast ease-smooth",
                     active
-                      ? "bg-primary/20 text-primary"
-                      : "bg-muted text-muted-foreground"
+                      ? "bg-primary/10 text-primary font-semibold shadow-sm before:absolute before:left-0 before:top-1/2 before:h-6 before:-translate-y-1/2 before:w-1 before:rounded-full before:bg-primary before:transition-all before:duration-base"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground hover:translate-x-0.5 motion-reduce:hover:translate-x-0",
+                    item.disabled && "pointer-events-none opacity-50"
                   )}
                 >
-                  {item.badge}
+                  <item.icon className="size-4 shrink-0" />
+                  <span className="flex-1">{item.label}</span>
+                  {item.badge && (
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                        active
+                          ? "bg-primary/20 text-primary"
+                          : "bg-muted text-muted-foreground"
+                      )}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
+                  {active && <ChevronRight className="size-4" />}
                 </span>
-              )}
-              {active && <ChevronRight className="size-4" />}
-            </span>
-          );
-          return item.disabled ? (
-            <div
-              key={item.href}
-              aria-disabled
-              title="Bientôt disponible"
-              className="cursor-not-allowed"
-            >
-              {content}
-            </div>
-          ) : (
-            <Link key={item.href} href={item.href}>
-              {content}
-            </Link>
-          );
-        })}
+              );
+              return item.disabled ? (
+                <div
+                  key={item.href}
+                  aria-disabled
+                  title="Bientôt disponible"
+                  className="cursor-not-allowed"
+                >
+                  {content}
+                </div>
+              ) : (
+                <Link key={item.href} href={item.href}>
+                  {content}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       {/* User card + logout */}

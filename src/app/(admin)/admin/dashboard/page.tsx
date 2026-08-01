@@ -246,6 +246,7 @@ export default async function AdminDashboardPage() {
           icon={Wallet}
           accent="secondary"
           description="Paiements encaissés aujourd'hui"
+          isMonetary
         />
         <StatCard
           label="Commandes du jour"
@@ -317,7 +318,7 @@ export default async function AdminDashboardPage() {
                 >
                   <div className="min-w-0 space-y-0.5">
                     <p className="truncate text-sm font-semibold text-foreground">
-                      <span className="font-mono text-xs text-muted-foreground">
+                      <span className="fcfa-tight text-xs text-muted-foreground">
                         {c.numero_commande ?? "—"}
                       </span>
                       {c.client?.nom_complet && (
@@ -332,7 +333,7 @@ export default async function AdminDashboardPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-sm font-semibold text-foreground">
+                    <span className="fcfa text-sm font-semibold text-foreground">
                       {formatFCFA(c.montant_total ?? 0)}
                     </span>
                     <StatusBadge
@@ -382,7 +383,7 @@ export default async function AdminDashboardPage() {
                   >
                     <div className="min-w-0 space-y-0.5">
                       <p className="truncate text-sm font-semibold text-foreground">
-                        <span className="font-mono text-xs text-muted-foreground">
+                        <span className="fcfa-tight text-xs text-muted-foreground">
                           {c.numero_commande ?? "—"}
                         </span>
                         {c.client?.nom_complet && (
@@ -400,7 +401,7 @@ export default async function AdminDashboardPage() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-foreground">
+                      <span className="fcfa text-sm font-semibold text-foreground">
                         {formatFCFA(c.montant_total ?? 0)}
                       </span>
                       <StatusBadge
@@ -505,7 +506,7 @@ export default async function AdminDashboardPage() {
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-danger">
+                      <span className="fcfa text-sm font-bold text-danger">
                         {formatFCFA(Number(c.solde_impaye ?? 0))}
                       </span>
                       <ChevronRight className="size-4 text-muted-foreground" />

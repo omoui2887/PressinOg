@@ -11,16 +11,26 @@
  * être définies DANS la frontière client. Ce wrapper reçoit uniquement
  * les objets sérialisables (user + brand) du layout serveur.
  *
- * Navigation latérale (desktop, 9 items) :
- *   1. Tableau de bord        → /admin/dashboard
- *   2. Nouvelle commande      → /admin/commandes/nouvelle
- *   3. Commandes              → /admin/commandes
- *   4. Clients                → /admin/clients
- *   5. Personnel              → /admin/personnel
- *   6. Stock                  → /admin/stock
- *   7. Services               → /admin/services
- *   8. Rapports               → /admin/rapports
- *   9. Mon pressing           → /admin/pressing
+ * Navigation latérale (EMBELLISSEMENT §4 — sidebar regroupée par sections) :
+ *
+ *   ACTIVITÉ
+ *     - Tableau de bord       → /admin/dashboard
+ *     - Nouvelle commande     → /admin/commandes/nouvelle
+ *     - Commandes             → /admin/commandes
+ *
+ *   RELATION CLIENT
+ *     - Clients               → /admin/clients
+ *
+ *   GESTION
+ *     - Personnel             → /admin/personnel
+ *     - Stock biodétergents   → /admin/stock
+ *     - Services et tarifs    → /admin/services
+ *
+ *   FINANCES
+ *     - Rapports              → /admin/rapports
+ *
+ *   PARAMÈTRES
+ *     - Mon pressing          → /admin/pressing
  *
  * Navigation mobile (bottomNav) : 5 items principaux + Plus (gérée dans
  * `AdminBottomNav`).
@@ -40,24 +50,50 @@ import {
 } from "lucide-react";
 import {
   DashboardLayout,
-  type DashboardNavItem,
+  type DashboardNavGroup,
 } from "@/components/ogpressing/dashboard-layout";
 import { AdminBottomNav } from "./admin-bottom-nav";
 
-const NAV_ITEMS: DashboardNavItem[] = [
-  { href: "/admin/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
+/** Groupes de navigation — version organisée par section (EMBELLISSEMENT §4). */
+const NAV_GROUPS: DashboardNavGroup[] = [
   {
-    href: "/admin/commandes/nouvelle",
-    label: "Nouvelle commande",
-    icon: PlusCircle,
+    label: "Activité",
+    items: [
+      { href: "/admin/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
+      {
+        href: "/admin/commandes/nouvelle",
+        label: "Nouvelle commande",
+        icon: PlusCircle,
+      },
+      { href: "/admin/commandes", label: "Commandes", icon: List },
+    ],
   },
-  { href: "/admin/commandes", label: "Commandes", icon: List },
-  { href: "/admin/clients", label: "Clients", icon: Users },
-  { href: "/admin/personnel", label: "Personnel", icon: UserCog },
-  { href: "/admin/stock", label: "Stock", icon: Package },
-  { href: "/admin/services", label: "Services", icon: Tag },
-  { href: "/admin/rapports", label: "Rapports", icon: BarChart3 },
-  { href: "/admin/pressing", label: "Mon pressing", icon: Settings },
+  {
+    label: "Relation client",
+    items: [
+      { href: "/admin/clients", label: "Clients", icon: Users },
+    ],
+  },
+  {
+    label: "Gestion",
+    items: [
+      { href: "/admin/personnel", label: "Personnel", icon: UserCog },
+      { href: "/admin/stock", label: "Stock biodétergents", icon: Package },
+      { href: "/admin/services", label: "Services et tarifs", icon: Tag },
+    ],
+  },
+  {
+    label: "Finances",
+    items: [
+      { href: "/admin/rapports", label: "Rapports", icon: BarChart3 },
+    ],
+  },
+  {
+    label: "Paramètres",
+    items: [
+      { href: "/admin/pressing", label: "Mon pressing", icon: Settings },
+    ],
+  },
 ];
 
 interface AdminShellProps {
@@ -69,7 +105,7 @@ interface AdminShellProps {
 export function AdminShell({ user, brand, children }: AdminShellProps) {
   return (
     <DashboardLayout
-      navItems={NAV_ITEMS}
+      navGroups={NAV_GROUPS}
       roleLabel="Admin pressing"
       user={user}
       brand={brand}

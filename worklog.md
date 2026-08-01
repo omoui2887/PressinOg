@@ -8515,3 +8515,126 @@ Fichiers modifiés :
 - `src/lib/types/database.types.ts`
 - `src/components/ogpressing/admin/personnel/edit-employee-dialog.tsx`
 - `src/components/ogpressing/admin/personnel/personnel-helpers.tsx`
+
+---
+Task ID: EMBELLISSEMENT-UI-1
+Agent: main
+Task: Appliquer le PROMPT-EMBELLISSEMENT-OGPRESSING-STANDALONE.md sans casser l'architecture SaaS
+
+Work Log:
+- Lecture intégrale du prompt d'embellissement (818 lignes, 45 sections, 16 étapes)
+- Analyse de l'état existant : LOT 16 (animations + nuances) + LOT 17 (landing cinématographique) déjà en place → focus sur les GAPS restants
+- Audit visuel synthétique présenté (10 lignes, tableau problème/gravité/correction)
+- Stratégie : appliquer les fondations (typographie, badges canoniques) + les pages à forte visibilité (/login, /404) + le regroupement sidebar — sans toucher aux routes/API/RLS/données
+
+ÉTAPE 1 — Typographie globale (section 3 du prompt) :
+- `src/app/layout.tsx` : ajout de `Plus_Jakarta_Sans` (--font-jakarta) et `IBM_Plex_Mono` (--font-plex-mono) via next/font/google, appliquées sur <body> avec `font-jakarta`. Geist + Geist_Mono conservés pour rétro-compat shadcn/ui.
+- `src/app/globals.css` : ajout de la classe utilitaire `.fcfa` (mono + tabular-nums + zero slash + letter-spacing -0.01em) et `.fcfa-tight` (variante condensée pour badges/petits libellés). Ajout de la hiérarchie typographique H1/H2/H3/H4 (letter-spacing -0.02 à -0.03em, line-height 1.2, text-wrap balance).
+- Utilisation : `<span className="fcfa">{formatFCFA(12500)}</span>` pour tous les montants/numéros de commande/codes PRS/références/quantités.
+
+ÉTAPE 2 — Statut Badge unifié (section 14 du prompt) :
+- `src/lib/workflow/commande-statut.ts` : ajout du type `StatutBadgeVariant` (10 variantes : neutral/slate/info/cyan/violet/success/successSolid/warning/danger/accent) + 4 tables canoniques :
+  - `STATUT_COMMANDE_BADGE_VARIANTS` (recu→slate, en_traitement→info, lave→cyan, repasse→violet, pret→success, en_livraison→info, livre→successSolid, retire→neutral)
+  - `STATUT_PAIEMENT_BADGE_VARIANTS` (paye→success, acompte→warning, impaye→danger)
+  - `STATUT_ARTICLE_BADGE_VARIANTS` (idem commande hors en_livraison)
+  - `STATUT_BADGES_AUTRES` (express→accent Or Textile, en_retard→danger, nouveau_client→info, actif→success, essai→warning, abonnement_expire→danger)
+  - Helper `getStatutBadgeVariant(statut)` cherche dans les 4 tables successivement.
+- `src/components/shared/status-badge.tsx` : refactor complet. La variante n'est PLUS devinée par mots-clés (`guessVariant` supprimé) — elle provient de `getStatutBadgeVariant()`. Ajout des 6 nouvelles variantes (slate/cyan/violet/successSolid/accent) avec classes Tailwind correspondantes (bg + text + border + dark mode). Ajout d'une PASTILLE de couleur (rond 1.5px) à gauche du texte — double encodage couleur + texte pour l'accessibilité (section 25 : jamais la couleur seule).
+- Rétro-compatibilité : 1 seul caller utilisait `variant="danger"` explicitement (`admin/dashboard/page.tsx:450`) — variante toujours disponible, AUCUN changement nécessaire côté caller.
+
+ÉTAPE 3 — StatCard embellie (sections 6 + 17 du prompt) :
+- `src/components/ogpressing/stat-card.tsx` : ajout d'une BARRE D'ACCENT verticale à gauche (4px de large, pleine hauteur, couleur = accentIcon[accent]). Ajout d'un padding-left supplémentaire (pl-6) pour ne pas coller le contenu à la barre. Ajout de la prop `isMonetary?: boolean` qui applique automatiquement la classe `.fcfa` sur la valeur (mono + tabular-nums) pour aligner les chiffres entre cartes.
+- `src/app/(admin)/admin/dashboard/page.tsx` :
+  - StatCard "CA du jour" : ajout de `isMonetary` → montant en mono
+  - Tous les `<span className="font-mono text-xs text-muted-foreground">{c.numero_commande}</span>` (2 occurrences) → remplacés par `<span className="fcfa-tight text-xs text-muted-foreground">` (numéros de commande en mono canonique)
+  - 3 montants dans la liste (commandes récentes, payées non prêtes, impayés) → `<span className="fcfa text-sm font-semibold text-foreground">` pour alignement parfait
+
+ÉTAPE 4 — Page /login premium (section 29 du prompt) :
+- `src/app/(public)/login/page.tsx` : refactor complet du rendu visuel, LOGIQUE MÉTIER INTÉGRALEMENT CONSERVÉE :
+  - signInWithPassword via Supabase browser ✅
+  - Détermination du rôle (super_admins > personnel > erreur) ✅
+  - Redirection hard via window.location.assign (évite race conditions middleware + RSC cross-origin) ✅
+  - Mot de passe temporaire → /personnel/changer-mot-de-passe ✅
+  - Compte désactivé → signOut + message FR ✅
+  - Lecture des ?error= du middleware (one-shot via useEffect) ✅
+  - Pattern d'erreur réseau vs métier vs inconnu ✅
+- Nouveau rendu : layout SPLIT-SCREEN (lg:grid lg:grid-cols-2)
+  - Panneau gauche (Bleu Nuit #14235B + Or Textile #D9A441) : logo OgPressing + tagline "Gérez votre pressing comme un pro." (mot "pro." en Or) + 3 points clés (Zap : 60s, ShieldCheck : QR/code-barres, ShoppingBag : mobile-first) + copyright
+  - Décor : motif textile (radial-gradient de points dorés 24×24px, opacity 6%), halo doré en haut à droite, halo bleu profond en bas à gauche
+  - Panneau droit : card blanche avec shadow-lg, formulaire centré, logo mobile (lg:hidden), bouton "Se connecter" avec `ripple` (effet d'onde au clic)
+  - Mobile : panneau marketing masqué (lg:hidden), logo compact en haut du formulaire, décor d'accompagnement (gradient + blur)
+- Vérification VLM (z-ai vision) : tous les éléments attendus confirmés (split-screen, Bleu Nuit, Or Textile, 3 points clés, halos, formulaire, bouton plein largeur)
+
+ÉTAPE 5 — Page 404 premium (section 28 du prompt) :
+- `src/app/not-found.tsx` : refactor complet. Card minimaliste remplacée par une composition éditoriale :
+  - Illustration SVG inline : CHEMISE SUR CINTRE (cintre doré #D9A441, chemise blanche contours bleu nuit #14235B, 2 boutons dorés) — signature graphique textile
+  - Chiffre "404" en Or Textile profond (text-7xl/text-8xl, font-jakarta, font-bold, tracking-tight)
+  - Titre : "Cette page est partie au repassage" (clins d'œil métier pressing)
+  - Message clair et bien formulé
+  - 3 CTAs : "Retour à l'accueil" (Bleu Nuit rempli + ripple), "Tableau de bord" (outline), "Se connecter" (ghost)
+  - Pied : icône Shirt + "OgPressing — gestion professionnelle de pressings"
+  - Décor : halo doré en haut à droite, halo bleu en bas à gauche, motif textile discret (points bleus 28×28px, opacity 4%)
+- Vérification VLM : tous les éléments confirmés (chiffre doré, illustration chemise/cintre, halos, motif textile, 3 CTAs, palette cohérente)
+
+ÉTAPE 6 — DashboardLayout sidebar groupée (section 4 du prompt) :
+- `src/components/ogpressing/dashboard-layout.tsx` :
+  - Ajout de l'interface `DashboardNavGroup { label: string; items: DashboardNavItem[] }`
+  - Props : `navItems?` devient optionnel, ajout de `navGroups?: DashboardNavGroup[]`
+  - Normalisation : si `navGroups` fourni → on l'utilise ; sinon on construit un groupe unique `[{ label: roleLabel, items: navItems }]` → RÉTRO-COMPATIBLE
+  - Rendu : itération sur `groups.map((group) => ...)` avec header de section (text-[11px] uppercase tracking-wider text-muted-foreground/80) au-dessus de chaque groupe
+  - Bandeau de rôle en haut de la nav (text-landing-accent-deep, repère de sécurité visuel pour l'utilisateur)
+  - Items actifs : `before:absolute before:left-0 ... before:w-1 before:rounded-full before:bg-primary` (barre latérale primary 3px — déjà présente dans la version précédente, conservée)
+- `src/components/ogpressing/admin/admin-shell.tsx` : migration de `NAV_ITEMS` (liste plate 9 items) vers `NAV_GROUPS` (5 groupes organisés) :
+  - ACTIVITÉ : Tableau de bord, Nouvelle commande, Commandes
+  - RELATION CLIENT : Clients
+  - GESTION : Personnel, Stock biodétergents, Services et tarifs
+  - FINANCES : Rapports
+  - PARAMÈTRES : Mon pressing
+- `src/components/ogpressing/super-admin/super-admin-shell.tsx` : inchangé (4 items → rendu plat via `navItems`, normalisé en 1 groupe "Super Admin" — pas besoin de subdiviser)
+- `src/components/ogpressing/personnel/personnel-shell.tsx` : inchangé (nav courte par rôle — conforme à la section 4 du prompt : "Un laveur ne doit pas voir une sidebar à moitié vide et grisée")
+
+Vérifications finales:
+- `bun run lint` : 0 erreur, 0 warning ✅
+- `curl /login` : HTTP 200 en 165ms ✅
+- `curl /404 (page inexistante)` : HTTP 404 en 754ms ✅ (Next.js sert bien not-found.tsx)
+- `curl /admin/dashboard` : HTTP 307 (redirection /login — middleware OK, non authentifié) ✅
+- VLM sur /login : tous les éléments embellissement confirmés (split-screen, Bleu Nuit + Or Textile, 3 points clés, halos, formulaire, bouton plein largeur) ✅
+- VLM sur /404 : tous les éléments confirmés (chiffre doré, illustration chemise/cintre, 3 CTAs, halos, motif textile) ✅
+- dev.log : aucune erreur de compilation, aucune erreur runtime
+
+Stage Summary:
+6 étapes d'embellissement appliquées sans casser l'architecture SaaS :
+1. ✅ Typographie globale : Plus Jakarta Sans (interface) + IBM Plex Mono (données FCFA/numéros/codes) chargées au layout racine, disponibles sur TOUS les espaces (public, admin, personnel, super-admin)
+2. ✅ Statut Badge canonique : 10 variantes + 4 tables de mapping (commande/paiement/article/autres) — source unique de vérité, fini les incohérences entre écrans
+3. ✅ StatCard embellie : barre d'accent verticale + prop isMonetary pour alignement parfait des montants FCFA
+4. ✅ /login premium : split-screen Bleu Nuit + Or Textile, motif textile, 3 points clés marketing, bouton ripple — logique métier 100% conservée
+5. ✅ /404 premium : illustration SVG chemise/cintre, chiffre doré, 3 CTAs, halos + motif textile
+6. ✅ DashboardLayout sidebar groupée : support `navGroups` rétro-compatible, AdminShell migré vers 5 sections (Activité/Relation client/Gestion/Finances/Paramètres)
+
+RÈGLES ABSOLUES RESPECTÉES (section 42 du prompt) :
+- ✅ Aucune fonctionnalité supprimée
+- ✅ Aucune donnée modifiée
+- ✅ Aucune route cassée (tous les href conservés)
+- ✅ Aucune policy RLS modifiée
+- ✅ Aucune API modifiée
+- ✅ Aucune logique métier modifiée (calculs, totaux, guards de paiement, transitions de statut)
+- ✅ Aucun paiement en ligne introduit
+- ✅ Aucun identifiant en clair ajouté
+- ✅ Performance préservée (fonts en display:swap, pas d'animations lourdes, prefers-reduced-motion respecté)
+
+Fichiers créés : 0
+Fichiers modifiés :
+- src/app/layout.tsx (typographie globale)
+- src/app/globals.css (classe .fcfa + hiérarchie headings)
+- src/lib/workflow/commande-statut.ts (mapping canonique statut→variante)
+- src/components/shared/status-badge.tsx (refactor + pastille + 6 nouvelles variantes)
+- src/components/ogpressing/stat-card.tsx (barre d'accent + isMonetary)
+- src/app/(admin)/admin/dashboard/page.tsx (isMonetary + .fcfa sur montants/numéros)
+- src/app/(public)/login/page.tsx (split-screen premium, logique intacte)
+- src/app/not-found.tsx (illustration + 3 CTAs + halos)
+- src/components/ogpressing/dashboard-layout.tsx (support navGroups rétro-compatible)
+- src/components/ogpressing/admin/admin-shell.tsx (NAV_GROUPS organisés en 5 sections)
+
+Périmètre non couvert (suites possibles, hors cette task) :
+- ÉTAPE 7+ du prompt : modernisation des formulaires (POS, fiche client, fiche employé), tableaux mobiles en cartes, modales de confirmation, micro-interactions de scan QR, skeletons étendus, empty states uniformisés — périmètre très large, nécessite une passe dédiée par module
+- Dark mode : existant mais secondaire (conforme à la section 26 du prompt)

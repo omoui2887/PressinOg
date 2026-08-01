@@ -1,32 +1,26 @@
 /**
- * OgPressing — Page de connexion
- * ------------------------------
+ * OgPressing — Page de connexion (EMBELLISSEMENT §29)
+ * ----------------------------------------------------
  * Route : /login
  *
- * Formulaire email + mot de passe validé avec react-hook-form + zod.
- * Utilise le client browser Supabase (signInWithPassword) qui pose la
- * session dans les cookies automatiquement.
+ * Layout split-screen premium :
+ *   - Desktop (lg+) : panneau gauche Bleu Nuit + Or Textile avec motif
+ *     textile, tagline marketing, et points clés du SaaS. Panneau droit
+ *     blanc avec le formulaire centré.
+ *   - Mobile : panneau marketing compact en haut (logo + tagline), puis
+ *     formulaire plein écran.
  *
- * Après connexion réussie, détermine le rôle de l'utilisateur dans cet
- * ordre :
- *   1. Table `super_admins` (actif=true)        → /super-admin/dashboard
- *   2. Table `personnel` (user_id) :
- *        - statut_compte='desactive' OU actif=false → bloquer + signOut
- *        - mot_de_passe_temporaire=true            → /personnel/changer-mot-de-passe
- *        - role='manager'                          → /admin/dashboard
- *        - autre rôle                              → /personnel/{role}/dashboard
- *   3. Aucune correspondance → signOut + erreur "Compte non reconnu"
+ * LOGIQUE INTACTE (cf. version précédente) :
+ *   - signInWithPassword via Supabase browser client
+ *   - Détermination du rôle : super_admins > personnel > erreur
+ *   - Redirection hard via window.location.assign (évite les race
+ *     conditions middleware + RSC cross-origin en preview iframe)
+ *   - Mot de passe temporaire → /personnel/changer-mot-de-passe
+ *   - Compte désactivé → signOut + message FR clair
+ *   - Lecture des ?error= transmis par le middleware (one-shot)
  *
- * ⚠️ Pattern navigation : `window.location.assign(target)` (et NON
- * router.push) — voir Task 17 du worklog :
- *   - garantit que le middleware voie le cookie de session fraîchement
- *     posé (évite les race conditions Supabase + Next.js App Router)
- *   - contourne le blocage cross-origin des fetchs RSC /_next/* dans
- *     le preview iframe (sinon router.push échoue silencieusement)
- *   - le navigateur affiche son propre indicateur de chargement
- *   - on utilise .assign() plutôt que `window.location.href = ...`
- *     pour satisfaire la règle ESLint react-hooks/immutability
- *     (v7 de eslint-plugin-react-hooks flag les mutations de globals).
+ * Aucune modification de la logique métier — uniquement la couche
+ * présentation (CSS + structure HTML).
  */
 "use client";
 
@@ -41,6 +35,9 @@ import {
   ArrowLeft,
   Eye,
   EyeOff,
+  Sparkles,
+  ShieldCheck,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -274,169 +271,269 @@ export default function LoginPage() {
   /* -------------------- Rendu -------------------- */
 
   return (
-    <div className="relative flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-12">
-      {/* Décor */}
-      <div
+    <div className="relative flex min-h-dvh items-stretch justify-center lg:grid lg:grid-cols-2 lg:gap-0">
+      {/* ===== Panneau marketing (Bleu Nuit + Or Textile) ===== */}
+      <aside
         aria-hidden
-        className="absolute inset-0 -z-10 bg-gradient-to-b from-primary/5 to-background"
-      />
-      <div
-        aria-hidden
-        className="absolute top-0 left-1/2 -z-10 size-[400px] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl"
-      />
+        className="relative hidden overflow-hidden bg-landing-primary text-landing-bg lg:flex lg:flex-col lg:justify-between lg:p-12"
+      >
+        {/* Motif textile décoratif — grille de points subtile */}
+        <div
+          className="absolute inset-0 opacity-[0.06]"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 1px 1px, #d9a441 1.5px, transparent 0)",
+            backgroundSize: "24px 24px",
+          }}
+        />
+        {/* Halo doré en haut à droite */}
+        <div
+          className="absolute -right-32 -top-32 size-96 rounded-full bg-landing-accent/20 blur-3xl"
+        />
+        {/* Halo bleu profond en bas à gauche */}
+        <div
+          className="absolute -bottom-32 -left-32 size-96 rounded-full bg-landing-primary-deep/40 blur-3xl"
+        />
 
-      <div className="w-full max-w-md">
-        <div className="mb-6 text-center">
-          {/* <a> (hard nav) — évite le fetch RSC bloqué en cross-origin (Task 22). */}
-          <a
-            href="/"
-            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="size-4" /> Retour à l&apos;accueil
-          </a>
+        {/* Logo + marque */}
+        <div className="relative z-10 flex items-center gap-3">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-landing-accent text-landing-primary">
+            <ShoppingBag className="size-5" />
+          </span>
+          <span className="font-jakarta text-xl font-bold tracking-tight">
+            Og<span className="text-landing-accent">Pressing</span>
+          </span>
         </div>
 
-        <Card className="shadow-lg">
-          <CardHeader className="text-center">
-            <div className="mx-auto flex size-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-              <ShoppingBag className="size-6" />
-            </div>
-            <CardTitle className="mt-4 text-2xl">Connexion</CardTitle>
-            <CardDescription>
-              Accédez au dashboard de votre pressing.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Form {...form}>
-              <form
-                onSubmit={form.handleSubmit(onSubmit)}
-                className="space-y-4"
-                noValidate
-              >
-                <FormField
-                  control={form.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel htmlFor="email">Email</FormLabel>
-                      <FormControl>
-                        <Input
-                          id="email"
-                          type="email"
-                          placeholder="vous@pressing.ci"
-                          autoComplete="email"
-                          className="h-11"
-                          disabled={loading}
-                          aria-invalid={
-                            !!form.formState.errors.email || undefined
-                          }
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+        {/* Tagline + points clés */}
+        <div className="relative z-10 space-y-8">
+          <div className="space-y-3">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-landing-accent/15 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-landing-accent">
+              <Sparkles className="size-3" />
+              SaaS de pressing
+            </span>
+            <h1 className="font-jakarta text-4xl font-bold leading-tight tracking-tight xl:text-5xl">
+              Gérez votre pressing
+              <br />
+              <span className="text-landing-accent">comme un pro.</span>
+            </h1>
+            <p className="max-w-md text-base leading-relaxed text-landing-bg/70">
+              POS, suivi de production, CRM clients, gestion du personnel
+              et du stock — tout réuni dans une interface pensée pour le
+              terrain ivoirien.
+            </p>
+          </div>
 
-                <FormField
-                  control={form.control}
-                  name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <div className="flex items-center justify-between">
-                        <FormLabel htmlFor="password">Mot de passe</FormLabel>
-                        {/* <button> (pas <Link>) : c'est une action (toast), pas une navigation. */}
-                        <button
-                          type="button"
-                          className="text-xs text-muted-foreground hover:text-primary"
-                          onClick={() => {
-                            toast.info(
-                              "Contactez votre administrateur pour réinitialiser votre mot de passe."
-                            );
-                          }}
-                        >
-                          Mot de passe oublié ?
-                        </button>
-                      </div>
-                      <div className="relative">
+          <ul className="space-y-3">
+            <li className="flex items-center gap-3 text-sm">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-landing-accent/15 text-landing-accent">
+                <Zap className="size-4" />
+              </span>
+              <span className="text-landing-bg/90">
+                Enregistrez une commande en moins de 60 secondes.
+              </span>
+            </li>
+            <li className="flex items-center gap-3 text-sm">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-landing-accent/15 text-landing-accent">
+                <ShieldCheck className="size-4" />
+              </span>
+              <span className="text-landing-bg/90">
+                Suivi QR/code-barres de chaque vêtement, du dépôt au retrait.
+              </span>
+            </li>
+            <li className="flex items-center gap-3 text-sm">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-landing-accent/15 text-landing-accent">
+                <ShoppingBag className="size-4" />
+              </span>
+              <span className="text-landing-bg/90">
+                Conçu pour mobile, utilisé debout, au comptoir.
+              </span>
+            </li>
+          </ul>
+        </div>
+
+        {/* Pied marketing */}
+        <div className="relative z-10 text-xs text-landing-bg/50">
+          © {new Date().getFullYear()} OgPressing — Côte d&apos;Ivoire
+        </div>
+      </aside>
+
+      {/* ===== Panneau formulaire ===== */}
+      <div className="relative flex flex-1 items-center justify-center px-4 py-10 sm:px-6">
+        {/* Décor d'accompagnement (visible mobile + desktop) */}
+        <div
+          aria-hidden
+          className="absolute inset-0 -z-10 bg-gradient-to-b from-landing-accent/5 via-background to-background"
+        />
+        <div
+          aria-hidden
+          className="absolute top-0 left-1/2 -z-10 size-[400px] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl"
+        />
+
+        <div className="w-full max-w-md">
+          {/* Lien retour */}
+          <div className="mb-6 text-center">
+            {/* <a> (hard nav) — évite le fetch RSC bloqué en cross-origin (Task 22). */}
+            <a
+              href="/"
+              className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ArrowLeft className="size-4" /> Retour à l&apos;accueil
+            </a>
+          </div>
+
+          {/* Logo mobile (le panneau marketing est masqué sur mobile) */}
+          <div className="mb-6 flex items-center justify-center gap-2 lg:hidden">
+            <span className="flex size-10 items-center justify-center rounded-xl bg-landing-primary text-landing-accent">
+              <ShoppingBag className="size-5" />
+            </span>
+            <span className="font-jakarta text-lg font-bold tracking-tight text-foreground">
+              Og<span className="text-landing-accent-deep">Pressing</span>
+            </span>
+          </div>
+
+          <Card className="shadow-lg border-border/60">
+            <CardHeader className="text-center">
+              <CardTitle className="font-jakarta text-2xl font-bold tracking-tight">
+                Connexion
+              </CardTitle>
+              <CardDescription>
+                Accédez au tableau de bord de votre pressing.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Form {...form}>
+                <form
+                  onSubmit={form.handleSubmit(onSubmit)}
+                  className="space-y-4"
+                  noValidate
+                >
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel htmlFor="email">Email</FormLabel>
                         <FormControl>
                           <Input
-                            id="password"
-                            type={showPassword ? "text" : "password"}
-                            placeholder="••••••••"
-                            autoComplete="current-password"
-                            className="h-11 pr-10"
+                            id="email"
+                            type="email"
+                            placeholder="vous@pressing.ci"
+                            autoComplete="email"
+                            className="h-11"
                             disabled={loading}
                             aria-invalid={
-                              !!form.formState.errors.password || undefined
+                              !!form.formState.errors.email || undefined
                             }
                             {...field}
                           />
                         </FormControl>
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword((s) => !s)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                          aria-label={
-                            showPassword
-                              ? "Masquer le mot de passe"
-                              : "Afficher le mot de passe"
-                          }
-                          tabIndex={-1}
-                        >
-                          {showPassword ? (
-                            <EyeOff className="size-4" />
-                          ) : (
-                            <Eye className="size-4" />
-                          )}
-                        </button>
-                      </div>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-                {globalError && (
-                  <div
-                    role="alert"
-                    className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger/5 p-3 text-sm text-danger"
+                  <FormField
+                    control={form.control}
+                    name="password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <div className="flex items-center justify-between">
+                          <FormLabel htmlFor="password">Mot de passe</FormLabel>
+                          {/* <button> (pas <Link>) : c'est une action (toast), pas une navigation. */}
+                          <button
+                            type="button"
+                            className="text-xs text-muted-foreground transition-colors hover:text-primary"
+                            onClick={() => {
+                              toast.info(
+                                "Contactez votre administrateur pour réinitialiser votre mot de passe."
+                              );
+                            }}
+                          >
+                            Mot de passe oublié ?
+                          </button>
+                        </div>
+                        <div className="relative">
+                          <FormControl>
+                            <Input
+                              id="password"
+                              type={showPassword ? "text" : "password"}
+                              placeholder="••••••••"
+                              autoComplete="current-password"
+                              className="h-11 pr-10"
+                              disabled={loading}
+                              aria-invalid={
+                                !!form.formState.errors.password || undefined
+                              }
+                              {...field}
+                            />
+                          </FormControl>
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword((s) => !s)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                            aria-label={
+                              showPassword
+                                ? "Masquer le mot de passe"
+                                : "Afficher le mot de passe"
+                            }
+                            tabIndex={-1}
+                          >
+                            {showPassword ? (
+                              <EyeOff className="size-4" />
+                            ) : (
+                              <Eye className="size-4" />
+                            )}
+                          </button>
+                        </div>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {globalError && (
+                    <div
+                      role="alert"
+                      className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger/5 p-3 text-sm text-danger"
+                    >
+                      <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                      <span>{globalError}</span>
+                    </div>
+                  )}
+
+                  <Button
+                    type="submit"
+                    size="lg"
+                    className="w-full"
+                    disabled={loading}
+                    ripple
                   >
-                    <AlertCircle className="mt-0.5 size-4 shrink-0" />
-                    <span>{globalError}</span>
-                  </div>
-                )}
+                    {loading ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" /> Connexion...
+                      </>
+                    ) : (
+                      "Se connecter"
+                    )}
+                  </Button>
+                </form>
+              </Form>
 
-                <Button
-                  type="submit"
-                  size="lg"
-                  className="w-full"
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin" /> Connexion...
-                    </>
-                  ) : (
-                    "Se connecter"
-                  )}
-                </Button>
-              </form>
-            </Form>
-
-            <div className="mt-6 rounded-md border border-primary/20 bg-primary/5 p-3 text-center text-sm">
-              <p className="text-muted-foreground">
-                Pas encore de compte ?{" "}
-                {/* <a> (hard nav) — évite le fetch RSC bloqué en cross-origin (Task 22). */}
-                <a
-                  href="/activation"
-                  className="font-medium text-primary hover:underline"
-                >
-                  Activer mon compte
-                </a>
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+              <div className="mt-6 rounded-md border border-primary/20 bg-primary/5 p-3 text-center text-sm">
+                <p className="text-muted-foreground">
+                  Pas encore de compte ?{" "}
+                  {/* <a> (hard nav) — évite le fetch RSC bloqué en cross-origin (Task 22). */}
+                  <a
+                    href="/activation"
+                    className="font-medium text-primary hover:underline"
+                  >
+                    Activer mon compte
+                  </a>
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );
