@@ -10,6 +10,31 @@
  * (comme les composants icône) à un Client Component. Les icônes doivent
  * donc être définies DANS la frontière client. Ce wrapper reçoit uniquement
  * l'objet `user` (sérialisable) du layout serveur.
+ *
+ * Navigation latérale (EMBELLISSEMENT §4 — sidebar regroupée par sections) :
+ *
+ *   ACTIVITÉ
+ *     - Tableau de bord       → /super-admin/dashboard
+ *     - Demandes              → /super-admin/demandes
+ *
+ *   CLIENTS
+ *     - Pressings             → /super-admin/pressings
+ *     - Abonnements           → /super-admin/abonnements
+ *
+ *   CONFIGURATION
+ *     - Catalogue             → /super-admin/catalogue
+ *
+ * L'ancien item "Codes d'activation" (/super-admin/codes) a été retiré :
+ * la génération de codes se fait directement depuis la page Demandes
+ * (prompt 5.2 — bouton "Valider et générer un code d'activation"),
+ * aucune page dédiée n'est prévue par le spec.
+ *
+ * L'item "Catalogue" reste accessible dans la sidebar : la route
+ * /super-admin/catalogue est actuellement un redirect vers le dashboard
+ * (le catalogue global est un référentiel en lecture seule seedé par la
+ * migration 014). Le lien est conservé pour la discoverabilité et la
+ * cohérence avec les autres espaces (admin, réceptionniste) qui
+ * consomment le catalogue via `ArticleCatalogPicker`.
  */
 "use client";
 
@@ -18,45 +43,54 @@ import {
   Inbox,
   CreditCard,
   Building2,
+  Shirt,
 } from "lucide-react";
 import {
   DashboardLayout,
-  type DashboardNavItem,
+  type DashboardNavGroup,
 } from "@/components/ogpressing/dashboard-layout";
 
-// Navigation latérale Super Admin — conforme au spec LOT 5 (4 pages).
-// L'ancien item "Codes d'activation" (/super-admin/codes) a été retiré :
-// la génération de codes se fait directement depuis la page Demandes
-// (prompt 5.2 — bouton "Valider et générer un code d'activation"),
-// aucune page dédiée n'est prévue par le spec.
-//
-// L'item "Catalogue" a été retiré : le catalogue global d'articles est
-// désormais un référentiel en lecture seule (seedé par la migration 014,
-// 33 articles). Il est CONSOMMÉ par les autres comptes (admin, réceptionniste,
-// manager) via le sélecteur visuel `ArticleCatalogPicker` dans l'Étape 2 du
-// wizard "Nouvelle commande". Le Super Admin n'a plus besoin de gérer ce
-// catalogue — son rôle se concentre sur la gestion de la plateforme
-// (pressings, demandes, abonnements).
-const NAV_ITEMS: DashboardNavItem[] = [
+/** Groupes de navigation — version organisée par section (EMBELLISSEMENT §4). */
+const NAV_GROUPS: DashboardNavGroup[] = [
   {
-    href: "/super-admin/dashboard",
-    label: "Tableau de bord",
-    icon: LayoutDashboard,
+    label: "Activité",
+    items: [
+      {
+        href: "/super-admin/dashboard",
+        label: "Tableau de bord",
+        icon: LayoutDashboard,
+      },
+      {
+        href: "/super-admin/demandes",
+        label: "Demandes",
+        icon: Inbox,
+      },
+    ],
   },
   {
-    href: "/super-admin/demandes",
-    label: "Demandes",
-    icon: Inbox,
+    label: "Clients",
+    items: [
+      {
+        href: "/super-admin/pressings",
+        label: "Pressings",
+        icon: Building2,
+      },
+      {
+        href: "/super-admin/abonnements",
+        label: "Abonnements",
+        icon: CreditCard,
+      },
+    ],
   },
   {
-    href: "/super-admin/pressings",
-    label: "Pressings",
-    icon: Building2,
-  },
-  {
-    href: "/super-admin/abonnements",
-    label: "Abonnements",
-    icon: CreditCard,
+    label: "Configuration",
+    items: [
+      {
+        href: "/super-admin/catalogue",
+        label: "Catalogue",
+        icon: Shirt,
+      },
+    ],
   },
 ];
 
@@ -68,7 +102,7 @@ interface SuperAdminShellProps {
 export function SuperAdminShell({ user, children }: SuperAdminShellProps) {
   return (
     <DashboardLayout
-      navItems={NAV_ITEMS}
+      navGroups={NAV_GROUPS}
       roleLabel="Super Admin"
       user={user}
     >

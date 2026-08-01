@@ -29,13 +29,19 @@ import { type LucideIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-export type StatAccent = "primary" | "secondary" | "warning" | "danger";
+export type StatAccent =
+  | "primary"
+  | "secondary"
+  | "warning"
+  | "danger"
+  | "neutral";
 
 const accentIcon: Record<StatAccent, string> = {
   primary: "bg-primary/10 text-primary",
   secondary: "bg-secondary/10 text-secondary",
   warning: "bg-warning/15 text-warning",
   danger: "bg-danger/10 text-danger",
+  neutral: "bg-muted text-muted-foreground",
 };
 
 /** Barre d'accent verticale à gauche (4px de large, pleine hauteur). */
@@ -44,6 +50,7 @@ const accentBar: Record<StatAccent, string> = {
   secondary: "bg-secondary",
   warning: "bg-warning",
   danger: "bg-danger",
+  neutral: "bg-muted-foreground/60",
 };
 
 const accentTrend: Record<StatAccent, string> = {
@@ -51,6 +58,7 @@ const accentTrend: Record<StatAccent, string> = {
   secondary: "text-secondary",
   warning: "text-warning",
   danger: "text-danger",
+  neutral: "text-muted-foreground",
 };
 
 interface StatCardProps {

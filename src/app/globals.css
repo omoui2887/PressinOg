@@ -81,6 +81,16 @@
   --ease-smooth: cubic-bezier(0.25, 0.46, 0.45, 0.94);
   --ease-bounce-subtle: cubic-bezier(0.34, 1.56, 0.64, 1);
 
+  /* ---- Tokens de durée d'animation (fix transversal critique) ----
+     Utilisés par duration-fast / duration-base / duration-slow sur 10+
+     composants UI (button, card, badge, input, textarea, tabs, switch,
+     progress, checkbox, sonner...). Sans ces tokens, Tailwind v4 droppe
+     silencieusement les classes et toutes les transitions retombent à
+     150ms (default), perdant la hiérarchie fast/base/slow. */
+  --duration-fast: 150ms;
+  --duration-base: 250ms;
+  --duration-slow: 400ms;
+
   /* Keyframes LOT 16 — exposees comme utilities animate-* */
   --animate-ripple: ogp-ripple 600ms var(--ease-smooth);
   --animate-shake: ogp-shake 300ms var(--ease-smooth);
@@ -89,6 +99,7 @@
   --animate-pop: ogp-pop 200ms var(--ease-bounce-subtle);
   --animate-fade-in-down: ogp-fade-in-down 150ms var(--ease-smooth);
   --animate-pulse-border: ogp-pulse-border 2s var(--ease-smooth) infinite;
+  --animate-progress-indeterminate: ogp-progress-indeterminate 1.4s var(--ease-smooth) infinite;
 
   @keyframes ogp-ripple {
     to {
@@ -159,6 +170,17 @@
     }
     50% {
       opacity: 0.5;
+    }
+  }
+  @keyframes ogp-progress-indeterminate {
+    0% {
+      transform: translateX(-100%);
+    }
+    50% {
+      transform: translateX(80%);
+    }
+    100% {
+      transform: translateX(250%);
     }
   }
 

@@ -40,7 +40,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StatusBadge } from "@/components/shared";
+import { StatusBadge, EmptyState } from "@/components/shared";
 import {
   STATUT_LABELS,
   STATUT_PAIEMENT_LABELS,
@@ -248,21 +248,22 @@ export default function CaissierEncaisserPage() {
                   </Button>
                 </div>
               ) : filteredCommandes.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-2 p-8 text-center">
-                  <Receipt className="size-8 text-muted-foreground/50" />
-                  <p className="text-sm font-medium text-foreground">
-                    {statutFilter === "impayees"
+                <EmptyState
+                  icon={Receipt}
+                  title={
+                    statutFilter === "impayees"
                       ? "Aucune commande impayée"
-                      : "Aucune commande trouvée"}
-                  </p>
-                  <p className="max-w-xs text-xs text-muted-foreground">
-                    {debouncedQuery
+                      : "Aucune commande trouvée"
+                  }
+                  description={
+                    debouncedQuery
                       ? "Modifiez votre recherche ou élargissez le filtre."
                       : statutFilter === "impayees"
                       ? "Toutes les commandes sont payées. Basculez sur « Toutes » pour voir l'historique."
-                      : "Les nouvelles commandes apparaîtront ici."}
-                  </p>
-                </div>
+                      : "Les nouvelles commandes apparaîtront ici."
+                  }
+                  compact
+                />
               ) : (
                 <ul className="divide-y">
                   {filteredCommandes.map((c) => {

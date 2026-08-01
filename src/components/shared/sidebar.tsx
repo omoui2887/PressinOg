@@ -51,7 +51,7 @@ export interface SidebarUser {
   roleLabel?: string;
 }
 
-interface SidebarProps {
+export interface SidebarProps {
   brand?: SidebarBrand;
   items: SidebarItem[];
   user?: SidebarUser;

@@ -23,7 +23,7 @@
 import { Inbox, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-interface EmptyStateProps {
+export interface EmptyStateProps {
   /** Icône lucide-react. Par défaut : Inbox. */
   icon?: LucideIcon;
   /** Titre affiché en gras. */
