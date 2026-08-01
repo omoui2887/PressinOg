@@ -347,7 +347,62 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Plus Jakarta Sans est appliquée via .font-jakarta posée sur <body>
+       dans layout.tsx. On renforce ici les features OpenType pour la
+       lisibilité en plein jour (kerning + ligatures standards). */
+    font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
   }
+
+  /* Hiérarchie typographique explicite (section 3 du prompt) :
+     - H1/H2 : tracking serré (-0.02em à -0.03em), line-height 1.1 à 1.2
+     - Corps : line-height 1.6 à 1.7
+     Les utilitaires Tailwind tracking-tight / leading-tight existent déjà ;
+     on complète ici les valeurs par défaut des headings sémantiques. */
+  h1, h2, h3, h4 {
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    text-wrap: balance;
+  }
+  h1 { letter-spacing: -0.03em; }
+  p, li { line-height: 1.6; }
+}
+
+/* ============================================================
+   EMBELLISSEMENT — Classe utilitaire .fcfa (section 3 du prompt)
+   ============================================================
+   À appliquer sur TOUS les montants FCFA, numéros de commande
+   (CMD-XXXX), codes d'activation (PRS-XXXX-XXXX), références de
+   paiement, horodatages et quantités.
+
+   - font-plex-mono : IBM Plex Mono (variable CSS posée par next/font
+     dans layout.tsx, mappée vers la utility Tailwind `font-plex-mono`
+     dans @theme inline de globals.css)
+   - tabular-nums : alignement vertical parfait des chiffres dans les
+     colonnes (journaux de caisse, tableaux de commandes)
+   - font-variant-numeric : oldstyle-nums désactivé, slash zero activé
+     pour distinguer 0/O dans les codes
+   - letter-spacing léger pour la lisibilité en plein jour
+
+   Usage :
+     <span className="fcfa">{formatFCFA(12500)}</span>
+     <span className="fcfa text-2xl font-bold">{formatFCFA(c.montant_total)}</span>
+   La couleur et la taille restent contrôlées par les utilities Tailwind
+   habituelles (text-foreground, text-danger, text-2xl, font-bold...). */
+.fcfa {
+  font-family: var(--font-plex-mono), ui-monospace, "SF Mono", Menlo,
+    Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+
+/* Variante condensée pour les badges/petits libellés : tracking plus
+   serré, weight 500. */
+.fcfa-tight {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  font-weight: 500;
 }
 
 /* ============================================================

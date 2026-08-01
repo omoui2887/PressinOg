@@ -249,6 +249,122 @@ export const STATUT_COMMANDE_LABELS: Record<string, string> = {
   retire: "Retiré",
 };
 
+/* -------------------------------------------------------------------------- */
+/*  Mapping canonique statut → variante visuelle (EMBELLISSEMENT §14)          */
+/* -------------------------------------------------------------------------- */
+/**
+ * SOURCE UNIQUE DE VÉRITÉ pour la couleur de chaque statut à travers
+ * toute l'application. Toute couleur de badge de commande DOIT venir
+ * de cette table — ne JAMAIS coder en dur une variante dans un composant.
+ *
+ * Palette alignée sur le prompt d'embellissement §14 :
+ *   REÇUE          → slate (gris ardoise — commande vient d'arriver)
+ *   EN TRAITEMENT  → info  (bleu — en cours de préparation)
+ *   LAVÉ           → cyan  (cyan — eau, lavage)
+ *   REPASSÉ        → violet (violet doux — vapeur, repassage)
+ *   PRÊT           → success (vert — disponible au retrait)
+ *   EN LIVRAISON   → info  (bleu — en route)
+ *   LIVRÉ          → successSolid (vert foncé plein — terminé)
+ *   RETIRÉ         → neutral (gris — archivé)
+ *
+ * Statuts de paiement (§14) :
+ *   PAYÉ    → success
+ *   ACOMPTE → warning
+ *   IMPAYÉ  → danger
+ *
+ * Badges divers (§14) :
+ *   EXPRESS         → accent (Or Textile)
+ *   EN RETARD       → danger
+ *   NOUVEAU CLIENT  → info
+ *   ACTIF           → success
+ *   INACTIF         → neutral
+ *   ESSAI           → warning
+ *   ABONNEMENT EXPIRÉ → danger
+ */
+export type StatutBadgeVariant =
+  | "neutral"
+  | "info"
+  | "success"
+  | "successSolid"
+  | "warning"
+  | "danger"
+  | "slate"
+  | "cyan"
+  | "violet"
+  | "accent";
+
+/** Mapping statut commande → variante badge canonique. */
+export const STATUT_COMMANDE_BADGE_VARIANTS: Record<
+  string,
+  StatutBadgeVariant
+> = {
+  recu: "slate",
+  en_traitement: "info",
+  lave: "cyan",
+  repasse: "violet",
+  pret: "success",
+  en_livraison: "info",
+  livre: "successSolid",
+  retire: "neutral",
+};
+
+/** Mapping statut paiement → variante badge canonique. */
+export const STATUT_PAIEMENT_BADGE_VARIANTS: Record<
+  string,
+  StatutBadgeVariant
+> = {
+  paye: "success",
+  acompte: "warning",
+  impaye: "danger",
+};
+
+/** Mapping statut article → variante badge canonique (identique à commande hors "en_livraison"). */
+export const STATUT_ARTICLE_BADGE_VARIANTS: Record<
+  string,
+  StatutBadgeVariant
+> = {
+  recu: "slate",
+  en_traitement: "info",
+  lave: "cyan",
+  repasse: "violet",
+  pret: "success",
+  retire: "neutral",
+  livre: "successSolid",
+};
+
+/** Badges divers (express, retard, etc.) — usage ponctuel. */
+export const STATUT_BADGES_AUTRES: Record<string, StatutBadgeVariant> = {
+  express: "accent",
+  en_retard: "danger",
+  retard: "danger",
+  nouveau_client: "info",
+  actif: "success",
+  inactif: "neutral",
+  essai: "warning",
+  abonnement_expire: "danger",
+  expire: "danger",
+};
+
+/**
+ * Retourne la variante canonique pour un statut donné.
+ * Cherche successivement dans : commande, paiement, article, autres.
+ * Retourne "neutral" par défaut si le statut n'est pas reconnu.
+ *
+ * Usage :
+ *   const v = getStatutBadgeVariant("pret");        // → "success"
+ *   const v = getStatutBadgeVariant("impaye");      // → "danger"
+ *   const v = getStatutBadgeVariant("express");     // → "accent"
+ */
+export function getStatutBadgeVariant(statut: string): StatutBadgeVariant {
+  return (
+    STATUT_COMMANDE_BADGE_VARIANTS[statut] ??
+    STATUT_PAIEMENT_BADGE_VARIANTS[statut] ??
+    STATUT_ARTICLE_BADGE_VARIANTS[statut] ??
+    STATUT_BADGES_AUTRES[statut] ??
+    "neutral"
+  );
+}
+
 /** Libellés FR pour les statuts article (identiques à commande hors "en_livraison"). */
 export const STATUT_ARTICLE_LABELS: Record<string, string> = {
   recu: "Reçu",
