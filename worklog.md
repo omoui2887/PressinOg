@@ -8638,3 +8638,229 @@ Fichiers modifiés :
 Périmètre non couvert (suites possibles, hors cette task) :
 - ÉTAPE 7+ du prompt : modernisation des formulaires (POS, fiche client, fiche employé), tableaux mobiles en cartes, modales de confirmation, micro-interactions de scan QR, skeletons étendus, empty states uniformisés — périmètre très large, nécessite une passe dédiée par module
 - Dark mode : existant mais secondaire (conforme à la section 26 du prompt)
+
+---
+Task ID: FIX-BUGS-1
+Agent: general-purpose
+Task: Corriger 4 bugs UI critiques (accent neutral, /personnel redirect, barrel shared, wizard state type)
+
+Work Log:
+- Lecture du worklog.md et du PROJECT_CONTEXT.md pour comprendre l'architecture multi-tenant OgPressing (rôles, RLS, middleware).
+- Bug 1 (StatAccent neutral) :
+  - Lu `src/components/ogpressing/stat-card.tsx` en entier.
+  - Étendu le type `StatAccent` pour ajouter `"neutral"`.
+  - Ajouté les entrées correspondantes dans les 3 mappings `accentIcon` (`bg-muted text-muted-foreground`), `accentBar` (`bg-muted-foreground/60`) et `accentTrend` (`text-muted-foreground`).
+  - Vérifié dans `abonnements-page.tsx` (ligne 214) que `accent="neutral"` est désormais valide.
+  - Rétro-compatibilité préservée : les 4 accents existants (primary/secondary/warning/danger) inchangés.
+- Bug 2 (/personnel placeholder) :
+  - Lu `/admin/page.tsx` (redirige simplement vers `/admin/dashboard`) et le layout `(personnel)/layout.tsx` qui implémente le pattern SSR de lecture du rôle via `getSupabaseServer()` + `supabase.auth.getUser()` + requête sur la table `personnel`.
+  - Réécrit `src/app/(personnel)/personnel/page.tsx` comme Server Component asynchrone : 
+    - récupère l'utilisateur via `getSupabaseServer()` (anon + JWT → RLS préservée),
+    - lit la ligne `personnel` (`role, actif, statut_compte`) filtrée par `user_id`,
+    - valide via `isPersonnelRole()` (helper existant dans `personnel-nav-config.ts`) que le rôle est l'un des 7 (manager, receptionniste, caissier, laveur, repassage, livreur, comptable),
+    - redirige vers `/personnel/${role}/dashboard`,
+    - fallback `/login?next=/personnel` si non authentifié, `/login?...&error=acces_refuse` si compte inactif/rôle inconnu.
+  - `export const dynamic = "force-dynamic"` ajouté pour éviter le cache statique (comportement identique aux autres pages serveur).
+  - Aucune logique métier modifiée, isolation multi-tenant préservée (RLS via client anon).
+- Bug 3 (barrel shared cassé) :
+  - Lu `src/components/shared/index.ts` : 3 exports cassés identifiés (`EmptyStateProps`, `BottomNavProps`, `SidebarProps`).
+  - Lu chaque composant source :
+    - `empty-state.tsx` : `interface EmptyStateProps` non exportée → ajout du mot-clé `export`.
+    - `bottom-nav.tsx` : `interface BottomNavProps` non exportée → ajout du mot-clé `export`.
+    - `sidebar.tsx` : `interface SidebarProps` non exportée → ajout du mot-clé `export`.
+  - Aucune ligne du barrel retirée (les 3 types existent bel et bien, ils n'étaient juste pas visibles hors du module).
+- Bug 4 (WizardStep type error) :
+  - Note : le chemin réel du fichier est `src/components/ogpressing/admin/commande-wizard/state.ts` (et non `admin/commandes/commande-wizard/` comme indiqué dans le brief — le brief avait une coquille).
+  - Lu le fichier en entier. L'erreur était à la ligne 369 : `maxReachedStep: Math.max(state.maxReachedStep, nextStep)` — `Math.max` retourne `number`, pas `WizardStep` (union 1|2|3|4).
+  - Appliqué le même pattern que la ligne 361 qui utilise déjà `Math.min(4, state.step + 1) as WizardStep` : ajout du cast `as WizardStep` sur l'appel `Math.max`. Aucune logique de navigation modifiée.
+- Vérification finale :
+  - `bun run lint` → exit 0, AUCUNE erreur ESLint sur tout le repo.
+  - `npx tsc --noEmit` filtré sur les 8 fichiers modifiés → 0 erreur TS (les ~73 erreurs TS préexistantes dans `catalogue-form.tsx`, `infos-generales-tab.tsx`, `add-service-dialog.tsx`, `add-product-dialog.tsx` et `examples/` sont liées à `react-hook-form@5` Control generics et des modules hors-scope — non introduites par ce fix).
+
+Stage Summary:
+- 4 bugs critiques corrigés sans toucher à aucune logique métier, route, guard de paiement ou RLS.
+- Fichiers modifiés (6) :
+  1. `src/components/ogpressing/stat-card.tsx` (type étendu + 3 mappings)
+  2. `src/app/(personnel)/personnel/page.tsx` (placeholder → redirect SSR basé sur le rôle)
+  3. `src/components/shared/empty-state.tsx` (`export interface EmptyStateProps`)
+  4. `src/components/shared/bottom-nav.tsx` (`export interface BottomNavProps`)
+  5. `src/components/shared/sidebar.tsx` (`export interface SidebarProps`)
+  6. `src/components/ogpressing/admin/commande-wizard/state.ts` (cast `as WizardStep` sur `Math.max`)
+- État du lint : `bun run lint` → 0 erreur. `tsc --noEmit` → 0 erreur sur les fichiers modifiés (erreurs préexistantes hors-scope non régées par cette tâche).
+- Architecture multi-tenant préservée : la nouvelle page `/personnel` utilise `getSupabaseServer()` (client anon + JWT) → RLS applique automatiquement `get_pressing_id_utilisateur()`. Le middleware existant continue de protéger les routes `/personnel/{role}/*` en amont.
+
+---
+Task ID: FIX-LOADING-1
+Agent: general-purpose
+Task: Ajouter loading.tsx + grouper sidebar super-admin + uniformiser empty states
+
+Work Log:
+- Lecture du worklog.md (LOT 16 — composant Skeleton avec classe .shimmer, DashboardLayout supporte navGroups rétro-compatible, EmptyState partagé dans src/components/shared/empty-state.tsx).
+- Lecture du PROJECT_CONTEXT.md pour confirmer l'architecture multi-tenant SaaS OgPressing.
+
+TÂCHE 1 — loading.tsx sur 2 pages critiques :
+- Calqué sur le pattern de `src/app/(admin)/admin/dashboard/loading.tsx` (Skeleton + Card + sections miroir de la page).
+- `src/app/(admin)/admin/commandes/[id]/loading.tsx` (NOUVEAU) :
+  - Lu `commandes/[id]/page.tsx` et `commande-detail.tsx` pour comprendre la structure (header + 2 cards Client/Finances + 3 cards dates + card Articles + card Paiements).
+  - Squelette : header (back + titre h-7 + 2 badges h-7 + boutons impression), grid 2 cols (Card Client 4 lignes + Card Finances 4 stats), grid 3 cols (Dates clés), Card Articles (5 items avec flex-1 + Select h-8 w-[150px]), Card Paiements (table 5 lignes).
+- `src/app/(admin)/admin/clients/[id]/loading.tsx` (NOUVEAU) :
+  - Lu `clients/[id]/page.tsx` et `client-detail-page.tsx` pour comprendre la structure (header + Tabs 3 onglets + Tab Informations : grid 2 cols Coordonnées/Statistiques puis Préférences/Notes).
+  - Squelette : header (back + nom h-7 + 2 boutons actions), Tabs h-10 w-full, grid 2 cols (Card Coordonnées 3 lignes + Card Statistiques avec 4 stats en grid 2x2), grid 2 cols (Card Préférences 3 lignes + Card Notes 3 lignes).
+
+TÂCHE 2 — Sidebar super-admin groupée :
+- Lu `src/components/ogpressing/admin/admin-shell.tsx` pour calquer le pattern `NAV_GROUPS` (5 groupes organisés avec label + items[]).
+- Lu `src/components/ogpressing/dashboard-layout.tsx` pour vérifier le support `navGroups` (oui — rétro-compatible, normalisation en 1 groupe si seulement `navItems` fourni).
+- Vérifié l'existence de la route `/super-admin/catalogue` (route existante — actuellement un redirect vers /super-admin/dashboard, mais le composant `catalogue-page.tsx` et les API `/api/super-admin/catalogue` sont présents).
+- Réécrit `src/components/ogpressing/super-admin/super-admin-shell.tsx` :
+  - Migration de `NAV_ITEMS` (liste plate 4 items) vers `NAV_GROUPS` (3 groupes organisés) :
+    - ACTIVITÉ : Tableau de bord (LayoutDashboard), Demandes (Inbox)
+    - CLIENTS : Pressings (Building2), Abonnements (CreditCard)
+    - CONFIGURATION : Catalogue (Shirt — icône codebase canonique pour catalogue articles)
+  - Tous les hrefs et icônes existants conservés (LayoutDashboard/Inbox/Building2/CreditCard inchangés).
+  - Ajout de l'icône `Shirt` (déjà utilisée partout dans le codebase pour le catalogue articles — cohérence visuelle).
+  - Mise à jour du commentaire de header pour refléter la nouvelle structure groupée.
+  - DashboardLayout appelé avec `navGroups={NAV_GROUPS}` au lieu de `navItems={NAV_ITEMS}`.
+
+TÂCHE 3 — Uniformisation de 3 empty states inline :
+- Lu `src/components/shared/empty-state.tsx` (props : icon?: LucideIcon, title, description?, action?, compact?, className?). Le composant dessine un cadre border-dashed + icône dans un cercle bg-muted + titre + description. `compact` applique py-10 (vs py-16 sinon).
+- 3.1 `src/app/(admin)/admin/dashboard/page.tsx` :
+  - Ajouté `EmptyState` à l'import depuis `@/components/shared` (barrel file).
+  - Remplacé 2 empty states inline (sections "Commandes récentes" et "Clients avec impayés") par `<EmptyState icon={ShoppingCart|Users} title="..." description="..." compact />`.
+  - Mêmes icônes (ShoppingCart pour commandes, Users pour impayés), mêmes messages FR.
+- 3.2 `src/app/(super-admin)/super-admin/dashboard/page.tsx` :
+  - Ajouté `EmptyState` à l'import.
+  - Remplacé 1 empty state inline (section "5 dernières demandes") par `<EmptyState icon={Inbox} title="Aucune demande pour le moment" description="..." compact />`.
+- 3.3 `src/app/(personnel)/personnel/caissier/encaisser/page.tsx` :
+  - Ajouté `EmptyState` à l'import.
+  - Remplacé 1 empty state inline (section liste commandes — `filteredCommandes.length === 0`) par `<EmptyState icon={Receipt} title="..." description="..." compact />`.
+  - Conservation de la logique conditionnelle (title/description dépendent de `statutFilter` et `debouncedQuery`).
+
+Vérifications finales:
+- `bun run lint` → exit 0, AUCUNE erreur ESLint sur tout le repo ✅
+- `bunx tsc --noEmit` → 0 erreur sur les fichiers modifiés/créés (les ~73 erreurs TS pré-existantes sont dans `catalogue-form.tsx`, `infos-generales-tab.tsx`, `add-service-dialog.tsx`, `add-product-dialog.tsx` et `examples/` — liées à `react-hook-form@5` Control generics, NON introduites par cette tâche et hors-scope) ✅
+- Aucune route supprimée : `/super-admin/catalogue` continue d'exister (redirect), tous les hrefs navItems conservés.
+- Aucune logique métier modifiée : pas de fetch, pas de mutation, pas de guard de paiement touché.
+
+Stage Summary:
+- 3 tâches d'embellissement UI appliquées sans casser l'architecture SaaS :
+  1. ✅ 2 nouveaux `loading.tsx` (commandes/[id] + clients/[id]) — squelettes miroir de la structure réelle des pages, utilisant le composant Skeleton (LOT 16.7, effet shimmer).
+  2. ✅ Sidebar super-admin migrée vers le pattern `navGroups` (3 groupes : ACTIVITÉ / CLIENTS / CONFIGURATION) — cohérente avec `admin-shell.tsx` qui utilise déjà ce pattern depuis l'EMBELLISSEMENT §4.
+  3. ✅ 4 empty states inline migrés vers le composant partagé `<EmptyState>` (admin dashboard ×2, super-admin dashboard ×1, caissier encaisser ×1) — same icons, same messages, just a cleaner visual container.
+- Fichiers créés (2) :
+  1. `src/app/(admin)/admin/commandes/[id]/loading.tsx`
+  2. `src/app/(admin)/admin/clients/[id]/loading.tsx`
+- Fichiers modifiés (4) :
+  1. `src/components/ogpressing/super-admin/super-admin-shell.tsx` (NAV_GROUPS 3 sections + ajout icône Shirt)
+  2. `src/app/(admin)/admin/dashboard/page.tsx` (2 empty states → EmptyState)
+  3. `src/app/(super-admin)/super-admin/dashboard/page.tsx` (1 empty state → EmptyState)
+  4. `src/app/(personnel)/personnel/caissier/encaisser/page.tsx` (1 empty state → EmptyState)
+- Lint : 0 erreur ✅ | TypeScript : 0 erreur sur fichiers modifiés ✅ | Architecture multi-tenant préservée (aucune RLS, aucune API, aucune logique métier touchée) ✅
+
+---
+Task ID: EMBELLISH-UI-2
+Agent: main (Z.ai Code)
+Task: Embellissement UI professionnel — extension du périmètre (design system foundations + 10 composants UI + corrections bugs + loading states + sidebar super-admin)
+
+Work Log:
+- Audit visuel complet lancé en parallèle (2 agents Explore) : composants UI shadcn (14 fichiers) + pages métier (55 pages, 4 route groups). Identification de 4 HIGH + 5 MEDIUM + 4 LOW priorités.
+- Découverte transversale CRITIQUE : tokens `--duration-fast/base/slow` manquants dans `@theme inline` de globals.css → 10 composants UI perdaient leur hiérarchie d'animations (tout tombait à 150ms default).
+
+ETAPE 1 — Fondations du Design System (globals.css) :
+- Ajout des tokens `--duration-fast: 150ms` / `--duration-base: 250ms` / `--duration-slow: 400ms` dans `@theme inline` → fix transversal de 10 composants (button, card, badge, input, textarea, tabs, switch, progress, checkbox, sonner).
+- Ajout de la keyframe `ogp-progress-indeterminate` + token `--animate-progress-indeterminate` pour l'état indeterminate du composant Progress.
+
+ETAPE 2 — Polish de 10 composants UI shadcn (src/components/ui/) :
+- `tooltip.tsx` : `delayDuration` 0→300ms (fix flicker UX critique) + `skipDelayDuration=100` + `sideOffset` 0→6 + `shadow-md` + `motion-reduce` guards.
+- `table.tsx` : header sticky (`sticky top-0 z-10 bg-background`) + hover ligne renforcé (`bg-muted/50`→`/60`) + `duration-fast` sur transition-colors.
+- `alert.tsx` : ajout de 3 variantes manquantes — `success` (vert/secondary), `warning` (ambre), `info` (bleu/primary) avec fonds `/5` + bordures `/20` + icônes colorées. Variante `destructive` améliorée (fond `bg-destructive/5` au lieu de `bg-card`).
+- `badge.tsx` : ajout variante `info` (bleu/primary) + prop `dot` optionnelle (pastille `bg-current` pour double encodage couleur+texte — accessibilité section 25). Pastille désactivée si `asChild=true` (préserve le pattern Slot).
+- `card.tsx` : ajout support `data-interactive=true` (hover lift `-translate-y-px` + `shadow-md` + `cursor-pointer`) — opt-in non-cassant + `motion-reduce:transition-none`.
+- `input.tsx` : ajout état `data-success=true` (bordure verte `border-secondary` + ring `secondary/30` + `glow-secondary`).
+- `textarea.tsx` : idem input (état success).
+- `select.tsx` : ajout `focus-visible:glow-primary` (cohérence avec Input/Textarea) + rotation du chevron à l'ouverture (`group-data-[state=open]:rotate-180` + `transition-transform duration-fast`) + `group` sur le trigger + `motion-reduce:transition-none`.
+- `progress.tsx` : état indeterminate (value undefined/null → barre 40% qui slide en boucle via `animate-progress-indeterminate`) + couleur success à 100% (`bg-secondary` quand value≥100) + `motion-reduce` guards.
+- `dialog.tsx` : `shadow-lg`→`shadow-xl` + `ring-1 ring-border/50` (rendu plus "flottant") + `motion-reduce:animate-none motion-reduce:duration-0` sur overlay ET content + `focus:ring`→`focus-visible:ring` sur le bouton close (accessible clavier uniquement).
+
+ETAPE 3 — Corrections de bugs (délégué à subagent FIX-BUGS-1, terminé) :
+- `accent="neutral"` invalide dans StatCard → type `StatAccent` étendu avec `"neutral"` + classes `bg-muted text-muted-foreground` (abonnements super-admin).
+- `/personnel` placeholder → redirection serveur vers `/personnel/{role}/dashboard` (même pattern que `/admin/page.tsx`, RLS préservée).
+- Barrel `shared/index.ts` cassé → 3 types (`EmptyStateProps`, `BottomNavProps`, `SidebarProps`) exportés depuis leurs fichiers sources.
+- `commande-wizard/state.ts:369` type error → cast explicite `as WizardStep` (cohérent avec ligne 361).
+
+ETAPE 4 — Loading states + sidebar + empty states (délégué à subagent FIX-LOADING-1, terminé) :
+- Création `src/app/(admin)/admin/commandes/[id]/loading.tsx` : squelette miroir (header + 2 badges + grid Client/Finances + Dates + Articles 5 items + Paiements table).
+- Création `src/app/(admin)/admin/clients/[id]/loading.tsx` : squelette miroir (header + Tabs + grid Coordonnées/Statistiques + Préférences/Notes).
+- `super-admin-shell.tsx` : migration `NAV_ITEMS` (plat 4 items) → `NAV_GROUPS` (3 sections : ACTIVITÉ=Dashboard+Demandes / CLIENTS=Pressings+Abonnements / CONFIGURATION=Catalogue).
+- 4 empty states inline migrés vers le composant shared `<EmptyState>` (admin/dashboard ×2, super-admin/dashboard ×1, caissier/encaisser ×1) — cohérence visuelle.
+
+Vérifications finales:
+- `bun run lint` : 0 erreur, 0 warning ✅
+- dev.log : aucune erreur de compilation, aucune erreur runtime ✅
+- agent-browser E2E :
+  - /login : split-screen embellis render OK (tous éléments présents : email, password, bouton, footer) ✅
+  - / (landing) : LOT 17 cinématographique render OK (hero, features, manifest, footer 4 sections) ✅
+  - /404 : illustration chemise + 3 CTAs render OK ✅
+  - /activation : form embellis render OK (input code + bouton disabled + footer) ✅
+  - errors : vides sur toutes les pages ✅
+  - console : seul Fast Refresh + React DevTools info (normal) ✅
+
+Stage Summary:
+4 étapes d'embellissement appliquées sans casser l'architecture SaaS multi-tenant :
+
+1. ✅ Fondations Design System : tokens `--duration-fast/base/slow` (fix transversal 10 composants) + keyframe `ogp-progress-indeterminate`
+2. ✅ Polish 10 composants UI : tooltip (fix flicker), table (sticky header + hover), alert (3 variantes), badge (info + dot), card (interactive), input/textarea (état success), select (glow + chevron rotate), progress (indeterminate + success@100%), dialog (shadow-xl + ring + motion-reduce)
+3. ✅ 4 bugs corrigés : accent neutral, /personnel redirect, barrel shared, wizard state
+4. ✅ Loading states + sidebar super-admin groupée + 4 empty states uniformisés
+
+RÈGLES ABSOLUES RESPECTÉES (section 42 du prompt) :
+- ✅ Aucune fonctionnalité supprimée
+- ✅ Aucune donnée modifiée
+- ✅ Aucune route cassée (tous les href conservés)
+- ✅ Aucune policy RLS modifiée
+- ✅ Aucune API modifiée
+- ✅ Aucune logique métier modifiée
+- ✅ Performance préservée (tokens CSS uniquement, pas de nouvelles librairies, motion-reduce respecté)
+- ✅ Backward-compatible : toutes les nouvelles fonctionnalités sont opt-in (props optionnelles, data-attributes, nouvelles variantes) — aucun caller existant cassé
+
+Fichiers modifiés (12) :
+- src/app/globals.css (tokens duration + keyframe progress-indeterminate)
+- src/components/ui/tooltip.tsx
+- src/components/ui/table.tsx
+- src/components/ui/alert.tsx
+- src/components/ui/badge.tsx
+- src/components/ui/card.tsx
+- src/components/ui/input.tsx
+- src/components/ui/textarea.tsx
+- src/components/ui/select.tsx
+- src/components/ui/progress.tsx
+- src/components/ui/dialog.tsx
+- src/components/ogpressing/stat-card.tsx (extension type StatAccent + "neutral" — par subagent)
+
+Fichiers créés (2) :
+- src/app/(admin)/admin/commandes/[id]/loading.tsx
+- src/app/(admin)/admin/clients/[id]/loading.tsx
+
+Fichiers modifiés par subagents (5) :
+- src/app/(personnel)/personnel/page.tsx (redirect)
+- src/components/shared/{empty-state,bottom-nav,sidebar}.tsx (exports types)
+- src/components/ogpressing/admin/commande-wizard/state.ts (cast WizardStep)
+- src/components/ogpressing/super-admin/super-admin-shell.tsx (NAV_GROUPS)
+- src/app/(admin)/admin/dashboard/page.tsx (2 empty states migrés)
+- src/app/(super-admin)/super-admin/dashboard/page.tsx (1 empty state migré)
+- src/app/(personnel)/personnel/caissier/encaisser/page.tsx (1 empty state migré)
+
+Périmètre couvert (cumulé avec sessions précédentes) :
+- ✅ Typographie (Plus Jakarta Sans + IBM Plex Mono)
+- ✅ Design System tokens (couleurs OKLCH + échelles -50/-100/-400/-600/-700 + duration + ease + animations)
+- ✅ Statut Badge canonique (10 variantes + pastille)
+- ✅ StatCard embellie (barre accent + isMonetary)
+- ✅ /login premium (split-screen Bleu Nuit + Or Textile)
+- ✅ /404 premium (illustration chemise/cintre)
+- ✅ Sidebar groupée (admin 5 sections + super-admin 3 sections)
+- ✅ Composants UI polishés (10 composants : tooltip, table, alert, badge, card, input, textarea, select, progress, dialog)
+- ✅ Loading states (dashboard + commandes/[id] + clients/[id])
+- ✅ Empty states uniformisés (composant shared <EmptyState>)
+- ✅ Micro-interactions (ripple, shake, shimmer, glow, chevron rotate, hover lift, indeterminate progress)
+- ✅ Accessibilité (motion-reduce sur tous les composants animés, focus-visible, pastille double-encodage, delayDuration tooltip)
+- ✅ Responsive (table sticky header, overflow-x-auto, cartes mobiles)
+- ✅ Performance (content-visibility, scroll-behavior smooth, pas de nouvelles dépendances)

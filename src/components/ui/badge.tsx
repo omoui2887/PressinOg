@@ -15,6 +15,8 @@ const badgeVariants = cva(
           "border-transparent bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90",
         success:
           "border-transparent bg-secondary/10 text-secondary [a&]:hover:bg-secondary/20",
+        info:
+          "border-transparent bg-primary/10 text-primary [a&]:hover:bg-primary/20",
         warning:
           "border-transparent bg-warning/10 text-warning-700 dark:text-warning [a&]:hover:bg-warning/20",
         destructive:
@@ -35,17 +37,36 @@ function Badge({
   className,
   variant,
   asChild = false,
+  dot = false,
+  children,
   ...props
 }: React.ComponentProps<"span"> &
-  VariantProps<typeof badgeVariants> & { asChild?: boolean }) {
+  VariantProps<typeof badgeVariants> & {
+    asChild?: boolean
+    /** Pastille de couleur avant le texte — double encodage (couleur + texte)
+     *  pour l'accessibilité (section 25 du prompt d'embellissement). */
+    dot?: boolean
+  }) {
   const Comp = asChild ? Slot : "span"
+  // La pastille n'est rendue que pour les badges non-Slot (asChild=false)
+  // pour éviter de casser le pattern Slot à enfant unique.
+  const pastille =
+    dot && !asChild ? (
+      <span
+        aria-hidden="true"
+        className="size-1.5 rounded-full bg-current shrink-0"
+      />
+    ) : null
 
   return (
     <Comp
       data-slot="badge"
       className={cn(badgeVariants({ variant }), className)}
       {...props}
-    />
+    >
+      {pastille}
+      {children}
+    </Comp>
   )
 }
 

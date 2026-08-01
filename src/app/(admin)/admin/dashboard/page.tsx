@@ -40,7 +40,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/ogpressing/stat-card";
-import { StatusBadge } from "@/components/shared";
+import { StatusBadge, EmptyState } from "@/components/shared";
 import { DashboardShortcuts } from "@/components/ogpressing/admin/dashboard/dashboard-shortcuts";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { formatFCFA, formatRelative } from "@/lib/utils/format";
@@ -299,16 +299,12 @@ export default async function AdminDashboardPage() {
         </CardHeader>
         <CardContent>
           {data.commandesRecentes.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/20 py-10 text-center">
-              <ShoppingCart className="size-8 text-muted-foreground/50" />
-              <p className="text-sm font-medium text-foreground">
-                Aucune commande pour le moment
-              </p>
-              <p className="max-w-xs text-xs text-muted-foreground">
-                Les nouvelles commandes apparaîtront ici. Utilisez le raccourci
-                « Nouvelle commande » pour enregistrer une commande.
-              </p>
-            </div>
+            <EmptyState
+              icon={ShoppingCart}
+              title="Aucune commande pour le moment"
+              description="Les nouvelles commandes apparaîtront ici. Utilisez le raccourci « Nouvelle commande » pour enregistrer une commande."
+              compact
+            />
           ) : (
             <ul className="divide-y">
               {data.commandesRecentes.map((c) => (
@@ -478,15 +474,12 @@ export default async function AdminDashboardPage() {
         </CardHeader>
         <CardContent>
           {data.clientsImpayes.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/20 py-10 text-center">
-              <Users className="size-8 text-muted-foreground/50" />
-              <p className="text-sm font-medium text-foreground">
-                Aucun impayé
-              </p>
-              <p className="max-w-xs text-xs text-muted-foreground">
-                Tous vos clients sont à jour. Félicitations !
-              </p>
-            </div>
+            <EmptyState
+              icon={Users}
+              title="Aucun impayé"
+              description="Tous vos clients sont à jour. Félicitations !"
+              compact
+            />
           ) : (
             <ul className="divide-y">
               {data.clientsImpayes.map((c) => (

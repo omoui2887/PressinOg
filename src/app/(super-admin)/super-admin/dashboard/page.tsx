@@ -30,7 +30,7 @@ import { fr } from "date-fns/locale";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/ogpressing/stat-card";
-import { StatusBadge } from "@/components/shared";
+import { StatusBadge, EmptyState } from "@/components/shared";
 import {
   ChartNouveauxPressings,
   type ChartPoint,
@@ -238,16 +238,12 @@ export default async function SuperAdminDashboardPage() {
         </CardHeader>
         <CardContent>
           {data.demandesRecentes.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/20 py-10 text-center">
-              <Inbox className="size-8 text-muted-foreground/50" />
-              <p className="text-sm font-medium text-foreground">
-                Aucune demande pour le moment
-              </p>
-              <p className="max-w-xs text-xs text-muted-foreground">
-                Les nouvelles demandes d&apos;inscription déposées sur la
-                landing page apparaîtront ici.
-              </p>
-            </div>
+            <EmptyState
+              icon={Inbox}
+              title="Aucune demande pour le moment"
+              description="Les nouvelles demandes d'inscription déposées sur la landing page apparaîtront ici."
+              compact
+            />
           ) : (
             <ul className="divide-y">
               {data.demandesRecentes.map((d) => (

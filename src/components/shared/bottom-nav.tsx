@@ -42,7 +42,7 @@ export interface BottomNavItem {
   highlight?: boolean;
 }
 
-interface BottomNavProps {
+export interface BottomNavProps {
   items: BottomNavItem[];
   /** Classe additionnelle sur le conteneur. */
   className?: string;

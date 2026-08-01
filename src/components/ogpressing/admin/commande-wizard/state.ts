@@ -366,7 +366,11 @@ export function wizardReducer(
       return {
         ...state,
         step: nextStep,
-        maxReachedStep: Math.max(state.maxReachedStep, nextStep),
+        // `Math.max` retourne `number` ; on restreint explicitement au type
+        // `WizardStep` (1|2|3|4). nextStep est déjà `WizardStep` (cast
+        // ci-dessus) et state.maxReachedStep est `WizardStep` → le résultat
+        // est nécessairement dans l'union 1|2|3|4. Aucune logique modifiée.
+        maxReachedStep: Math.max(state.maxReachedStep, nextStep) as WizardStep,
       };
     }
 
