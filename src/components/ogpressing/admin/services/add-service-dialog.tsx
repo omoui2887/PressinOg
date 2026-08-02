@@ -63,8 +63,10 @@ const schema = z.object({
     .min(2, "Le nom doit comporter au moins 2 caractères")
     .max(100, "Le nom ne peut pas dépasser 100 caractères"),
   type: z.string().min(1, "Le type est obligatoire"),
+  // ⚠️ FIX BUG-AUDIT-RUNTIME #4 (P1) : Zod v4 a remplacé `invalid_type_error`
+  // et `required_error` par un seul paramètre `error` (ou `message`).
   prix: z.coerce
-    .number({ invalid_type_error: "Prix invalide" })
+    .number({ error: "Prix invalide" })
     .int("Le prix doit être un entier")
     .min(0, "Le prix doit être ≥ 0"),
 });

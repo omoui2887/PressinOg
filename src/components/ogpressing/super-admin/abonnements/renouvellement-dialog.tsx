@@ -1,8 +1,8 @@
 /**
  * OgPressing — RenouvellementDialog
  * ----------------------------------
- * Dialog (modal) pour enregistrer un nouveau paiement d'échéance (renouvellement
- * mensuel) pour un abonnement.
+ * Dialog (modal) pour enregistrer un nouveau paiement d'échéance (renouvellement)
+ * pour un abonnement. Le Super Admin peut attribuer un plan de 1, 3, 6 ou 12 mois.
  *
  * ⚠️ DÉCLARATIF : aucune transaction bancaire réelle n'est initiée par cette
  *    interface. Le règlement réel (espèces, Mobile Money, carte) se fait HORS
@@ -10,7 +10,9 @@
  *    pour tracer les échéances et prolonger la date_fin de l'abonnement.
  *
  * Champs :
- *   - Montant (number, requis, entier positif) — pré-rempli avec montant_mensuel
+ *   - Durée du plan (1, 3, 6 ou 12 mois — boutons radio stylés)
+ *   - Montant (number, requis, entier positif) — auto-calculé = montant_mensuel × duree
+ *     mais reste éditable (le Super Admin peut ajuster en cas de promo/remise)
  *   - Mode de paiement (Select : espèces / Mobile Money / carte bancaire)
  *   - Référence (texte optionnel — n° transaction MOMO, n° reçu espèces…)
  *   - Justificatif (fichier optionnel — image/PDF max 5MB, uploadé vers le
@@ -22,9 +24,9 @@
  *      (bucket manquant, quota dépassé, etc.), on continue SANS justificatif
  *      (toast d'avertissement) — le justificatif est optionnel.
  *   2. On POST /api/super-admin/abonnements/[id]/renouveler avec
- *      { montant, methode, reference, justificatif_url }.
+ *      { montant, methode, duree_mois, reference, justificatif_url }.
  *   3. L'API insère une ligne dans `paiements` (abonnement_id renseigné) et
- *      met à jour l'abonnement (date_fin + 1 mois, statut='actif', etc.).
+ *      met à jour l'abonnement (date_fin + duree_mois mois, statut='actif', etc.).
  *
  * 🔒 SÉCURITÉ (REMEDIATE-STORAGE — AUDIT Conclusion #2) :
  *   Le bucket `justificatifs` est désormais PRIVÉ (migration 016) et accessible
@@ -78,6 +80,7 @@ import {
   PLAN_LABELS,
 } from "./abonnements-helpers";
 import { formatFCFA } from "@/lib/utils/format";
+import { cn } from "@/lib/utils";
 
 interface RenouvellementDialogProps {
   abonnement: Abonnement;
@@ -86,7 +89,25 @@ interface RenouvellementDialogProps {
   onRenewed?: () => void;
 }
 
+type DureeMois = 1 | 3 | 6 | 12;
+
+/** Options de durée de plan affichées dans le dialog.
+ *  Chaque option a un libellé court, un libellé long et un badge de réduction
+ *  optionnel (ex : 12 mois = 2 mois offerts). */
+const DUREE_OPTIONS: {
+  value: DureeMois;
+  label: string;
+  longLabel: string;
+  badge?: string;
+}[] = [
+  { value: 1, label: "1 mois", longLabel: "1 mois" },
+  { value: 3, label: "3 mois", longLabel: "3 mois" },
+  { value: 6, label: "6 mois", longLabel: "6 mois" },
+  { value: 12, label: "1 an", longLabel: "12 mois", badge: "2 mois offerts" },
+];
+
 type FormState = {
+  dureeMois: DureeMois;
   montant: string; // string pour l'input, parsé en int à la soumission
   methode: MethodePaiement;
   reference: string;
@@ -102,8 +123,10 @@ export function RenouvellementDialog({
   onOpenChange,
   onRenewed,
 }: RenouvellementDialogProps) {
-  const defaultMontant = String(abonnement.montant_mensuel ?? 0);
+  const montantMensuel = abonnement.montant_mensuel ?? 0;
+  const defaultMontant = String(montantMensuel);
   const [form, setForm] = useState<FormState>({
+    dureeMois: 1,
     montant: defaultMontant,
     methode: "especes",
     reference: "",
@@ -115,12 +138,28 @@ export function RenouvellementDialog({
 
   function reset() {
     setForm({
+      dureeMois: 1,
       montant: defaultMontant,
       methode: "especes",
       reference: "",
       justificatif: null,
     });
     setErrors({});
+  }
+
+  /** Quand l'utilisateur change la durée, on recalcule le montant suggéré
+   *  (= montant_mensuel × durée). Le Super Admin peut ensuite ajuster
+   *  manuellement si besoin (promo, remise, etc.). */
+  function handleDureeChange(duree: DureeMois) {
+    const suggested = montantMensuel * duree;
+    setForm((prev) => ({
+      ...prev,
+      dureeMois: duree,
+      montant: String(suggested),
+    }));
+    if (errors.montant) {
+      setErrors((prev) => ({ ...prev, montant: undefined }));
+    }
   }
 
   function handleOpenChange(next: boolean) {
@@ -237,6 +276,7 @@ export function RenouvellementDialog({
           body: JSON.stringify({
             montant: parseInt(form.montant, 10),
             methode: form.methode,
+            duree_mois: form.dureeMois,
             reference: form.reference.trim() || null,
             justificatif_url: justificatifUrl,
           }),
@@ -248,11 +288,15 @@ export function RenouvellementDialog({
           data.error || "Erreur lors de l'enregistrement du paiement"
         );
       }
+      const dureeLabel =
+        form.dureeMois === 12
+          ? "1 an"
+          : `${form.dureeMois} mois`;
       toast.success("Paiement enregistré", {
-        description: `L'abonnement a été renouvelé jusqu'au ${
+        description: `Abonnement prolongé de ${dureeLabel} — jusqu'au ${
           data.data?.abonnement?.date_fin
             ? new Date(data.data.abonnement.date_fin).toLocaleDateString("fr-FR")
-            : "mois prochain"
+            : "l'échéance calculée"
         }.`,
       });
       handleOpenChange(false);
@@ -273,11 +317,12 @@ export function RenouvellementDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <RotateCw className="size-5 text-primary" />
-            Renouveler l&apos;abonnement
+            Renouveler / Attribuer un plan
           </DialogTitle>
           <DialogDescription>
             {abonnement.pressing?.nom} — Plan {PLAN_LABELS[abonnement.plan]} (
-            {formatFCFA(abonnement.montant_mensuel)}/mois)
+            {formatFCFA(abonnement.montant_mensuel)}/mois). Choisissez la durée :
+            1, 3, 6 ou 12 mois.
           </DialogDescription>
         </DialogHeader>
 
@@ -294,6 +339,54 @@ export function RenouvellementDialog({
         </Alert>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Durée du plan (1, 3, 6 ou 12 mois) */}
+          <div className="space-y-1.5">
+            <Label>
+              Durée du plan <span className="text-danger">*</span>
+            </Label>
+            <div
+              role="radiogroup"
+              aria-label="Durée du plan d'abonnement"
+              className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+            >
+              {DUREE_OPTIONS.map((opt) => {
+                const selected = form.dureeMois === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => handleDureeChange(opt.value)}
+                    disabled={total}
+                    className={cn(
+                      "relative flex flex-col items-center justify-center gap-0.5 rounded-lg border p-3 text-center transition-colors",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                      selected
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border bg-card text-foreground hover:border-primary/40 hover:bg-accent/50",
+                      total && "cursor-not-allowed opacity-60"
+                    )}
+                  >
+                    <span className="text-sm font-semibold">{opt.label}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {opt.longLabel}
+                    </span>
+                    {opt.badge && (
+                      <span className="mt-0.5 inline-flex items-center rounded-full bg-secondary/15 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-secondary">
+                        {opt.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Sélectionnez la durée de l&apos;abonnement à attribuer. Le montant
+              ci-dessous s&apos;ajuste automatiquement (modifiable).
+            </p>
+          </div>
+
           {/* Montant */}
           <div className="space-y-1.5">
             <Label htmlFor="montant">
@@ -325,7 +418,9 @@ export function RenouvellementDialog({
               <p className="text-xs text-danger">{errors.montant}</p>
             )}
             <p className="text-xs text-muted-foreground">
-              Montant mensuel conseillé : {formatFCFA(abonnement.montant_mensuel)}
+              Suggestion : {formatFCFA(montantMensuel)} × {form.dureeMois} mois
+              = {formatFCFA(montantMensuel * form.dureeMois)}. Ajustable pour
+              remise ou promo.
             </p>
           </div>
 
@@ -443,7 +538,10 @@ export function RenouvellementDialog({
           <div className="flex items-start gap-2 rounded-md bg-muted/50 p-3 text-xs">
             <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
             <p className="text-muted-foreground">
-              La date de fin de l&apos;abonnement sera prolongée d&apos;un mois
+              La date de fin de l&apos;abonnement sera prolongée de{" "}
+              <span className="font-semibold text-foreground">
+                {form.dureeMois === 12 ? "1 an (12 mois)" : `${form.dureeMois} mois`}
+              </span>{" "}
               à partir de{" "}
               <span className="font-medium text-foreground">
                 {abonnement.date_fin && new Date(abonnement.date_fin) > new Date()

@@ -613,7 +613,11 @@ export async function POST(
       process.env.NEXT_PUBLIC_SITE_URL ??
       request.nextUrl.origin ??
       "http://localhost:3000";
-    const inviteRedirect = `${redirectTo}/personnel/changer-mot-de-passe`;
+    // ⚠️ FIX BUG-AUDIT-RUNTIME #2 (P1) : on passe par /auth/callback?next=
+    // pour que la session PKCE soit posée AVANT d'accéder à la page protégée
+    // /personnel/changer-mot-de-passe. Sinon le middleware redirige vers
+    // /login et le code PKCE est perdu (régression vs personnel/route.ts:495).
+    const inviteRedirect = `${redirectTo}/auth/callback?next=/personnel/changer-mot-de-passe`;
 
     const { error: inviteErr } = await admin.auth.admin.inviteUserByEmail(
       target.email,
@@ -633,10 +637,23 @@ export async function POST(
     }
 
     // Met à jour date_invitation
-    await admin
+    // ⚠️ FIX BUG-AUDIT-RUNTIME #6 (P2) : on vérifie l'erreur UPDATE pour ne
+    // pas renvoyer `success: true` si la mise à jour a échoué en base.
+    const { error: updInvErr } = await admin
       .from("personnel")
       .update({ date_invitation: new Date().toISOString() })
       .eq("id", targetId);
+
+    if (updInvErr) {
+      console.error(
+        "[api/admin/personnel/[id] POST resend_invitation] UPDATE date_invitation error:",
+        updInvErr
+      );
+      return NextResponse.json(
+        { success: false, error: "Erreur interne du serveur" },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       success: true,

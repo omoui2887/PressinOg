@@ -152,13 +152,14 @@ function AbonnementActions({ abonnement, onUpdated }: AbonnementActionsProps) {
   return (
     <>
       <div className="flex items-center justify-end gap-1">
-        {/* Renouveler — bouton direct */}
+        {/* Renouveler / Attribuer un plan — bouton direct */}
         <Button
           size="sm"
           variant="default"
           className="h-8 gap-1"
           onClick={() => setRenouvelerOpen(true)}
           disabled={pending}
+          title="Renouveler ou attribuer un plan (1, 3, 6 ou 12 mois)"
         >
           <RotateCw className="size-3.5" />
           <span className="hidden sm:inline">Renouveler</span>
