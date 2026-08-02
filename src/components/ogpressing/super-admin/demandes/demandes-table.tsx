@@ -10,12 +10,15 @@
  */
 "use client";
 
-import { CalendarDays, Phone, MapPin, Inbox, Eye } from "lucide-react";
+import { CalendarDays, Phone, MapPin, Inbox, Eye, Mail, Building2, Hash } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/shared";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
+import type { ViewMode } from "@/hooks/use-view-mode";
 import {
+  PLAN_LABELS,
   STATUT_LABELS,
   STATUT_VARIANTS,
   type DemandeInscription,
@@ -25,14 +28,27 @@ interface DemandesTableProps {
   demandes: DemandeInscription[];
   loading?: boolean;
   onVoirDetails: (demande: DemandeInscription) => void;
+  /** Mode d'affichage : "list" (tableau desktop + cards mobile) ou "grid"
+   *  (grille de cards responsive). Défaut : "list" pour retrocompat. */
+  viewMode?: ViewMode;
 }
 
 export function DemandesTable({
   demandes,
   loading,
   onVoirDetails,
+  viewMode = "list",
 }: DemandesTableProps) {
   if (loading) {
+    if (viewMode === "grid") {
+      return (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-44 w-full rounded-lg" />
+          ))}
+        </div>
+      );
+    }
     return (
       <div className="space-y-3">
         {Array.from({ length: 5 }).map((_, i) => (
@@ -52,6 +68,91 @@ export function DemandesTable({
     );
   }
 
+  // ---- Mode GRILLE : cards responsive (remplace tableau desktop + cards mobile)
+  if (viewMode === "grid") {
+    return (
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {demandes.map((d) => {
+          const planLabel = d.plan_souhaite
+            ? (PLAN_LABELS[d.plan_souhaite] ?? d.plan_souhaite)
+            : null;
+          return (
+            <article
+              key={d.id}
+              className="flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 hover:shadow-sm"
+            >
+              {/* En-tête : pressing + statut */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-center gap-1.5 truncate font-semibold text-foreground">
+                    <Building2 className="size-4 shrink-0 text-muted-foreground" />
+                    {d.nom_pressing}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {d.nom_gerant}
+                  </p>
+                </div>
+                <StatusBadge
+                  status={d.statut}
+                  label={STATUT_LABELS[d.statut]}
+                  variant={STATUT_VARIANTS[d.statut]}
+                />
+              </div>
+
+              {/* Badges : plan demandé (si renseigné) + date */}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {planLabel && (
+                  <Badge variant="outline" className="gap-1 text-xs">
+                    <Hash className="size-3" />
+                    {planLabel}
+                  </Badge>
+                )}
+                <Badge variant="outline" className="gap-1 text-xs text-muted-foreground">
+                  <CalendarDays className="size-3" />
+                  {formatDateShort(d.created_at)}
+                </Badge>
+              </div>
+
+              {/* Coordonnées : email + téléphone + ville */}
+              <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                {d.email && (
+                  <p className="flex items-center gap-1.5 truncate">
+                    <Mail className="size-3 shrink-0" />
+                    {d.email}
+                  </p>
+                )}
+                <p className="flex items-center gap-1.5">
+                  <Phone className="size-3 shrink-0" />
+                  {d.telephone}
+                </p>
+                {d.ville && (
+                  <p className="flex items-center gap-1.5">
+                    <MapPin className="size-3 shrink-0" />
+                    {d.ville}
+                  </p>
+                )}
+              </div>
+
+              {/* Action en bas de card */}
+              <div className="mt-auto pt-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onVoirDetails(d)}
+                  className="w-full gap-1.5"
+                >
+                  <Eye className="size-4" />
+                  Voir détails
+                </Button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // ---- Mode LISTE (défaut) : comportement inchangé (tableau desktop + cards mobile)
   return (
     <>
       {/* Desktop : tableau */}

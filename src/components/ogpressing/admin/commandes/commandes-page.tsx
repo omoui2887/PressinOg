@@ -26,6 +26,8 @@ import { toast } from "sonner";
 import { CommandesFilters } from "./commandes-filters";
 import { CommandesList } from "./commandes-list";
 import { CommandesPagination } from "./commandes-pagination";
+import { ViewToggle } from "@/components/shared";
+import { useViewMode } from "@/hooks/use-view-mode";
 import type {
   CommandeListItem,
   CommandesApiResponse,
@@ -58,6 +60,7 @@ export function CommandesPage({ basePath = "/admin" }: CommandesPageProps = {}) 
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(true);
+  const { viewMode, setViewMode } = useViewMode("commandes");
 
   // QR scanner
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -193,14 +196,17 @@ export function CommandesPage({ basePath = "/admin" }: CommandesPageProps = {}) 
           </p>
         </div>
 
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => setScannerOpen(true)}
-        >
-          <QrCode className="size-4" />
-          Scanner QR
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ViewToggle value={viewMode} onChange={setViewMode} />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setScannerOpen(true)}
+          >
+            <QrCode className="size-4" />
+            Scanner QR
+          </Button>
+        </div>
       </div>
 
       {/* Filtres */}
@@ -214,7 +220,12 @@ export function CommandesPage({ basePath = "/admin" }: CommandesPageProps = {}) 
       />
 
       {/* Liste */}
-      <CommandesList commandes={commandes} loading={loading} basePath={basePath} />
+      <CommandesList
+        commandes={commandes}
+        loading={loading}
+        basePath={basePath}
+        viewMode={viewMode}
+      />
 
       {/* Pagination */}
       {!loading && commandes.length > 0 && (

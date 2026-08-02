@@ -19,6 +19,8 @@ import { ClientsList, type ClientEnrichi } from "./clients-list";
 import { ClientsPagination } from "./clients-pagination";
 import { NewClientDialog } from "./new-client-dialog";
 import { RapportExportButton } from "../rapports/rapport-export-button";
+import { ViewToggle } from "@/components/shared";
+import { useViewMode } from "@/hooks/use-view-mode";
 
 const PAGE_SIZE = 20;
 
@@ -41,6 +43,7 @@ export function ClientsPage({ basePath = "/admin", readOnly = false }: ClientsPa
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(true);
+  const { viewMode, setViewMode } = useViewMode("clients");
 
   // Debounce de la recherche 300ms
   useEffect(() => {
@@ -106,6 +109,7 @@ export function ClientsPage({ basePath = "/admin", readOnly = false }: ClientsPa
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <ViewToggle value={viewMode} onChange={setViewMode} />
           <RapportExportButton
             type="clients"
             size="sm"
@@ -129,7 +133,12 @@ export function ClientsPage({ basePath = "/admin", readOnly = false }: ClientsPa
       />
 
       {/* Liste */}
-      <ClientsList clients={clients} loading={loading} basePath={basePath} />
+      <ClientsList
+        clients={clients}
+        loading={loading}
+        basePath={basePath}
+        viewMode={viewMode}
+      />
 
       {/* Pagination */}
       {!loading && clients.length > 0 && (

@@ -21,6 +21,8 @@ import { useCallback, useEffect, useState } from "react";
 import { UserCog, AlertTriangle, Users, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ViewToggle } from "@/components/shared";
+import { useViewMode } from "@/hooks/use-view-mode";
 import {
   PersonnelFilters,
   type RoleFilter,
@@ -48,6 +50,7 @@ interface PersonnelApiResponse {
 }
 
 export function PersonnelPage() {
+  const { viewMode, setViewMode } = useViewMode("personnel");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [role, setRole] = useState<RoleFilter>("all");
@@ -143,6 +146,7 @@ export function PersonnelPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <ViewToggle value={viewMode} onChange={setViewMode} />
           <RapportExportButton
             type="personnel"
             size="sm"
@@ -259,6 +263,7 @@ export function PersonnelPage() {
       ) : (
         <PersonnelList
           employes={employes}
+          viewMode={viewMode}
           onUpdated={fetchPersonnel}
         />
       )}

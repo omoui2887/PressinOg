@@ -237,6 +237,7 @@ export function PersonnelActionsMenu({
           {isDirectCreation && (
             <DropdownMenuItem
               onClick={() => setConfirmAction("reset_password")}
+              className="text-warning focus:text-warning"
             >
               <KeyRound className="size-4" />
               Réinitialiser le mot de passe
@@ -247,6 +248,7 @@ export function PersonnelActionsMenu({
           {isInvite && !isDirectCreation && (
             <DropdownMenuItem
               onClick={() => setConfirmAction("resend_invitation")}
+              className="text-warning focus:text-warning"
             >
               <Send className="size-4" />
               Renvoyer l'invitation
@@ -257,8 +259,11 @@ export function PersonnelActionsMenu({
 
           {/* Désactiver / Réactiver */}
           {isDesactive ? (
-            <DropdownMenuItem onClick={() => setConfirmAction("reactiver")}>
-              <UserCheck className="size-4 text-secondary" />
+            <DropdownMenuItem
+              onClick={() => setConfirmAction("reactiver")}
+              className="text-success focus:text-success"
+            >
+              <UserCheck className="size-4" />
               Réactiver le compte
             </DropdownMenuItem>
           ) : (
@@ -307,8 +312,12 @@ export function PersonnelActionsMenu({
               }}
               disabled={pending}
               className={
-                config.destructive
-                  ? "bg-danger text-white hover:bg-danger/90"
+                confirmAction === "reactiver"
+                  ? "bg-gradient-success text-success-foreground hover:bg-success/90"
+                  : confirmAction === "reset_password" || confirmAction === "resend_invitation"
+                  ? "bg-gradient-warning text-warning-foreground hover:bg-warning/90"
+                  : config.destructive
+                  ? "bg-gradient-danger text-white hover:bg-danger/90"
                   : undefined
               }
             >

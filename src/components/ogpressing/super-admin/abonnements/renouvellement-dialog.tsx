@@ -561,7 +561,7 @@ export function RenouvellementDialog({
                 Annuler
               </Button>
             </DialogClose>
-            <Button type="submit" disabled={total}>
+            <Button type="submit" variant="success" disabled={total}>
               {total ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />

@@ -18,6 +18,8 @@ import { useCallback, useEffect, useState } from "react";
 import { History, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ViewToggle } from "@/components/shared";
+import { useViewMode } from "@/hooks/use-view-mode";
 import {
   MouvementsFilters,
   type TypeMouvementFilter,
@@ -28,6 +30,7 @@ import type { MouvementStock } from "./stock-helpers";
 const PAGE_SIZE = 20;
 
 export function MouvementsPage() {
+  const { viewMode, setViewMode } = useViewMode("mouvements");
   const [produitId, setProduitId] = useState<string>("all");
   const [type, setType] = useState<TypeMouvementFilter>("all");
   const [dateStart, setDateStart] = useState("");
@@ -104,14 +107,17 @@ export function MouvementsPage() {
   return (
     <div className="space-y-6">
       {/* En-tête */}
-      <div>
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-foreground">
-          <History className="size-6 text-primary" />
-          Historique des mouvements
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Toutes les entrées et sorties de stock enregistrées.
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-foreground">
+            <History className="size-6 text-primary" />
+            Historique des mouvements
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Toutes les entrées et sorties de stock enregistrées.
+          </p>
+        </div>
+        <ViewToggle value={viewMode} onChange={setViewMode} />
       </div>
 
       {/* Filtres */}
@@ -130,7 +136,11 @@ export function MouvementsPage() {
       </Card>
 
       {/* Liste */}
-      <MouvementsList mouvements={mouvements} loading={loading} />
+      <MouvementsList
+        mouvements={mouvements}
+        loading={loading}
+        viewMode={viewMode}
+      />
 
       {/* Pagination */}
       {totalPages > 1 && (

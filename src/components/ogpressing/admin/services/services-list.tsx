@@ -1,30 +1,31 @@
 /**
  * OgPressing — ServicesList (LOT 11.1)
  * -------------------------------------
- * Liste des services regroupés par type.
+ * Liste des services.
  *
- * Affichage :
- *   - Desktop (md+) : un Table par groupe (Nom | Prix unitaire | Statut | Actions)
- *   - Mobile : cards par service
+ * Modes d'affichage :
+ *   - viewMode="list" (défaut) : services regroupés par type, table desktop + cards mobile.
+ *   - viewMode="grid"          : grille plate de cards responsives (remplace le regroupement).
  *
- * Groupes dans l'ordre défini par TYPES_SERVICES (Lavage, Repassage, Nettoyage
- * à sec, Détachage, Blanchisserie). Chaque groupe a un en-tête avec l'icône
+ * Groupes (mode liste) dans l'ordre défini par TYPES_SERVICES (Lavage, Repassage,
+ * Nettoyage à sec, Détachage, Blanchisserie). Chaque groupe a un en-tête avec l'icône
  * + label + badge + compteur.
  *
  * Actions par service :
  *   - Switch activer/désactiver (optimistic via parent)
- *   - Bouton "Modifier" (ouvre EditServiceDialog)
- *   - Bouton "Supprimer" (ouvre DeleteServiceDialog — LOT 11.1+)
+ *   - Bouton "Modifier" (ouvre EditServiceDialog) — variant `outline` size sm
+ *   - Bouton "Supprimer" (ouvre DeleteServiceDialog) — variant `destructive` size sm icon
  */
 "use client";
 
-import { Sparkles, Pencil, Trash2 } from "lucide-react";
+import { Sparkles, Pencil, Trash2, Clock } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
+import type { ViewMode } from "@/hooks/use-view-mode";
 import {
   Table,
   TableBody,
@@ -46,6 +47,8 @@ import {
 interface ServicesListProps {
   services: ServiceItem[];
   loading: boolean;
+  /** Mode d'affichage : "list" (groupé par type, table+cards) ou "grid" (grille plate de cards). */
+  viewMode?: ViewMode;
   onToggle: (s: ServiceItem) => void;
   onEdit: (s: ServiceItem) => void;
   onDelete: (s: ServiceItem) => void;
@@ -54,6 +57,7 @@ interface ServicesListProps {
 export function ServicesList({
   services,
   loading,
+  viewMode = "list",
   onToggle,
   onEdit,
   onDelete,
@@ -82,6 +86,94 @@ export function ServicesList({
     );
   }
 
+  // ---- Mode grille : cards responsives plates (remplace le regroupement par type) ----
+  if (viewMode === "grid") {
+    return (
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {services.map((s) => {
+          const TypeIcon = typeServiceIcon(s.type);
+          return (
+            <article
+              key={s.id}
+              className={cn(
+                "group flex flex-col gap-3 rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 hover:shadow-sm",
+                !s.actif && "bg-muted/30 opacity-70"
+              )}
+            >
+              {/* En-tête : nom + actions */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold text-foreground">{s.nom}</p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-foreground">
+                    {formatFCFA(s.prix)}
+                  </p>
+                </div>
+                <div className="inline-flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onEdit(s)}
+                  >
+                    <Pencil className="size-4" />
+                    Modifier
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    aria-label={`Supprimer ${s.nom}`}
+                    onClick={() => onDelete(s)}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              </div>
+
+              {/* Badges : type + durée estimée */}
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "gap-1 font-medium",
+                    typeServiceBadgeClass(s.type)
+                  )}
+                >
+                  <TypeIcon className="size-3" />
+                  {typeServiceLabel(s.type)}
+                </Badge>
+                {s.duree_estimee && (
+                  <Badge variant="outline" className="gap-1 font-medium text-muted-foreground">
+                    <Clock className="size-3" />
+                    {s.duree_estimee}
+                  </Badge>
+                )}
+              </div>
+
+              {/* Footer : switch actif */}
+              <div className="mt-auto flex items-center justify-between border-t pt-3">
+                <div className="inline-flex items-center gap-2">
+                  <Switch
+                    checked={s.actif}
+                    onCheckedChange={() => onToggle(s)}
+                    aria-label="Activer/désactiver"
+                  />
+                  <span
+                    className={cn(
+                      "text-xs font-medium",
+                      s.actif ? "text-success" : "text-muted-foreground"
+                    )}
+                  >
+                    {s.actif ? "Actif" : "Inactif"}
+                  </span>
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // ---- Mode liste (défaut) : services regroupés par type, table desktop + cards mobile ----
   // Regroupe les services par type, en suivant l'ordre de TYPES_SERVICES.
   const grouped = TYPES_SERVICES.map((t) => ({
     type: t,
@@ -163,7 +255,7 @@ export function ServicesList({
                       <TableCell className="text-right">
                         <div className="inline-flex items-center gap-1">
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="sm"
                             onClick={() => onEdit(s)}
                           >
@@ -171,9 +263,8 @@ export function ServicesList({
                             Modifier
                           </Button>
                           <Button
-                            variant="ghost"
+                            variant="destructive"
                             size="icon"
-                            className="text-danger hover:bg-danger/10 hover:text-danger"
                             aria-label={`Supprimer ${s.nom}`}
                             onClick={() => onDelete(s)}
                           >
@@ -205,9 +296,8 @@ export function ServicesList({
                       </p>
                     </div>
                     <Button
-                      variant="ghost"
+                      variant="destructive"
                       size="icon"
-                      className="text-danger hover:bg-danger/10 hover:text-danger"
                       aria-label={`Supprimer ${s.nom}`}
                       onClick={() => onDelete(s)}
                     >
@@ -233,7 +323,7 @@ export function ServicesList({
                       </span>
                     </div>
                     <Button
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
                       onClick={() => onEdit(s)}
                     >
@@ -290,7 +380,7 @@ export function ServicesList({
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
-                          variant="ghost"
+                          variant="outline"
                           size="sm"
                           onClick={() => onEdit(s)}
                         >

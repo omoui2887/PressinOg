@@ -27,6 +27,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
+import type { ViewMode } from "@/hooks/use-view-mode";
 import { cn } from "@/lib/utils";
 
 export interface ClientEnrichi {
@@ -50,6 +51,10 @@ interface ClientsListProps {
   /** Base path for client detail links. Defaults to "/admin" (admin space).
    *  Set to "/personnel/receptionniste" (or other role) for personnel variants. */
   basePath?: string;
+  /** Display mode : "list" (default = table desktop + cards mobile) or
+   *  "grid" (responsive card grid replacing both desktop table + mobile cards).
+   *  Optional for backward compat with personnel pages that don't pass it. */
+  viewMode?: ViewMode;
 }
 
 function formatFCFA(value: number): string {
@@ -77,8 +82,23 @@ function ImpayeBadge({ solde }: { solde: number }) {
   );
 }
 
-export function ClientsList({ clients, loading, basePath = "/admin" }: ClientsListProps) {
+export function ClientsList({
+  clients,
+  loading,
+  basePath = "/admin",
+  viewMode = "list",
+}: ClientsListProps) {
   if (loading) {
+    // En mode grille, on affiche des skeletons en cartes pour matcher la mise en page.
+    if (viewMode === "grid") {
+      return (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-36 w-full rounded-lg" />
+          ))}
+        </div>
+      );
+    }
     return (
       <div className="space-y-3">
         {Array.from({ length: 5 }).map((_, i) => (
@@ -95,6 +115,59 @@ export function ClientsList({ clients, loading, basePath = "/admin" }: ClientsLi
         title="Aucun client"
         description="Aucun client enregistré pour le moment."
       />
+    );
+  }
+
+  // Mode grille : carte responsive (1/2/3 colonnes) — remplace tableau + cards mobile.
+  if (viewMode === "grid") {
+    return (
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {clients.map((client) => (
+          <Link
+            key={client.id}
+            href={`${basePath}/clients/${client.id}`}
+            className="group flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 hover:shadow-sm active:bg-accent"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-semibold text-foreground group-hover:text-primary">
+                  {client.nom_complet}
+                </p>
+                <p className="mt-0.5 flex items-center gap-1 truncate text-sm text-muted-foreground">
+                  <Phone className="size-3" />
+                  {client.telephone}
+                </p>
+                {client.adresse && (
+                  <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground">
+                    <MapPin className="size-3" />
+                    {client.adresse}
+                  </p>
+                )}
+              </div>
+              <ArrowRight className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <ImpayeBadge solde={client.solde_impaye} />
+              <Badge variant="outline" className="gap-1 text-xs">
+                <ShoppingBag className="size-3" />
+                {client.nombre_commandes} cmd
+              </Badge>
+              <Badge variant="outline" className="gap-1 text-xs">
+                <Star className="size-3 text-warning" />
+                {client.points_fidelite} pts
+              </Badge>
+            </div>
+
+            <div className="mt-3 flex items-center justify-between border-t pt-3 text-sm">
+              <span className="text-xs text-muted-foreground">Total dépensé</span>
+              <span className="font-semibold text-foreground">
+                {formatFCFA(client.total_depense)}
+              </span>
+            </div>
+          </Link>
+        ))}
+      </div>
     );
   }
 

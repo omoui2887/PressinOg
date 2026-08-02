@@ -562,9 +562,12 @@ export function DemandeDetailsSheet({
                 )}
 
                 {/* en_attente OU contactee OU validee : bouton "Valider et
-                    générer un code" (sauf validee qui a déjà un code) */}
+                    générer un code" (sauf validee qui a déjà un code).
+                    Variant `success` (vert) : action positive qui valide la
+                    demande et génère un code d'activation. */}
                 {(statut === "en_attente" || statut === "contactee") && (
                   <Button
+                    variant="success"
                     onClick={handleOpenPlanDialog}
                     disabled={pending}
                     className="w-full gap-2"
@@ -578,13 +581,14 @@ export function DemandeDetailsSheet({
                   </Button>
                 )}
 
-                {/* en_attente OU contactee : bouton "Refuser" */}
+                {/* en_attente OU contactee : bouton "Refuser". Variant
+                    `destructive` (rouge) : action irréversible. */}
                 {(statut === "en_attente" || statut === "contactee") && (
                   <Button
-                    variant="outline"
+                    variant="destructive"
                     onClick={() => setRefuserDialogOpen(true)}
                     disabled={pending}
-                    className="w-full gap-2 text-danger hover:text-danger hover:bg-danger/5"
+                    className="w-full gap-2"
                   >
                     <XCircle className="size-4" />
                     Refuser
@@ -658,6 +662,7 @@ export function DemandeDetailsSheet({
               Annuler
             </Button>
             <Button
+              variant="success"
               onClick={handleGenererCode}
               disabled={pending}
               className="gap-2"

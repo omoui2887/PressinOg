@@ -75,11 +75,15 @@ import {
   isExpire,
   isExpireBientot,
 } from "./abonnements-helpers";
+import type { ViewMode } from "@/hooks/use-view-mode";
 
 interface AbonnementsTableProps {
   abonnements: Abonnement[];
   loading?: boolean;
   onUpdated?: () => void;
+  /** Mode d'affichage : "list" (tableau desktop + cards mobile) ou "grid"
+   *  (grille de cards responsive). Défaut : "list" pour retrocompat. */
+  viewMode?: ViewMode;
 }
 
 /* ---------------------------------------------------------------- */
@@ -152,10 +156,13 @@ function AbonnementActions({ abonnement, onUpdated }: AbonnementActionsProps) {
   return (
     <>
       <div className="flex items-center justify-end gap-1">
-        {/* Renouveler / Attribuer un plan — bouton direct */}
+        {/* Renouveler / Attribuer un plan — bouton direct (action positive :
+            paiement déclaratif qui prolonge l'abonnement). Variant `success`
+            (vert) pour distinguer visuellement les actions financières
+            positives des actions neutres / destructives. */}
         <Button
           size="sm"
-          variant="default"
+          variant="success"
           className="h-8 gap-1"
           onClick={() => setRenouvelerOpen(true)}
           disabled={pending}
@@ -214,11 +221,14 @@ function AbonnementActions({ abonnement, onUpdated }: AbonnementActionsProps) {
 
             <DropdownMenuSeparator />
 
-            {/* Suspendre */}
+            {/* Suspendre — action réversible (le Super Admin peut réactiver à
+                tout moment via un nouveau paiement). Couleur `warning` (ambre)
+                plutôt que `danger` : on réserve le rouge aux actions
+                irréversibles (Supprimer, Refuser définitif). */}
             {!isSuspendu && (
               <DropdownMenuItem
                 onClick={() => setSuspendreOpen(true)}
-                className="text-danger focus:text-danger"
+                className="text-warning focus:text-warning"
               >
                 <Ban className="size-4" />
                 Suspendre
@@ -271,7 +281,7 @@ function AbonnementActions({ abonnement, onUpdated }: AbonnementActionsProps) {
                 suspendre();
               }}
               disabled={pending}
-              className="bg-danger text-white hover:bg-danger/90"
+              className="bg-warning text-warning-foreground hover:bg-warning/90"
             >
               {pending ? (
                 <>
@@ -343,8 +353,20 @@ export function AbonnementsTable({
   abonnements,
   loading,
   onUpdated,
+  viewMode = "list",
 }: AbonnementsTableProps) {
   if (loading) {
+    // En mode grille, on affiche des skeletons en cards plutôt qu'en lignes
+    // pour garder une cohérence visuelle avec le layout sélectionné.
+    if (viewMode === "grid") {
+      return (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-44 w-full rounded-lg" />
+          ))}
+        </div>
+      );
+    }
     return (
       <div className="space-y-3">
         {Array.from({ length: 5 }).map((_, i) => (
@@ -364,6 +386,70 @@ export function AbonnementsTable({
     );
   }
 
+  // ---- Mode GRILLE : cards responsive (remplace tableau desktop + cards mobile)
+  if (viewMode === "grid") {
+    return (
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {abonnements.map((ab) => {
+          const exp = isExpire(ab.date_fin);
+          const bientot = isExpireBientot(ab.date_fin);
+          return (
+            <article
+              key={ab.id}
+              className={cn(
+                "flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 hover:shadow-sm",
+                exp && "border-danger/30 bg-danger/5",
+                !exp && bientot && "border-warning/30 bg-warning/5"
+              )}
+            >
+              {/* En-tête : pressing + statut */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-center gap-1.5 truncate font-semibold text-foreground">
+                    <Building2 className="size-4 shrink-0 text-muted-foreground" />
+                    {ab.pressing?.nom ?? "—"}
+                  </p>
+                  {ab.pressing?.ville && (
+                    <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground">
+                      <MapPin className="size-3" />
+                      {ab.pressing.ville}
+                    </p>
+                  )}
+                </div>
+                <StatusBadge
+                  status={ab.statut}
+                  label={STATUT_LABELS[ab.statut]}
+                  variant={STATUT_VARIANTS[ab.statut]}
+                />
+              </div>
+
+              {/* Badges : plan + montant mensuel */}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <PlanBadge plan={ab.plan} />
+                <Badge variant="outline" className="gap-1 text-xs">
+                  <Wallet className="size-3" />
+                  {formatFCFA(ab.montant_mensuel)}/mois
+                </Badge>
+              </div>
+
+              {/* Date de fin (métrique clé pour un abonnement) */}
+              <div className="mt-3 flex items-center justify-between gap-2 text-xs">
+                <span className="text-muted-foreground">Échéance</span>
+                <DateFinCell dateFin={ab.date_fin} />
+              </div>
+
+              {/* Actions en bas de card */}
+              <div className="mt-auto pt-3">
+                <AbonnementActions abonnement={ab} onUpdated={onUpdated} />
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // ---- Mode LISTE (défaut) : comportement inchangé (tableau desktop + cards mobile)
   return (
     <>
       {/* Desktop : tableau */}
