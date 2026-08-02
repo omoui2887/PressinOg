@@ -109,7 +109,16 @@ function normaliserModesAutorises(raw: unknown): string[] {
   return filtré.length > 0 ? filtré : [...MODES_AUTORISES_DEFAUT];
 }
 
-/** Authentifie le caissier et retourne son row personnel + le client Supabase. */
+/** Authentifie le caissier et retourne son row personnel + le client Supabase.
+ *
+ * ⚠️ RÉSILIENCE (FIX BUG-ENCAISSEMENT-P0) : On tente d'abord un SELECT incluant
+ *    `modes_paiement_autorises` (colonne ajoutée par la migration 019). Si la
+ *    colonne n'existe pas en base (base non migrée — code PGRST116/42703), on
+ *    retombe sur un SELECT sans cette colonne et on utilise MODES_AUTORISES_DEFAUT.
+ *    Sans cette protection, une base non migrée fait échouer SILENCIEUSEMENT le
+ *    SELECT (data=null, error peuplé mais non vérifié) et l'API renvoie
+ *    "Compte inactif ou désactivé" à tort, bloquant tout encaissement.
+ */
 async function getConnectedCaissier() {
   const supabase = await getSupabaseServer();
   const { data: userData, error: userErr } = await supabase.auth.getUser();
@@ -121,15 +130,49 @@ async function getConnectedCaissier() {
       ),
     };
   }
-  const { data: me } = await supabase
+  // Tentative 1 : SELECT complet incluant modes_paiement_autorises (migration 019).
+  let { data: me, error: meErr } = await supabase
     .from("personnel")
-    // FIX AUDIT 9.11 : on lit `modes_paiement_autorises` pour valider
-    // que le caissier est habilité à encaisser avec la méthode demandée.
     .select(
       "id, pressing_id, role, actif, statut_compte, modes_paiement_autorises"
     )
     .eq("user_id", userData.user.id)
     .maybeSingle();
+
+  // Tentative 2 (fallback) : si la colonne modes_paiement_autorises n'existe pas
+  // (base non migrée — erreur PGRST116 / code 42703), on retente sans cette
+  // colonne. On utilisera MODES_AUTORISES_DEFAUT pour la validation des modes.
+  if (meErr && (meErr.code === "42703" || meErr.code === "PGRST116")) {
+    console.warn(
+      "[api/personnel/caissier/encaisser] Colonne 'modes_paiement_autorises' absente — fallback sans modes_paiement_autorises. Exécutez la migration 019_champs_caissier.sql pour activer la restriction par caissier."
+    );
+    const fallback = await supabase
+      .from("personnel")
+      .select("id, pressing_id, role, actif, statut_compte")
+      .eq("user_id", userData.user.id)
+      .maybeSingle();
+    me = fallback.data;
+    meErr = fallback.error;
+    // On injecte la valeur par défaut pour que la suite du code fonctionne.
+    if (me) {
+      (me as { modes_paiement_autorises?: unknown }).modes_paiement_autorises =
+        null; // null => normaliserModesAutorises retournera MODES_AUTORISES_DEFAUT
+    }
+  }
+
+  // Toute autre erreur SQL est logger et renvoie un 500 explicite.
+  if (meErr && !(!me && (meErr.code === "PGRST116" || meErr.code === "42703"))) {
+    console.error(
+      "[api/personnel/caissier/encaisser] Erreur SELECT personnel:",
+      meErr
+    );
+    return {
+      error: NextResponse.json(
+        { success: false, error: "Erreur lors de la vérification du compte." },
+        { status: 500 }
+      ),
+    };
+  }
 
   if (!me || me.actif !== true || me.statut_compte !== "actif") {
     return {
