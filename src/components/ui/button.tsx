@@ -8,7 +8,7 @@ import { Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /**
- * OgPressing — Button (LOT 16.2 — embellissement)
+ * OgPressing — Button (LOT 16.2 — embellissement + Phase 2-a éditorial)
  * ================================================
  *
  * Améliorations appliquées :
@@ -22,6 +22,18 @@ import { cn } from "@/lib/utils"
  *   - Variant `loading` désactivé via prop `loading` (prioritaire sur `disabled`)
  *   - usePrefersReducedMotion : les effets de mouvement sont désactivés
  *     automatiquement par le guard CSS global (prefers-reduced-motion).
+ *
+ * Phase 2-a — Variants "Luxe Éditorial" (opt-in, backward-compatible) :
+ *   - `editorial`           → CTA doré 3 stops (.gold-gradient), texte ivory,
+ *                             hover brightness 1.15 + translateY -2px, focus glow-gold.
+ *   - `editorialSecondary`  → glass + bordure or subtile (.editorial-btn-secondary),
+ *                             texte gold-pale, hover bg gold/8.
+ *   - `editorialGhost`      → texte gold-pale, underline doré animé au hover
+ *                             (background-size 0→100%).
+ *   - Loading éditorial : pour ces 3 variants, l'état `loading` remplace le
+ *     spinner Loader2 par 3 points dorés pulsants (.loading-dots) + un mini
+ *     spinner border-top gold, conservant l'esthétique "luxe" pendant les
+ *     actions asynchrones.
  *
  * La prop `loading` remplace le texte par un spinner tout en conservant
  * la largeur du bouton (min-width calculée sur le contenu initial) pour
@@ -49,6 +61,22 @@ const buttonVariants = cva(
         ghost:
           "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
         link: "text-primary underline-offset-4 hover:underline",
+        // ---- Phase 2-a — Variants "Luxe Éditorial" (opt-in, non-cassant) ----
+        // CTA doré premium — utilise .gold-gradient défini dans globals.css
+        // (fond 3 stops #C5A03D → #D4AF37 → #A8862B, texte ivory #F5F0E6,
+        // hover brightness 1.15 + translateY -2px, disabled gris-bleu).
+        // focus-visible:glow-gold remplace le ring par défaut pour cohérence.
+        editorial:
+          "gold-gradient border-transparent focus-visible:ring-0 focus-visible:glow-gold motion-reduce:transition-none motion-reduce:hover:translate-y-0",
+        // Bouton glass secondaire — utilise .editorial-btn-secondary (fond
+        // rgba(255,255,255,0.03), bordure or subtile, texte gold-pale #E8D6A0,
+        // hover bg gold/8 + bordure or renforcée).
+        editorialSecondary:
+          "editorial-btn-secondary border-transparent focus-visible:ring-0 focus-visible:glow-gold motion-reduce:transition-none",
+        // Lien fantôme éditorial — texte gold-pale, underline doré animé au
+        // hover via background-size 0% → 100% (technique Tailwind v4 sans JS).
+        editorialGhost:
+          "border-transparent bg-transparent text-[#E8D6A0] underline-offset-4 hover:text-[#F5F0E6] bg-[linear-gradient(#C5A03D,#C5A03D)] bg-[length:0%_1px] bg-no-repeat bg-[position:left_bottom] hover:bg-[length:100%_1px] transition-[background-size,color] duration-base ease-smooth focus-visible:ring-0 focus-visible:glow-gold motion-reduce:transition-none",
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",
@@ -109,7 +137,10 @@ function Button({
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
-    /** Affiche un spinner et désactive le clic (action asynchrone en cours). */
+    /** Affiche un spinner et désactive le clic (action asynchrone en cours).
+     *  Pour les variants `editorial*`, le spinner Loader2 est remplacé par
+     *  3 points dorés pulsants (.loading-dots) + un mini spinner border-top
+     *  gold, conservant l'esthétique "luxe éditorial". */
     loading?: boolean
     /** Active l'effet d'onde circulaire au clic (actions importantes). */
     ripple?: boolean
@@ -158,12 +189,40 @@ function Button({
     )
   }
 
-  // Mode button natif — on peut ajouter le spinner et l'effet ripple
+  // Mode button natif — on peut ajouter le spinner et l'effet ripple.
+  // Pour les variants éditoriaux, l'état `loading` affiche 3 points dorés
+  // pulsants (.loading-dots) + un mini spinner border-top gold, conservant
+  // l'esthétique "luxe" pendant les actions asynchrones. Les autres variants
+  // conservent leur comportement existant (Loader2 lucide).
+  const isEditorialVariant =
+    variant === "editorial" ||
+    variant === "editorialSecondary" ||
+    variant === "editorialGhost"
+
   const content = loading ? (
-    <>
-      <Loader2 className="animate-spin" />
-      <span className="invisible">{children}</span>
-    </>
+    isEditorialVariant ? (
+      <>
+        {/* 3 points dorés pulsants — .loading-dots utilise ::before, span
+            enfant, ::after (3 dots au total, délai 0s/0s/0.4s par CSS). */}
+        <span className="loading-dots" aria-hidden="true">
+          <span />
+        </span>
+        {/* Mini spinner border-top gold — complément visuel pour signaler
+            une action asynchrone en cours. */}
+        <span
+          aria-hidden="true"
+          className="size-3.5 animate-spin rounded-full border-2 border-white/20 border-t-[#C5A03D] motion-reduce:animate-none"
+        />
+        {/* Children invisibles — préservent la largeur du bouton pour éviter
+            un saut de mise en page pendant le chargement. */}
+        <span className="invisible">{children}</span>
+      </>
+    ) : (
+      <>
+        <Loader2 className="animate-spin" />
+        <span className="invisible">{children}</span>
+      </>
+    )
   ) : (
     children
   )

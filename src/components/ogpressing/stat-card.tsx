@@ -1,5 +1,5 @@
 /**
- * OgPressing — StatCard (EMBELLISSEMENT §6 + §17)
+ * OgPressing — StatCard (EMBELLISSEMENT §6 + §17 + ÉDITORIAL LX §5/§6F)
  * ------------------------------------------------
  * Carte de statistique réutilisable pour les dashboards (Super Admin,
  * Admin pressing, Personnel). Affiche un libellé, une valeur principale,
@@ -16,6 +16,13 @@
  *   - Sortie de fond léger au survol (translate-y -1px + shadow-md)
  *   - Pastille décorative en haut à droite (alternative à l'icône brute)
  *
+ * Améliorations ÉDITORIAL LX (Phase 3-a, opt-in) :
+ *   - accent="editorial" → barre/icône/tendance couleur or cuivré #C5A03D
+ *     (utilitaire Tailwind bg-editorial-gold / text-editorial-gold)
+ *   - premium={true} → ajoute .editorial-card-premium (glass + bordure or)
+ *     + .ornate .ornate-tl .ornate-tr (coins losanges dorés haut-gauche/haut-droite)
+ *   - Non-cassant : comportement par défaut inchangé.
+ *
  * Usage :
  *   <StatCard
  *     label="Pressings actifs"
@@ -24,6 +31,8 @@
  *     accent="primary"
  *     description="Tous statuts confondus"
  *   />
+ *   <StatCard label="CA mensuel" value="4,2M" icon={TrendingUp}
+ *     accent="editorial" premium isMonetary />
  */
 import { type LucideIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -34,7 +43,8 @@ export type StatAccent =
   | "secondary"
   | "warning"
   | "danger"
-  | "neutral";
+  | "neutral"
+  | "editorial";
 
 const accentIcon: Record<StatAccent, string> = {
   primary: "bg-primary/10 text-primary",
@@ -42,6 +52,7 @@ const accentIcon: Record<StatAccent, string> = {
   warning: "bg-warning/15 text-warning",
   danger: "bg-danger/10 text-danger",
   neutral: "bg-muted text-muted-foreground",
+  editorial: "bg-editorial-gold/10 text-editorial-gold",
 };
 
 /** Barre d'accent verticale à gauche (4px de large, pleine hauteur). */
@@ -51,6 +62,7 @@ const accentBar: Record<StatAccent, string> = {
   warning: "bg-warning",
   danger: "bg-danger",
   neutral: "bg-muted-foreground/60",
+  editorial: "bg-editorial-gold",
 };
 
 const accentTrend: Record<StatAccent, string> = {
@@ -59,6 +71,7 @@ const accentTrend: Record<StatAccent, string> = {
   warning: "text-warning",
   danger: "text-danger",
   neutral: "text-muted-foreground",
+  editorial: "text-editorial-gold",
 };
 
 interface StatCardProps {
@@ -84,6 +97,10 @@ interface StatCardProps {
   /** Si true, la valeur est un montant FCFA → applique la classe .fcfa
    *  (mono + tabular-nums) pour aligner les chiffres entre cartes. */
   isMonetary?: boolean;
+  /** Mode premium éditorial (Phase 3-a) — opt-in, non-cassant :
+   *  ajoute .editorial-card-premium (glass + bordure or) et les ornements
+   *  .ornate .ornate-tl .ornate-tr (coins losanges dorés en haut). */
+  premium?: boolean;
   className?: string;
 }
 
@@ -96,6 +113,7 @@ export function StatCard({
   trend,
   delay = 0,
   isMonetary = false,
+  premium = false,
   className,
 }: StatCardProps) {
   return (
@@ -104,6 +122,7 @@ export function StatCard({
         "relative animate-in fade-in-0 slide-in-from-bottom-2 duration-300 fill-both motion-reduce:animate-none overflow-hidden",
         "hover:shadow-md hover:-translate-y-px motion-reduce:hover:translate-y-0",
         "transition-all duration-fast ease-smooth",
+        premium && "editorial-card-premium ornate ornate-tl ornate-tr",
         className
       )}
       style={{ animationDelay: `${delay}ms` }}

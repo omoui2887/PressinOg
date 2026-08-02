@@ -1,16 +1,17 @@
 /**
- * OgPressing — Page de connexion (EMBELLISSEMENT §29)
+ * OgPressing — Page de connexion (PHASE 4-a — Luxe Éditorial)
  * ----------------------------------------------------
  * Route : /login
  *
- * Layout split-screen premium :
- *   - Desktop (lg+) : panneau gauche Bleu Nuit + Or Textile avec motif
- *     textile, tagline marketing, et points clés du SaaS. Panneau droit
- *     blanc avec le formulaire centré.
+ * Layout split-screen premium "Luxe Éditorial" :
+ *   - Desktop (lg+) : panneau gauche navy #080F1F avec aurora animée, motif
+ *     textile doré, tagline marketing en Playfair Display, points clés du
+ *     SaaS. Panneau droit navy avec le formulaire centré en card glass + coins
+ *     dorés (OrnateCorner).
  *   - Mobile : panneau marketing compact en haut (logo + tagline), puis
  *     formulaire plein écran.
  *
- * LOGIQUE INTACTE (cf. version précédente) :
+ * LOGIQUE INTACTE (cf. version précédente) — AUCUNE modification :
  *   - signInWithPassword via Supabase browser client
  *   - Détermination du rôle : super_admins > personnel > erreur
  *   - Redirection hard via window.location.assign (évite les race
@@ -19,8 +20,9 @@
  *   - Compte désactivé → signOut + message FR clair
  *   - Lecture des ?error= transmis par le middleware (one-shot)
  *
- * Aucune modification de la logique métier — uniquement la couche
- * présentation (CSS + structure HTML).
+ * Phase 4-a : uniquement la couche présentation (JSX + className + imports
+ * des composants éditoriaux AuroraBackground / OrnateCorner / DecorativeHeading
+ * + variants éditoriaux de Button / Input). Aucune logique touchée.
  */
 "use client";
 
@@ -29,7 +31,6 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
-  Loader2,
   AlertCircle,
   ShoppingBag,
   ArrowLeft,
@@ -56,6 +57,10 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import {
+  AuroraBackground,
+  OrnateCorner,
+} from "@/components/ogpressing/editorial";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { toast } from "sonner";
 
@@ -271,53 +276,58 @@ export default function LoginPage() {
   /* -------------------- Rendu -------------------- */
 
   return (
-    <div className="relative flex min-h-dvh items-stretch justify-center lg:grid lg:grid-cols-2 lg:gap-0">
-      {/* ===== Panneau marketing (Bleu Nuit + Or Textile) ===== */}
+    <div className="relative flex min-h-dvh items-stretch justify-center overflow-hidden bg-editorial-navy lg:grid lg:grid-cols-2 lg:gap-0">
+      {/* Aurora animée en fond — dégradé conique doré subtil sous tout le contenu */}
+      <AuroraBackground intensity="subtle" />
+
+      {/* ===== Panneau marketing (Navy + Or cuivré) ===== */}
       <aside
         aria-hidden
-        className="relative hidden overflow-hidden bg-landing-primary text-landing-bg lg:flex lg:flex-col lg:justify-between lg:p-12"
+        className="relative hidden overflow-hidden bg-editorial-navy text-editorial-ivory lg:flex lg:flex-col lg:justify-between lg:p-12"
       >
-        {/* Motif textile décoratif — grille de points subtile */}
+        {/* Motif textile décoratif — grille de points dorés subtile */}
         <div
           className="absolute inset-0 opacity-[0.06]"
           style={{
             backgroundImage:
-              "radial-gradient(circle at 1px 1px, #d9a441 1.5px, transparent 0)",
+              "radial-gradient(circle at 1px 1px, #C5A03D 1.5px, transparent 0)",
             backgroundSize: "24px 24px",
           }}
         />
         {/* Halo doré en haut à droite */}
         <div
-          className="absolute -right-32 -top-32 size-96 rounded-full bg-landing-accent/20 blur-3xl"
+          className="absolute -right-32 -top-32 size-96 rounded-full bg-editorial-gold/15 blur-3xl motion-reduce:animate-none"
         />
-        {/* Halo bleu profond en bas à gauche */}
+        {/* Halo navy profond en bas à gauche */}
         <div
-          className="absolute -bottom-32 -left-32 size-96 rounded-full bg-landing-primary-deep/40 blur-3xl"
+          className="absolute -bottom-32 -left-32 size-96 rounded-full bg-editorial-navy-deep/60 blur-3xl motion-reduce:animate-none"
         />
+        {/* Coins dorés décoratifs (losanges SVG) */}
+        <OrnateCorner corners={["tl", "br"]} />
 
         {/* Logo + marque */}
         <div className="relative z-10 flex items-center gap-3">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-landing-accent text-landing-primary">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-editorial-gold text-editorial-navy">
             <ShoppingBag className="size-5" />
           </span>
-          <span className="font-jakarta text-xl font-bold tracking-tight">
-            Og<span className="text-landing-accent">Pressing</span>
+          <span className="font-playfair text-xl font-bold tracking-tight">
+            Og<span className="text-editorial-gold">Pressing</span>
           </span>
         </div>
 
         {/* Tagline + points clés */}
         <div className="relative z-10 space-y-8">
           <div className="space-y-3">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-landing-accent/15 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-landing-accent">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-editorial-gold/30 bg-editorial-gold/15 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-editorial-gold-pale">
               <Sparkles className="size-3" />
               SaaS de pressing
             </span>
-            <h1 className="font-jakarta text-4xl font-bold leading-tight tracking-tight xl:text-5xl">
+            <h1 className="font-playfair text-4xl font-bold leading-tight tracking-tight text-editorial-ivory xl:text-5xl">
               Gérez votre pressing
               <br />
-              <span className="text-landing-accent">comme un pro.</span>
+              <span className="text-editorial-gold italic">comme un pro.</span>
             </h1>
-            <p className="max-w-md text-base leading-relaxed text-landing-bg/70">
+            <p className="max-w-md text-base leading-relaxed text-editorial-ivory-dim">
               POS, suivi de production, CRM clients, gestion du personnel
               et du stock — tout réuni dans une interface pensée pour le
               terrain ivoirien.
@@ -326,26 +336,26 @@ export default function LoginPage() {
 
           <ul className="space-y-3">
             <li className="flex items-center gap-3 text-sm">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-landing-accent/15 text-landing-accent">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-editorial-gold/15 text-editorial-gold">
                 <Zap className="size-4" />
               </span>
-              <span className="text-landing-bg/90">
+              <span className="text-editorial-ivory">
                 Enregistrez une commande en moins de 60 secondes.
               </span>
             </li>
             <li className="flex items-center gap-3 text-sm">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-landing-accent/15 text-landing-accent">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-editorial-gold/15 text-editorial-gold">
                 <ShieldCheck className="size-4" />
               </span>
-              <span className="text-landing-bg/90">
+              <span className="text-editorial-ivory">
                 Suivi QR/code-barres de chaque vêtement, du dépôt au retrait.
               </span>
             </li>
             <li className="flex items-center gap-3 text-sm">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-landing-accent/15 text-landing-accent">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-editorial-gold/15 text-editorial-gold">
                 <ShoppingBag className="size-4" />
               </span>
-              <span className="text-landing-bg/90">
+              <span className="text-editorial-ivory">
                 Conçu pour mobile, utilisé debout, au comptoir.
               </span>
             </li>
@@ -353,7 +363,7 @@ export default function LoginPage() {
         </div>
 
         {/* Pied marketing */}
-        <div className="relative z-10 text-xs text-landing-bg/50">
+        <div className="relative z-10 text-xs text-editorial-ivory-dim">
           © {new Date().getFullYear()} OgPressing — Côte d&apos;Ivoire
         </div>
       </aside>
@@ -363,11 +373,11 @@ export default function LoginPage() {
         {/* Décor d'accompagnement (visible mobile + desktop) */}
         <div
           aria-hidden
-          className="absolute inset-0 -z-10 bg-gradient-to-b from-landing-accent/5 via-background to-background"
+          className="absolute inset-0 -z-10 bg-gradient-to-b from-editorial-gold/5 via-transparent to-transparent"
         />
         <div
           aria-hidden
-          className="absolute top-0 left-1/2 -z-10 size-[400px] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl"
+          className="absolute top-0 left-1/2 -z-10 size-[400px] -translate-x-1/2 rounded-full bg-editorial-gold/10 blur-3xl motion-reduce:animate-none"
         />
 
         <div className="w-full max-w-md">
@@ -376,7 +386,8 @@ export default function LoginPage() {
             {/* <a> (hard nav) — évite le fetch RSC bloqué en cross-origin (Task 22). */}
             <a
               href="/"
-              className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+              className="inline-flex items-center gap-2 text-sm text-editorial-ivory-dim transition-colors hover:text-editorial-ivory"
+              aria-label="Retour à la page d'accueil"
             >
               <ArrowLeft className="size-4" /> Retour à l&apos;accueil
             </a>
@@ -384,20 +395,20 @@ export default function LoginPage() {
 
           {/* Logo mobile (le panneau marketing est masqué sur mobile) */}
           <div className="mb-6 flex items-center justify-center gap-2 lg:hidden">
-            <span className="flex size-10 items-center justify-center rounded-xl bg-landing-primary text-landing-accent">
+            <span className="flex size-10 items-center justify-center rounded-xl bg-editorial-gold text-editorial-navy">
               <ShoppingBag className="size-5" />
             </span>
-            <span className="font-jakarta text-lg font-bold tracking-tight text-foreground">
-              Og<span className="text-landing-accent-deep">Pressing</span>
+            <span className="font-playfair text-lg font-bold tracking-tight text-editorial-ivory">
+              Og<span className="text-editorial-gold-deep">Pressing</span>
             </span>
           </div>
 
-          <Card className="shadow-lg border-border/60">
+          <Card className="editorial-card glass-panel relative group ornate ornate-tl ornate-tr">
             <CardHeader className="text-center">
-              <CardTitle className="font-jakarta text-2xl font-bold tracking-tight">
+              <CardTitle className="font-playfair text-2xl font-bold tracking-tight text-editorial-ivory">
                 Connexion
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="text-editorial-ivory-dim">
                 Accédez au tableau de bord de votre pressing.
               </CardDescription>
             </CardHeader>
@@ -413,11 +424,14 @@ export default function LoginPage() {
                     name="email"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel htmlFor="email">Email</FormLabel>
+                        <FormLabel htmlFor="email" className="text-editorial-ivory-dim">
+                          Email
+                        </FormLabel>
                         <FormControl>
                           <Input
                             id="email"
                             type="email"
+                            variant="editorial"
                             placeholder="vous@pressing.ci"
                             autoComplete="email"
                             className="h-11"
@@ -439,11 +453,13 @@ export default function LoginPage() {
                     render={({ field }) => (
                       <FormItem>
                         <div className="flex items-center justify-between">
-                          <FormLabel htmlFor="password">Mot de passe</FormLabel>
+                          <FormLabel htmlFor="password" className="text-editorial-ivory-dim">
+                            Mot de passe
+                          </FormLabel>
                           {/* <button> (pas <Link>) : c'est une action (toast), pas une navigation. */}
                           <button
                             type="button"
-                            className="text-xs text-muted-foreground transition-colors hover:text-primary"
+                            className="text-xs text-editorial-gold transition-colors hover:text-editorial-gold-pale"
                             onClick={() => {
                               toast.info(
                                 "Contactez votre administrateur pour réinitialiser votre mot de passe."
@@ -458,6 +474,7 @@ export default function LoginPage() {
                             <Input
                               id="password"
                               type={showPassword ? "text" : "password"}
+                              variant="editorial"
                               placeholder="••••••••"
                               autoComplete="current-password"
                               className="h-11 pr-10"
@@ -471,7 +488,7 @@ export default function LoginPage() {
                           <button
                             type="button"
                             onClick={() => setShowPassword((s) => !s)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-editorial-gold transition-colors hover:text-editorial-gold-pale"
                             aria-label={
                               showPassword
                                 ? "Masquer le mot de passe"
@@ -494,7 +511,7 @@ export default function LoginPage() {
                   {globalError && (
                     <div
                       role="alert"
-                      className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger/5 p-3 text-sm text-danger"
+                      className="flex animate-shake items-start gap-2 rounded-md border border-editorial-danger/30 bg-editorial-danger/5 p-3 text-sm text-editorial-danger motion-reduce:animate-none"
                     >
                       <AlertCircle className="mt-0.5 size-4 shrink-0" />
                       <span>{globalError}</span>
@@ -504,28 +521,22 @@ export default function LoginPage() {
                   <Button
                     type="submit"
                     size="lg"
+                    variant="editorial"
+                    loading={loading}
                     className="w-full"
-                    disabled={loading}
-                    ripple
                   >
-                    {loading ? (
-                      <>
-                        <Loader2 className="size-4 animate-spin" /> Connexion...
-                      </>
-                    ) : (
-                      "Se connecter"
-                    )}
+                    Se connecter
                   </Button>
                 </form>
               </Form>
 
-              <div className="mt-6 rounded-md border border-primary/20 bg-primary/5 p-3 text-center text-sm">
-                <p className="text-muted-foreground">
+              <div className="mt-6 rounded-md border border-editorial-gold/20 bg-editorial-gold/5 p-3 text-center text-sm">
+                <p className="text-editorial-ivory-dim">
                   Pas encore de compte ?{" "}
                   {/* <a> (hard nav) — évite le fetch RSC bloqué en cross-origin (Task 22). */}
                   <a
                     href="/activation"
-                    className="font-medium text-primary hover:underline"
+                    className="font-medium text-editorial-gold underline-offset-4 transition-colors hover:text-editorial-gold-pale hover:underline"
                   >
                     Activer mon compte
                   </a>

@@ -4,6 +4,20 @@ import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * OgPressing — Badge (LOT 16 + Phase 2-a éditorial)
+ * ==================================================
+ *
+ * Variantes Phase 2-a "Luxe Éditorial" (opt-in, backward-compatible) :
+ *   - `editorial`       → fond or 10% + bordure or 30% + texte gold-pale #E8D6A0.
+ *   - `editorialSolid`  → fond .gold-gradient (3 stops) + texte ivory #F5F0E6.
+ *
+ * Toutes les variantes existantes (default, secondary, success, info,
+ * warning, destructive, danger, outline) sont inchangées. La prop `dot`
+ * (pastille bg-current pour double encodage couleur + texte) reste
+ * fonctionnelle sur toutes les variantes, y compris les éditoriales.
+ */
+
 const badgeVariants = cva(
   "inline-flex items-center justify-center rounded-md border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive transition-all duration-fast ease-smooth overflow-hidden",
   {
@@ -25,6 +39,15 @@ const badgeVariants = cva(
           "border-transparent bg-danger/10 text-danger dark:text-danger [a&]:hover:bg-danger/20",
         outline:
           "text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
+        // ---- Phase 2-a — Variantes "Luxe Éditorial" (opt-in, non-cassant) ----
+        // Pastille éditoriale translucide : fond or 10%, bordure or 30%,
+        // texte gold-pale #E8D6A0. À utiliser sur fond navy/ivoire.
+        editorial:
+          "border-[rgba(197,160,61,0.3)] bg-[rgba(197,160,61,0.1)] text-[#E8D6A0] font-medium [a&]:hover:bg-[rgba(197,160,61,0.18)]",
+        // Badge plein doré : utilise .gold-gradient (3 stops #C5A03D→#D4AF37→#A8862B),
+        // texte ivory #F5F0E6. Pour stats premium / KPIs éditoriaux.
+        editorialSolid:
+          "border-transparent gold-gradient text-[#F5F0E6] font-medium",
       },
     },
     defaultVariants: {

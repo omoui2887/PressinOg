@@ -3,6 +3,19 @@ import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * OgPressing — Alert (LOT 16 + Phase 2-a éditorial)
+ * ==================================================
+ *
+ * Variante Phase 2-a "Luxe Éditorial" (opt-in, backward-compatible) :
+ *   - `editorial` → fond or 5% + bordure or 30% + texte gold-pale #E8D6A0 +
+ *                   icône dorée (&[>svg]:text-[#C5A03D]). Pour les banderoles
+ *                   d'information premium sur fond navy/ivoire.
+ *
+ * Les variantes existantes (default, destructive, success, warning, info)
+ * sont inchangées.
+ */
+
 const alertVariants = cva(
   "relative w-full rounded-lg border px-4 py-3 text-sm grid has-[>svg]:grid-cols-[calc(var(--spacing)*4)_1fr] grid-cols-[0_1fr] has-[>svg]:gap-x-3 gap-y-0.5 items-start [&>svg]:size-4 [&>svg]:translate-y-0.5 [&>svg]:text-current",
   {
@@ -17,6 +30,12 @@ const alertVariants = cva(
           "text-warning-700 bg-warning/5 border-warning/20 [&>svg]:text-warning *:data-[slot=alert-description]:text-warning-700/80 dark:text-warning dark:*:data-[slot=alert-description]:text-warning/90",
         info:
           "text-primary bg-primary/5 border-primary/20 [&>svg]:text-primary *:data-[slot=alert-description]:text-primary/80 dark:*:data-[slot=alert-description]:text-primary/90",
+        // ---- Phase 2-a — Variante "Luxe Éditorial" (opt-in, non-cassant) ----
+        // Banderole premium : fond or 5%, bordure or 30%, texte gold-pale,
+        // icône dorée (override &[>svg]:text-current → #C5A03D). Description
+        // en ivory atténué pour préserver la hiérarchie.
+        editorial:
+          "text-[#E8D6A0] bg-[rgba(197,160,61,0.05)] border-[rgba(197,160,61,0.3)] [&>svg]:text-[#C5A03D] *:data-[slot=alert-description]:text-[#F5F0E6]/70",
       },
     },
     defaultVariants: {

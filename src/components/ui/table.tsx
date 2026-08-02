@@ -4,7 +4,13 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+function Table({
+  className,
+  variant = "default",
+  ...props
+}: React.ComponentProps<"table"> & {
+  variant?: "default" | "editorial"
+}) {
   return (
     <div
       data-slot="table-container"
@@ -12,7 +18,15 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
     >
       <table
         data-slot="table"
-        className={cn("w-full caption-bottom text-sm", className)}
+        data-editorial={variant === "editorial" ? "true" : undefined}
+        className={cn(
+          "w-full caption-bottom text-sm",
+          // Variant editorial — .editorial-table (header glass + uppercase 11px + hover ligne).
+          // Le styling détaillé est porté par les règles CSS
+          // [data-editorial=true][data-slot=table] dans globals.css.
+          variant === "editorial" && "editorial-table",
+          className
+        )}
         {...props}
       />
     </div>
