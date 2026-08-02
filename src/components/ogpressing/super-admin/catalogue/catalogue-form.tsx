@@ -456,6 +456,7 @@ export function CatalogueForm({
                       alt="Aperçu de l'icône"
                       width={80}
                       height={80}
+                      sizes="80px"
                       unoptimized
                       className="size-full object-contain"
                       onError={() => {

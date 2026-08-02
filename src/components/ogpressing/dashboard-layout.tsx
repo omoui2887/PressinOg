@@ -186,6 +186,7 @@ export function DashboardLayout({
           alt={brand.name}
           width={32}
           height={32}
+          sizes="32px"
           className="size-8 rounded-lg object-cover"
           unoptimized
         />

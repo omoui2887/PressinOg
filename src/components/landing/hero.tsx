@@ -113,7 +113,7 @@ export function Hero() {
             </span>
             <span
               data-hero-anim
-              className="mt-1 block font-fraunces text-5xl italic leading-[1.05] sm:text-6xl md:text-7xl lg:text-8xl"
+              className="mt-1 block font-fraunces text-4xl italic leading-[1.05] sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl"
             >
               <span className="text-landing-accent">réinventée.</span>
             </span>

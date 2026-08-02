@@ -74,14 +74,17 @@ export function CommandesFilters({
         )}
       </div>
 
-      {/* Filtres Select */}
-      <div className="flex items-center gap-2">
+      {/* Filtres Select — flex-wrap pour éviter l'overflow sur petits écrans */}
+      <div className="flex flex-wrap items-center gap-2">
         <Filter className="hidden size-4 text-muted-foreground sm:block" />
         <Select
           value={statut}
           onValueChange={(v) => onStatutChange(v === "__all__" ? "" : v)}
         >
-          <SelectTrigger className="h-10 w-[180px]" aria-label="Filtrer par statut">
+          <SelectTrigger
+            className="h-10 w-full sm:w-[180px]"
+            aria-label="Filtrer par statut"
+          >
             <SelectValue placeholder="Tous les statuts" />
           </SelectTrigger>
           <SelectContent>
@@ -103,7 +106,7 @@ export function CommandesFilters({
           }
         >
           <SelectTrigger
-            className="h-10 w-[170px]"
+            className="h-10 w-full sm:w-[170px]"
             aria-label="Filtrer par statut de paiement"
           >
             <SelectValue placeholder="Tous les paiements" />

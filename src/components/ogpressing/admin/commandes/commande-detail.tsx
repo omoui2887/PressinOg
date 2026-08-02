@@ -711,7 +711,7 @@ export function CommandeDetail({
                           disabled={isUpdating}
                         >
                           <SelectTrigger
-                            className="h-8 w-[150px] text-xs"
+                            className="h-9 w-[140px] text-xs sm:h-8 sm:w-[150px]"
                             aria-label={`Modifier le statut de l'article ${idx + 1}`}
                           >
                             <SelectValue />
@@ -754,61 +754,102 @@ export function CommandeDetail({
               Aucun paiement enregistré pour cette commande.
             </p>
           ) : (
-            <div className="overflow-hidden rounded-lg border">
-              <table className="w-full text-sm">
-                <thead className="border-b bg-muted/50">
-                  <tr className="text-left">
-                    <th className="px-3 py-2 font-semibold text-foreground">
-                      Date
-                    </th>
-                    <th className="px-3 py-2 font-semibold text-foreground">
-                      Méthode
-                    </th>
-                    <th className="px-3 py-2 font-semibold text-foreground">
-                      Référence
-                    </th>
-                    <th className="px-3 py-2 font-semibold text-foreground">
-                      Type
-                    </th>
-                    <th className="px-3 py-2 text-right font-semibold text-foreground">
-                      Montant
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {commande.paiements.map((p) => (
-                    <tr key={p.id}>
-                      <td className="px-3 py-2 text-muted-foreground">
-                        {formatDateOnly(p.date_paiement)}
-                      </td>
-                      <td className="px-3 py-2 text-foreground">
-                        {methodePaiementLabel(p.methode)}
-                      </td>
-                      <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
-                        {p.reference ?? "—"}
-                      </td>
-                      <td className="px-3 py-2">
-                        {p.est_acompte ? (
-                          <Badge variant="outline" className="text-xs">
-                            Acompte
-                          </Badge>
-                        ) : (
-                          <Badge
-                            variant="outline"
-                            className="text-xs text-secondary"
-                          >
-                            Solde
-                          </Badge>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right font-medium text-foreground">
-                        {formatFCFA(p.montant)}
-                      </td>
+            <>
+              {/* Desktop : table */}
+              <div className="hidden overflow-x-auto rounded-lg border md:block">
+                <table className="w-full text-sm">
+                  <thead className="border-b bg-muted/50">
+                    <tr className="text-left">
+                      <th className="px-3 py-2 font-semibold text-foreground">
+                        Date
+                      </th>
+                      <th className="px-3 py-2 font-semibold text-foreground">
+                        Méthode
+                      </th>
+                      <th className="px-3 py-2 font-semibold text-foreground">
+                        Référence
+                      </th>
+                      <th className="px-3 py-2 font-semibold text-foreground">
+                        Type
+                      </th>
+                      <th className="px-3 py-2 text-right font-semibold text-foreground">
+                        Montant
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y">
+                    {commande.paiements.map((p) => (
+                      <tr key={p.id}>
+                        <td className="px-3 py-2 text-muted-foreground">
+                          {formatDateOnly(p.date_paiement)}
+                        </td>
+                        <td className="px-3 py-2 text-foreground">
+                          {methodePaiementLabel(p.methode)}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                          {p.reference ?? "—"}
+                        </td>
+                        <td className="px-3 py-2">
+                          {p.est_acompte ? (
+                            <Badge variant="outline" className="text-xs">
+                              Acompte
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="text-xs text-secondary"
+                            >
+                              Solde
+                            </Badge>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium text-foreground">
+                          {formatFCFA(p.montant)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile : cards */}
+              <ul className="divide-y rounded-lg border md:hidden">
+                {commande.paiements.map((p) => (
+                  <li key={p.id} className="space-y-1.5 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium text-foreground">
+                        {methodePaiementLabel(p.methode)}
+                      </span>
+                      {p.est_acompte ? (
+                        <Badge variant="outline" className="text-xs">
+                          Acompte
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="text-xs text-secondary"
+                        >
+                          Solde
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="text-muted-foreground">
+                        {formatDateOnly(p.date_paiement)}
+                      </span>
+                      <span className="font-semibold text-foreground">
+                        {formatFCFA(p.montant)}
+                      </span>
+                    </div>
+                    {p.reference && (
+                      <p className="font-mono text-[10px] text-muted-foreground">
+                        Réf. {p.reference}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </CardContent>
       </Card>

@@ -24,6 +24,13 @@ import { Toasters } from "@/components/ogpressing/toasters";
  *  Les variables CSS --font-jakarta, --font-plex-mono et --font-playfair
  *  sont mappées vers les utilities Tailwind correspondantes dans
  *  globals.css (@theme inline).
+ *
+ * 🚀 PERF (audit PERF-AUDIT-1) : Jakarta et Playfair utilisent désormais
+ *  leurs versions VARIABLE (1 fichier couvrant toutes les graisses au
+ *  lieu de 5 + 8 fichiers séparés). IBM Plex Mono (pas de version
+ *  variable sur Google Fonts) est réduit à 2 graisses (400 + 500).
+ *  Total requêtes police : 7 fichiers au lieu de 18 → -60% sur le
+ *  waterfall initial mobile.
  */
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -37,25 +44,34 @@ const geistMono = Geist_Mono({
   display: "swap",
 });
 
+// 🚀 PERF : Plus Jakarta Sans a une version variable sur Google Fonts.
+// Ne PAS spécifier `weight` → next/font charge 1 seul fichier couvrant
+// toutes les graisses (400, 500, 600, 700, 800) au lieu de 5 fichiers.
 const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
   display: "swap",
   variable: "--font-jakarta",
-  weight: ["400", "500", "600", "700", "800"],
 });
 
+// IBM Plex Mono n'a PAS de version variable sur Google Fonts : on doit
+// lister les graisses. Audit : seules 400 et 500 sont utilisées (grep
+// `font-plex-mono.*font-(medium|semibold|bold)` → aucun match semibold/bold).
 const plexMono = IBM_Plex_Mono({
   subsets: ["latin"],
   display: "swap",
   variable: "--font-plex-mono",
-  weight: ["400", "500", "600"],
+  weight: ["400", "500"],
 });
 
+// 🚀 PERF : Playfair Display a une version variable sur Google Fonts.
+// Ne PAS spécifier `weight` → 1 fichier couvrant toutes les graisses
+// (400, 500, 600, 700, 800, 900) au lieu de 4×2=8 fichiers.
+// On garde `style: ["normal", "italic"]` car Playfair utilise l'axe ital
+// (masters italiques séparés dans le même fichier variable).
 const playfair = Playfair_Display({
   subsets: ["latin"],
   display: "swap",
   variable: "--font-playfair",
-  weight: ["400", "500", "600", "700"],
   style: ["normal", "italic"],
 });
 

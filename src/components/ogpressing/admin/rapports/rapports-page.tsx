@@ -23,6 +23,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   BarChart3,
   ShoppingCart,
@@ -41,14 +42,35 @@ import {
   computePeriode,
 } from "./rapports-helpers";
 import { PeriodSelector } from "./period-selector";
-import {
-  ChartCaParJour,
-  ChartCaParMode,
-  ChartCaParTypeService,
-} from "./rapports-charts";
 import { ClientsImpayesSection } from "./clients-impayes-section";
 import { RemisesSection } from "./remises-section";
 import { RapportExportButton } from "./rapport-export-button";
+
+// 🚀 PERF : Les 3 charts Recharts (~95KB gzippé) sont lazy-loadés via
+// next/dynamic avec ssr:false. Ils ne sont rendus qu'après le fetch API
+// (loading === false), donc on diffère aussi le téléchargement du bundle
+// Recharts jusqu'au moment où les données sont prêtes.
+const ChartCaParJour = dynamic(
+  () => import("./rapports-charts").then((m) => m.ChartCaParJour),
+  {
+    ssr: false,
+    loading: () => <Skeleton className="h-[300px] w-full rounded-lg" />,
+  }
+);
+const ChartCaParMode = dynamic(
+  () => import("./rapports-charts").then((m) => m.ChartCaParMode),
+  {
+    ssr: false,
+    loading: () => <Skeleton className="h-[300px] w-full rounded-lg" />,
+  }
+);
+const ChartCaParTypeService = dynamic(
+  () => import("./rapports-charts").then((m) => m.ChartCaParTypeService),
+  {
+    ssr: false,
+    loading: () => <Skeleton className="h-[300px] w-full rounded-lg" />,
+  }
+);
 
 /** État initial (avant le 1er fetch). */
 const EMPTY_DATA: RapportsDataResponse = {

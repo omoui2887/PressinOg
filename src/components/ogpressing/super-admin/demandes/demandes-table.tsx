@@ -55,7 +55,7 @@ export function DemandesTable({
   return (
     <>
       {/* Desktop : tableau */}
-      <div className="hidden overflow-hidden rounded-lg border md:block">
+      <div className="hidden overflow-x-auto rounded-lg border md:block">
         <table className="w-full text-sm">
           <thead className="border-b bg-muted/50">
             <tr className="text-left">
