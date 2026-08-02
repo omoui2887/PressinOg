@@ -23,7 +23,7 @@
  */
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Archive,
@@ -130,6 +130,13 @@ export function CommandeDetail({
   // Copie locale des articles pour refléter les mises à jour de statut
   // sans devoir refetch toute la commande.
   const [articles, setArticles] = useState(commande.articles);
+  // ⚠️ FIX BUG-AUDIT-RUNTIME #3 (P1) : synchronise la copie locale quand la
+  // prop `commande` change (navigation A→B sans démonture du composant dans
+  // le router App de Next.js). Sans cet effet, les articles de la commande A
+  // restaient affichés sur la commande B.
+  useEffect(() => {
+    setArticles(commande.articles);
+  }, [commande.articles]);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   // État du dialog de saisie du casier (ouvert quand l'utilisateur

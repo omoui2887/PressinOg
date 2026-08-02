@@ -1,8 +1,7 @@
 /**
  * OgPressing — API /api/super-admin/abonnements/[id]/renouveler (POST)
  * --------------------------------------------------------------------
- * Enregistre un NOUVEAU paiement d'échéance pour un abonnement (renouvellement
- * mensuel).
+ * Enregistre un NOUVEAU paiement d'échéance pour un abonnement (renouvellement).
  *
  * ⚠️ DÉCLARATIF : aucune transaction bancaire réelle n'est initiée. Ce
  *    formulaire enregistre simplement une déclaration de paiement pour tracer
@@ -13,6 +12,7 @@
  *   {
  *     montant:       number,                              // > 0, entier, FCFA
  *     methode:       'especes' | 'mobile_money' | 'carte_bancaire',
+ *     duree_mois?:   1 | 3 | 6 | 12,                      // durée du plan attribué (défaut: 1)
  *     reference?:    string,                              // libellé libre (n° transaction MOMO, n° reçu espèces…)
  *     justificatif_url?: string                          // URL Storage Supabase (upload côté client)
  *   }
@@ -23,8 +23,8 @@
  *   3. INSERT dans `paiements` (abonnement_id renseigné, commande_id NULL —
  *      contrainte CHECK XOR respectée)
  *   4. Calcule la nouvelle date_fin :
- *        - si date_fin actuelle est dans le futur → date_fin + 1 mois
- *        - si date_fin passée ou NULL → now() + 1 mois
+ *        - si date_fin actuelle est dans le futur → date_fin + duree_mois mois
+ *        - si date_fin passée ou NULL → now() + duree_mois mois
  *   5. UPDATE `abonnements` : date_fin, statut='actif',
  *      mode_paiement_derniere_echeance, date_derniere_echeance=now,
  *      reference_paiement, justificatif_url, enregistre_par
@@ -39,6 +39,11 @@ import { getSupabaseServer } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 const METHODES_VALID = ["especes", "mobile_money", "carte_bancaire"] as const;
+
+/** Durées de plan autorisées (en mois). Le Super Admin peut attribuer
+ *  un plan de 1, 3, 6 ou 12 mois à un pressing. */
+const DUREES_MOIS_VALID = [1, 3, 6, 12] as const;
+type DureeMois = (typeof DUREES_MOIS_VALID)[number];
 
 /** Vérifie que l'appelant est bien un super admin actif et renvoie sa ligne. */
 async function ensureSuperAdmin(
@@ -123,6 +128,17 @@ export async function POST(
     );
   }
 
+  // ---- Durée du plan (1, 3, 6 ou 12 mois — défaut 1) ----
+  // Permet au Super Admin d'attribuer un plan d'abonnement de 1 mois,
+  // 3 mois, 6 mois ou 1 an en une seule opération.
+  const rawDuree = body.duree_mois;
+  const dureeMois: DureeMois =
+    typeof rawDuree === "number" &&
+    Number.isInteger(rawDuree) &&
+    (DUREES_MOIS_VALID as readonly number[]).includes(rawDuree)
+      ? (rawDuree as DureeMois)
+      : 1;
+
   const reference =
     typeof body.reference === "string" && body.reference.trim()
       ? body.reference.trim().slice(0, 500)
@@ -166,6 +182,14 @@ export async function POST(
   // ---- 1. INSERT dans paiements (abonnement_id renseigné, commande_id NULL) ----
   // La contrainte CHECK XOR (paiements_commande_abonnement_xor_check) exige
   // exactement UN des deux non-null. Ici on renseigne abonnement_id.
+  //
+  // ⚠️ FIX BUG-AUDIT-RUNTIME (P0, découvert en E2E) : `paiements.enregistre_par`
+  // a une FK vers `personnel(id)`. Mais l'action est effectuée par un Super
+  // Admin dont l'ID est dans `super_admins` (pas dans `personnel`). Passer
+  // `superAdmin.id` violait la FK → erreur 23503. On met NULL ici ; l'identité
+  // du Super Admin reste tracée via la session auth + les logs serveur, et
+  // `abonnements.enregistre_par` (qui n'a PAS cette FK restrictive) garde
+  // l'attribution explicite ci-dessous.
   const { data: paiement, error: paiementErr } = await supabase
     .from("paiements")
     .insert({
@@ -179,7 +203,7 @@ export async function POST(
       // (valeur par défaut de la colonne). On ne le précise pas explicitement
       // pour éviter une erreur si la colonne n'existe pas encore en base
       // (migration 010), mais elle est appliquée d'après le worklog Task 22.
-      enregistre_par: superAdmin.id,
+      enregistre_par: null,
     })
     .select("id, montant, methode, reference, justificatif_url, created_at")
     .single();
@@ -197,8 +221,10 @@ export async function POST(
 
   // ---- 2. Calcule la nouvelle date_fin ----
   // Règle :
-  //   - si date_fin actuelle est dans le futur → date_fin + 1 mois
-  //   - si date_fin passée ou NULL → now() + 1 mois
+  //   - si date_fin actuelle est dans le futur → date_fin + dureeMois mois
+  //   - si date_fin passée ou NULL → now() + dureeMois mois
+  // dureeMois peut être 1, 3, 6 ou 12 (par défaut 1) — permet au Super Admin
+  // d'attribuer un plan d'1 mois, 3 mois, 6 mois ou 1 an.
   const now = new Date();
   let baseDate: Date;
   if (abonnement.date_fin) {
@@ -209,7 +235,7 @@ export async function POST(
   }
   const newDateFin = new Date(
     baseDate.getFullYear(),
-    baseDate.getMonth() + 1,
+    baseDate.getMonth() + dureeMois,
     baseDate.getDate(),
     baseDate.getHours(),
     baseDate.getMinutes(),
@@ -260,6 +286,7 @@ export async function POST(
     data: {
       abonnement: updatedAbonnement,
       paiement,
+      duree_mois: dureeMois,
     },
   });
 }

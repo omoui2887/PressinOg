@@ -499,7 +499,7 @@ export async function POST(request: NextRequest) {
       redirectTo: inviteRedirect,
     });
 
-  if (inviteErr || !invitedUser) {
+  if (inviteErr || !invitedUser || !invitedUser.user) {
     console.error("[api/admin/personnel POST] inviteUser error:", inviteErr);
     // Sécurité (audit #8) : masque le message Supabase brut.
     return NextResponse.json(
@@ -511,7 +511,21 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const newUserId = invitedUser.id;
+  // ⚠️ FIX BUG-AUDIT-RUNTIME #1 (P0) : `inviteUserByEmail` retourne
+  // `{ data: { user: User | null } }` (et non `{ data: User }` comme
+  // `createUser`). Avant on écrivait `invitedUser.id` qui était `undefined`,
+  // causant un INSERT avec user_id=NULL → violation FK + employé orphelin.
+  const newUserId = invitedUser.user?.id;
+  if (!newUserId) {
+    console.error(
+      "[api/admin/personnel POST] inviteUserByEmail: user.id manquant",
+      invitedUser
+    );
+    return NextResponse.json(
+      { success: false, error: "Erreur interne du serveur" },
+      { status: 500 }
+    );
+  }
 
   // ---- 6b. INSERT dans personnel ----
   const { data: newEmploye, error: insertErr } = await admin

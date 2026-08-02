@@ -69,8 +69,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
   if (error) {
     console.error("[api/admin/commandes/[id]] Erreur SELECT:", error);
+    // Sécurité (audit #8) : masque le message Supabase brut au client.
     return NextResponse.json(
-      { success: false, error: `Erreur lors de la récupération : ${error}` },
+      { success: false, error: "Erreur lors de la récupération de la commande" },
       { status: 500 }
     );
   }
