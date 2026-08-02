@@ -23,12 +23,21 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { Plus, QrCode, UserPlus, ArrowRight } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { NewClientDialog } from "@/components/ogpressing/admin/clients/new-client-dialog";
-import { QRScanner } from "@/components/shared/qr-scanner";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+
+// 🚀 PERF : QRScanner importe `html5-qrcode` (~50KB) au niveau module.
+// Lazy-load via next/dynamic avec ssr:false → le bundle n'est téléchargé
+// que si l'utilisateur ouvre réellement le scanner (clic sur "Scanner QR").
+const QRScanner = dynamic(
+  () =>
+    import("@/components/shared/qr-scanner").then((m) => m.QRScanner),
+  { ssr: false, loading: () => null }
+);
 
 interface CommandesLookupItem {
   id: string;

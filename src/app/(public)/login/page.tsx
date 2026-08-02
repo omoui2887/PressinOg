@@ -322,7 +322,7 @@ export default function LoginPage() {
               <Sparkles className="size-3" />
               SaaS de pressing
             </span>
-            <h1 className="font-playfair text-4xl font-bold leading-tight tracking-tight text-editorial-ivory xl:text-5xl">
+            <h1 className="font-playfair text-3xl font-bold leading-tight tracking-tight text-editorial-ivory sm:text-4xl xl:text-5xl">
               Gérez votre pressing
               <br />
               <span className="text-editorial-gold italic">comme un pro.</span>

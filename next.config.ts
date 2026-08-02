@@ -30,6 +30,15 @@ const nextConfig: NextConfig = {
     "space-z.ai",
     "*.space-z.ai",
   ],
+  // 🚀 PERF (audit PERF-AUDIT-1) : optimizePackageImports force le tree-shaking
+  // au niveau des imports nommés pour les libs à barrel exports. Sans cette
+  // option, `import { Camera } from "lucide-react"` peut tirer tout le barrel
+  // (~2000 icônes) dans le bundle client. Avec, seules les icônes réellement
+  // utilisées sont incluses. Même logique pour date-fns (200+ helpers) et
+  // recharts (chart components). Réduction typique du bundle : -30 à -50%.
+  experimental: {
+    optimizePackageImports: ["lucide-react", "date-fns", "recharts"],
+  },
 };
 
 export default nextConfig;

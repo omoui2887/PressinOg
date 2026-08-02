@@ -303,6 +303,7 @@ function CatalogueCard({ article, onToggle, onEdit }: CatalogueCardProps) {
             alt={article.nom}
             fill
             unoptimized
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 16vw"
             className="object-contain p-2"
             onError={() => setImageError(true)}
           />

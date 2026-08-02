@@ -48,7 +48,7 @@ export function HeroSection() {
 
             {/* H1 (left-aligned) */}
             <Reveal delay={80}>
-              <h1 className="mt-6 text-4xl font-bold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
+              <h1 className="mt-6 text-3xl font-bold tracking-tight text-foreground sm:text-4xl lg:text-5xl xl:text-6xl">
                 La gestion de votre pressing,
                 <br />
                 <span className="text-primary">simplifiée</span>

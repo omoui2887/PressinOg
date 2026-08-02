@@ -97,7 +97,7 @@ export function DashboardPlaceholder({
               {roleLabel}
             </Badge>
 
-            <h1 className="mt-3 text-3xl font-bold text-foreground">{title}</h1>
+            <h1 className="mt-3 text-2xl font-bold text-foreground sm:text-3xl">{title}</h1>
             <p className="mt-2 max-w-md text-muted-foreground">{description}</p>
 
             {userEmail && (

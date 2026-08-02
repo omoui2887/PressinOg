@@ -32,9 +32,9 @@ import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/ogpressing/stat-card";
 import { StatusBadge, EmptyState } from "@/components/shared";
 import {
-  ChartNouveauxPressings,
+  ChartNouveauxPressingsLazy as ChartNouveauxPressings,
   type ChartPoint,
-} from "@/components/ogpressing/super-admin/chart-nouveaux-pressings";
+} from "@/components/ogpressing/super-admin/chart-nouveaux-pressings-lazy";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { formatFCFA, formatFCFACompact, formatRelative } from "@/lib/utils/format";
 

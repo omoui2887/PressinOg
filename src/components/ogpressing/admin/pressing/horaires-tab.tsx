@@ -190,14 +190,14 @@ export function HorairesTab({
                     Fermé
                   </span>
                 ) : (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Input
                       type="time"
                       value={j.ouverture}
                       onChange={(e) =>
                         updateJour(jour.key, { ouverture: e.target.value })
                       }
-                      className="h-10 w-28"
+                      className="h-10 w-full min-w-[5.5rem] sm:w-28"
                       aria-label={`Heure d'ouverture ${jour.label}`}
                     />
                     <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
@@ -207,7 +207,7 @@ export function HorairesTab({
                       onChange={(e) =>
                         updateJour(jour.key, { fermeture: e.target.value })
                       }
-                      className="h-10 w-28"
+                      className="h-10 w-full min-w-[5.5rem] sm:w-28"
                       aria-label={`Heure de fermeture ${jour.label}`}
                     />
                   </div>

@@ -187,6 +187,7 @@ function ArticleIcon({
       width={48}
       height={48}
       loading="lazy"
+      sizes="48px"
       unoptimized
       onError={() => setErrored(true)}
       className={className}

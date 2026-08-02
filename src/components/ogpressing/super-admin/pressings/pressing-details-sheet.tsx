@@ -376,7 +376,7 @@ export function PressingDetailsSheet({
                     Aucun abonnement enregistré
                   </p>
                 ) : (
-                  <div className="overflow-hidden rounded-lg border">
+                  <div className="overflow-x-auto rounded-lg border">
                     <table className="w-full text-sm">
                       <thead className="border-b bg-muted/50">
                         <tr className="text-left">
@@ -439,7 +439,7 @@ export function PressingDetailsSheet({
                     Aucun personnel enregistré
                   </p>
                 ) : (
-                  <div className="overflow-hidden rounded-lg border">
+                  <div className="overflow-x-auto rounded-lg border">
                     <table className="w-full text-sm">
                       <thead className="border-b bg-muted/50">
                         <tr className="text-left">
