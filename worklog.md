@@ -8864,3 +8864,48 @@ Périmètre couvert (cumulé avec sessions précédentes) :
 - ✅ Accessibilité (motion-reduce sur tous les composants animés, focus-visible, pastille double-encodage, delayDuration tooltip)
 - ✅ Responsive (table sticky header, overflow-x-auto, cartes mobiles)
 - ✅ Performance (content-visibility, scroll-behavior smooth, pas de nouvelles dépendances)
+
+---
+Task ID: FIX-PWD-SUPERADMIN-1
+Agent: main (Z.ai Code)
+Task: Corriger le mot de passe Super Admin → "Ogou1987" (au lieu de OgPressing2026! / TestLot5_2026! utilisés temporairement pendant les tests E2E)
+
+Work Log:
+- Constat : le fichier `.env.local` était absent du sandbox (perdu lors du restart session). Dev.log montrait `[updateSession] Supabase env vars manquantes — route publique autorisée sans auth. Configurez .env.local pour activer l'auth.`
+- L'utilisateur a fourni les 3 clés Supabase dans le chat :
+  * NEXT_PUBLIC_SUPABASE_ANON_KEY (JWT anon, ~244 chars)
+  * SUPABASE_SERVICE_ROLE_KEY (JWT service_role, ~246 chars)
+  * SUPABASE_PAT (sbp_...)
+- Création du fichier `.env.local` avec URL projet + anon + service_role + site_url + PAT + DATABASE_URL (SQLite Prisma local). Fichier .gitignore le protège (jamais commité).
+- Récupération de l'UID du Super Admin via REST API :
+  * `GET https://yqaitafigfxlrprrouhr.supabase.co/rest/v1/super_admins?select=id,user_id,created_at` avec headers `apikey` + `Authorization: Bearer` (service_role)
+  * Réponse : `[{"id":"1b7b9344-1c69-4757-a9db-2d4ee6289b40","user_id":"93ee6906-509d-42d5-a272-05a7a6424bea","created_at":"2026-07-24T20:27:54.614386+00:00"}]`
+  * user_id (FK vers auth.users.id) = `93ee6906-509d-42d5-a272-05a7a6424bea`
+- Découverte importante : l'endpoint GoTrue admin n'est PAS `/auth/v1/users/{uid}` (retourne 404) mais `/auth/v1/admin/users/{uid}` (HTTP 200). Testé 4 variantes d'URL, seule celle avec `/admin/` fonctionne.
+- Changement du mot de passe via PUT :
+  * `PUT /auth/v1/admin/users/93ee6906-509d-42d5-a272-05a7a6424bea`
+  * Body : `{"password":"Ogou1987","email_confirm":true}`
+  * Headers : `apikey` + `Authorization: Bearer` (service_role) + `Content-Type: application/json`
+  * Réponse HTTP 200 avec user object : `{"id":"93ee6906-509d-42d5-a272-05a7a6424bea","email":"ogouromain@gmail.com","email_confirmed_at":"2026-08-02T00:29:21.120161574Z",...}` ✅
+- Vérification du login via password grant :
+  * `POST /auth/v1/token?grant_type=password` avec anon key + `{"email":"ogouromain@gmail.com","password":"Ogou1987"}`
+  * Réponse HTTP 200 avec access_token (JWT ES256), refresh_token, user object (`nom_complet: "Main OgPressing"`, `last_sign_in_at: 2026-08-02T00:29:30`) ✅
+  * Test négatif : `password: "WrongPassword123"` → HTTP 400 `{"code":400,"error_code":"invalid_credentials","msg":"Invalid login credentials"}` ✅ (rejet correct)
+- Redémarrage du dev server pour charger les variables d'env :
+  * Kill des anciens processus (next dev, next-server, bun run dev) via pkill
+  * Attente libération port 3000
+  * Relance via `nohup setsid bash /home/z/my-project/start-dev.sh` (détachement complet de la session bash pour éviter SIGHUP à la fin du tool call)
+  * Vérification : `ss -tlnp | grep :3000` → `LISTEN ... pid=2199,fd=22` ✅
+  * Dev.log confirme : `Environments: .env.local, .env` + `✓ Ready in 290ms` (plus aucun warning "env vars manquantes")
+- Test endpoint réel : `GET /login` → HTTP 200, 76KB, page contient `name="email"` + `name="password"` + "Se connecter" + "OgPressing" ✅
+
+Stage Summary:
+- ✅ Mot de passe Super Admin changé avec succès : `ogouromain@gmail.com` / `Ogou1987` (confirmé par login password grant HTTP 200)
+- ✅ `.env.local` créé avec les 4 variables requises (URL + anon + service_role + site_url) + PAT + DATABASE_URL — plus aucun warning "env vars manquantes" dans dev.log
+- ✅ Dev server redémarré et stable (next-server pid 2199, port 3000 LISTEN, GET /login → HTTP 200)
+- ✅ Page /login rendue correctement (form email + password + bouton "Se connecter" + branding OgPressing)
+- ⚠️ Note sécurité : `Ogou1987` (8 chars, sans caractère spécial) respecte la politique Supabase (min 6 chars) mais est relativement faible. L'utilisateur a explicitement demandé ce mot de passe — choix respecté.
+- ⚠️ Action recommandée : purger l'historique git des anciens mots de passe fuités (`OgPressing2026!`, `TestLot5_2026!`, `TestLot6_2026!`, `Test1234!`) via `git filter-repo` (déjà fait dans session précédente selon worklog ligne 4633-4645, mais à vérifier si le nettoyage a bien eu lieu pour toutes les occurrences).
+- Fichiers créés/modifiés :
+  1. `.env.local` (NOUVEAU — non commité, protégé par .gitignore)
+- Aucune modification de code, aucune route, aucune API, aucune DB schema modifiée. Seul le mot de passe du user `ogouromain@gmail.com` dans `auth.users` a été updaté via Admin API.
