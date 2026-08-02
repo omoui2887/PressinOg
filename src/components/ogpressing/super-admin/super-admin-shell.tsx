@@ -35,6 +35,14 @@
  * migration 014). Le lien est conservé pour la discoverabilité et la
  * cohérence avec les autres espaces (admin, réceptionniste) qui
  * consomment le catalogue via `ArticleCatalogPicker`.
+ *
+ * Phase 4-b — Accents « Luxe Éditorial » subtils :
+ * Le dashboard RESTE en thème clair (light). Les touches dorées sont
+ * ajoutées au niveau du DashboardLayout sous-jacent : bandeau de rôle
+ * `text-editorial-gold-deep`, `<GoldSeparator />` sous le brand. Le logo
+ * OgPressing par défaut reste en `bg-primary text-primary-foreground`
+ * (aucun brand spécifique à surcharger pour le super-admin). Le thème
+ * editorial complet (navy/or) reste disponible via `accent="editorial"`.
  */
 "use client";
 

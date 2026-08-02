@@ -291,7 +291,12 @@ export type StatutBadgeVariant =
   | "slate"
   | "cyan"
   | "violet"
-  | "accent";
+  | "accent"
+  // Variantes éditoriales LX (Phase 3-a) — opt-in, usage manuel via prop
+  // `variant` (jamais renvoyées par getStatutBadgeVariant() car aucun statut
+  // métier ne mappe dessus ; réservées aux dashboards éditoriaux luxe).
+  | "editorialGold"
+  | "editorialIvory";
 
 /** Mapping statut commande → variante badge canonique. */
 export const STATUT_COMMANDE_BADGE_VARIANTS: Record<

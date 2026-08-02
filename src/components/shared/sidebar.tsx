@@ -10,6 +10,13 @@
  * Composant CLIENT car il utilise usePathname pour mettre en évidence le lien
  * actif. Aucune logique métier : tout est passé en props pour rester générique.
  *
+ * Variantes (Phase 3-a, opt-in) :
+ *   - variant="default" (défaut) : light theme (bg-card, primary actifs)
+ *   - variant="editorial"       : palette navy/or (bg-editorial-navy +
+ *     bordure droite or, brand logo bg-editorial-gold text-editorial-navy,
+ *     items actifs bg-editorial-gold/10 text-editorial-gold + bordure gauche 3px gold,
+ *     user card bg-white/5, bouton déconnexion text-editorial-danger)
+ *
  * Usage :
  *   <Sidebar
  *     brand={{ name: "OgPressing", logoUrl: null }}
@@ -57,6 +64,9 @@ export interface SidebarProps {
   user?: SidebarUser;
   /** Callback du bouton déconnexion. Si absent, le bouton n'est pas rendu. */
   onLogout?: () => void;
+  /** Variante visuelle (Phase 3-a). "default" = light theme (par défaut).
+   *  "editorial" = palette navy/or pour dashboards luxe. */
+  variant?: "default" | "editorial";
   className?: string;
 }
 
@@ -65,21 +75,31 @@ export function Sidebar({
   items,
   user,
   onLogout,
+  variant = "default",
   className,
 }: SidebarProps) {
   const pathname = usePathname();
+  const isEditorial = variant === "editorial";
 
   return (
     <aside
       aria-label="Navigation latérale"
       className={cn(
-        "hidden w-64 shrink-0 flex-col border-r bg-card md:flex",
+        "hidden w-64 shrink-0 flex-col border-r md:flex",
+        isEditorial
+          ? "bg-editorial-navy border-[rgba(197,160,61,0.15)]"
+          : "bg-card border-border",
         className
       )}
     >
       {/* Marque / logo */}
       {brand && (
-        <div className="flex h-16 items-center gap-2 border-b px-6">
+        <div
+          className={cn(
+            "flex h-16 items-center gap-2 border-b px-6",
+            isEditorial ? "border-[rgba(197,160,61,0.15)]" : "border-border"
+          )}
+        >
           {brand.logoUrl ? (
             <Image
               src={brand.logoUrl}
@@ -89,11 +109,23 @@ export function Sidebar({
               className="size-8 rounded-lg object-contain"
             />
           ) : (
-            <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <span
+              className={cn(
+                "flex size-8 items-center justify-center rounded-lg",
+                isEditorial
+                  ? "bg-editorial-gold text-editorial-navy"
+                  : "bg-primary text-primary-foreground"
+              )}
+            >
               <ShoppingBag className="size-4" />
             </span>
           )}
-          <span className="truncate text-sm font-bold text-foreground">
+          <span
+            className={cn(
+              "truncate text-sm font-bold",
+              isEditorial ? "text-editorial-ivory" : "text-foreground"
+            )}
+          >
             {brand.name}
           </span>
         </div>
@@ -114,9 +146,13 @@ export function Sidebar({
               aria-current={active ? "page" : undefined}
               tabIndex={item.disabled ? -1 : undefined}
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors motion-reduce:transition-none",
                 active
-                  ? "bg-primary/10 text-primary"
+                  ? isEditorial
+                    ? "border-l-[3px] border-editorial-gold bg-editorial-gold/10 text-editorial-gold"
+                    : "bg-primary/10 text-primary"
+                  : isEditorial
+                  ? "text-editorial-ivory-dim hover:bg-white/5 hover:text-editorial-ivory"
                   : "text-muted-foreground hover:bg-accent hover:text-foreground",
                 item.disabled && "cursor-not-allowed opacity-50 hover:bg-transparent"
               )}
@@ -124,7 +160,14 @@ export function Sidebar({
               <Icon className="size-4 shrink-0" />
               <span className="truncate">{item.label}</span>
               {item.disabled && (
-                <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                <span
+                  className={cn(
+                    "ml-auto rounded px-1.5 py-0.5 text-[10px]",
+                    isEditorial
+                      ? "bg-white/5 text-editorial-ivory-dim"
+                      : "bg-muted text-muted-foreground"
+                  )}
+                >
                   Bientôt
                 </span>
               )}
@@ -135,17 +178,44 @@ export function Sidebar({
 
       {/* Utilisateur + déconnexion */}
       {user && (
-        <div className="border-t p-3">
-          <div className="flex items-center gap-3 rounded-lg px-2 py-2">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+        <div
+          className={cn(
+            "border-t p-3",
+            isEditorial ? "border-[rgba(197,160,61,0.15)]" : "border-border"
+          )}
+        >
+          <div
+            className={cn(
+              "flex items-center gap-3 rounded-lg px-2 py-2",
+              isEditorial ? "bg-white/5" : ""
+            )}
+          >
+            <span
+              className={cn(
+                "flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold",
+                isEditorial
+                  ? "bg-editorial-gold/15 text-editorial-gold"
+                  : "bg-primary/10 text-primary"
+              )}
+            >
               {user.nom.charAt(0).toUpperCase()}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-foreground">
+              <p
+                className={cn(
+                  "truncate text-sm font-medium",
+                  isEditorial ? "text-editorial-ivory" : "text-foreground"
+                )}
+              >
                 {user.nom}
               </p>
               {user.roleLabel && (
-                <p className="truncate text-xs text-muted-foreground">
+                <p
+                  className={cn(
+                    "truncate text-xs",
+                    isEditorial ? "text-editorial-ivory-dim" : "text-muted-foreground"
+                  )}
+                >
                   {user.roleLabel}
                 </p>
               )}
@@ -156,7 +226,12 @@ export function Sidebar({
               variant="ghost"
               size="sm"
               onClick={onLogout}
-              className="mt-1 w-full justify-start gap-2 text-muted-foreground hover:text-danger"
+              className={cn(
+                "mt-1 w-full justify-start gap-2",
+                isEditorial
+                  ? "text-editorial-ivory-dim hover:bg-white/5 hover:text-editorial-danger"
+                  : "text-muted-foreground hover:text-danger"
+              )}
             >
               <LogOut className="size-4" />
               Se déconnecter

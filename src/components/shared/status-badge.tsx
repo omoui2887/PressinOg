@@ -26,6 +26,8 @@
  *   - warning       → ambre (ACOMPTE, ESSAI, stock bas)
  *   - danger        → rouge (IMPAYÉ, ANNULÉ, EN RETARD, RUPTURE)
  *   - accent        → Or Textile (EXPRESS, premium)
+ *   - editorialGold → Or cuivré #C5A03D sur fond glass doré (Phase 3-a, opt-in)
+ *   - editorialIvory→ Ivoire chaud #F5F0E6 sur fond glass neutre (Phase 3-a, opt-in)
  *
  * Usage :
  *   <StatusBadge status="pret" />                              // ← auto-canonical
@@ -72,6 +74,12 @@ const variantClasses: Record<StatutBadgeVariant, string> = {
   // Or Textile — EXPRESS, premium
   accent:
     "bg-landing-accent/15 text-landing-accent-deep hover:bg-landing-accent/25 border-landing-accent/30 dark:text-landing-accent",
+  // Or cuivré éditorial — Phase 3-a (opt-in, dashboards luxe navy)
+  editorialGold:
+    "bg-[rgba(197,160,61,0.1)] text-[#E8D6A0] hover:bg-[rgba(197,160,61,0.18)] border-[rgba(197,160,61,0.3)]",
+  // Ivoire chaud éditorial — Phase 3-a (opt-in, dashboards luxe navy)
+  editorialIvory:
+    "bg-[rgba(245,240,230,0.05)] text-[#F5F0E6] hover:bg-[rgba(245,240,230,0.1)] border-[rgba(245,240,230,0.15)]",
 };
 
 interface StatusBadgeProps {
@@ -129,7 +137,9 @@ export function StatusBadge({
           v === "successSolid" && "bg-secondary-foreground/40",
           v === "warning" && "bg-warning",
           v === "danger" && "bg-danger",
-          v === "accent" && "bg-landing-accent"
+          v === "accent" && "bg-landing-accent",
+          v === "editorialGold" && "bg-editorial-gold",
+          v === "editorialIvory" && "bg-editorial-ivory"
         )}
       />
       {label ?? status}

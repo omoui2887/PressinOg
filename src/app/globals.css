@@ -7,6 +7,7 @@
    OgPressing — Design System
    Palette : Primary #2563EB · Secondary #10B981
              Warning #F59E0B · Danger #EF4444
+   Editorial overlay : Navy #080F1F · Gold #C5A03D · Ivory #F5F0E6
    ============================================================ */
 
 @theme inline {
@@ -215,6 +216,79 @@
   --font-jakarta: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
   --font-fraunces: var(--font-fraunces), ui-serif, Georgia, serif;
   --font-plex-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  /* ============================================================
+     ÉDITORIAL LX — Palette "Luxe Fonctionnel" (PASSAGE AU PEIGNE FIN)
+     ------------------------------------------------------------
+     Palette émotionnelle (brief §0) :
+       - Fond : Nuit profonde #080F1F avec aurore animée
+       - Or : Cuivre antique #C5A03D (pas jaune criard)
+       - Blanc : Ivoire chaud #F5F0E6 (jamais blanc froid)
+       - Accents : violet #3A2E5C + sable #D4C4A0
+     Ces tokens sont ADDITIONNELS (ne cassent PAS les tokens
+     primary/secondary/warning/danger ni les tokens landing-*).
+     Ils génèrent les utilities :
+       bg-editorial-navy, text-editorial-gold, border-editorial-ivory, etc.
+     ============================================================ */
+  --color-editorial-navy: #080F1F;          /* Nuit profonde — fond principal */
+  --color-editorial-navy-card: #0C1326;     /* Cards sur navy (8% plus clair) */
+  --color-editorial-navy-soft: #1A2333;     /* Nav clair pour dégradés */
+  --color-editorial-navy-deep: #050912;     /* Nav plus profond (bas de dégradés) */
+  --color-editorial-gold: #C5A03D;          /* Or cuivré primaire — CTA, emphase */
+  --color-editorial-gold-deep: #A8862B;     /* Or profond (active, bordures) */
+  --color-editorial-gold-pale: #E8D6A0;     /* Or pâle (hover, icônes secondaires) */
+  --color-editorial-gold-soft: #D4AF37;     /* Or doux (milieu de dégradé) */
+  --color-editorial-ivory: #F5F0E6;         /* Ivoire chaud — texte principal sur navy */
+  --color-editorial-ivory-dim: #B8B0A0;     /* Ivoire diminué (texte secondaire) */
+  --color-editorial-violet: #3A2E5C;        /* Violet muted (accents secondaires) */
+  --color-editorial-sand: #D4C4A0;          /* Sable (états secondaires) */
+  --color-editorial-success: #5E8A6E;       /* Vert luxe (statuts positifs) */
+  --color-editorial-danger: #9A4A4A;        /* Rouge terne (erreurs, alertes) */
+
+  /* Police Serif éditoriale — Playfair Display (titres premium) */
+  --font-playfair: var(--font-playfair), ui-serif, Georgia, "Times New Roman", serif;
+
+  /* ============================================================
+     ÉDITORIAL LX — Keyframes spécifiques (PASSAGE AU PEIGNE FIN)
+     ============================================================ */
+
+  /* Aurora : dégradé conique lent qui rotate (background global)
+     Brief §1 — `animation: auroraShift 18s ease infinite alternate` */
+  --animate-aurora: ogp-aurora 18s ease infinite alternate;
+
+  /* Gold pulse : pulse doré subtil pour indicateurs sync/temps réel */
+  --animate-gold-pulse: ogp-gold-pulse 2.5s var(--ease-smooth) infinite;
+
+  /* Dial fill : animation de remplissage pour cadrans circulaires */
+  --animate-dial-fill: ogp-dial-fill 1.2s var(--ease-smooth) forwards;
+
+  /* Dot pulse : 3 points pulsants (loading boutons primary) */
+  --animate-dot-pulse: ogp-dot-pulse 1.4s ease-in-out infinite;
+
+  /* Fade up : entrée staggered (auth, onboarding) */
+  --animate-fade-up: ogp-fade-up 0.6s var(--ease-smooth) forwards;
+
+  @keyframes ogp-aurora {
+    0%   { background-position: 0% 50%; transform: rotate(0deg); }
+    50%  { background-position: 100% 50%; transform: rotate(180deg); }
+    100% { background-position: 0% 50%; transform: rotate(360deg); }
+  }
+  @keyframes ogp-gold-pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(197, 160, 61, 0.4); }
+    50%      { opacity: 0.7; box-shadow: 0 0 0 6px rgba(197, 160, 61, 0); }
+  }
+  @keyframes ogp-dial-fill {
+    from { stroke-dashoffset: var(--dial-circumference, 565); }
+    to   { stroke-dashoffset: var(--dial-target-offset, 0); }
+  }
+  @keyframes ogp-dot-pulse {
+    0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+    40%           { opacity: 1; transform: scale(1); }
+  }
+  @keyframes ogp-fade-up {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
 }
 
 :root {
@@ -603,5 +677,647 @@ html {
   .ogp-toast[data-sonner-toast]::after {
     animation: none;
     opacity: 0.3;
+  }
+}
+
+/* ============================================================
+   ÉDITORIAL LX — Utilitaires "Luxe Fonctionnel" (PASSAGE AU PEIGNE FIN)
+   ============================================================
+   Ces utilitaires ADDITIONNELS implémentent le brief §1-§6I.
+   Ils ne cassent aucun style existant — opt-in via className.
+   ============================================================ */
+
+/* ----- 1. Glass Panel (brief §1, §6F.V1) -----
+   Panneau glassmorphism : fond translucide + blur + bordure subtile.
+   Usage :
+     <Card className="glass-panel">...</Card>
+     <div className="glass-panel glass-panel-gold">...</div> */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow:
+    0 25px 50px -12px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.glass-panel-gold {
+  background: rgba(197, 160, 61, 0.04);
+  border: 1px solid rgba(197, 160, 61, 0.15);
+  box-shadow:
+    0 25px 50px -12px rgba(197, 160, 61, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* ----- 2. Gold Gradient (brief §6A.V1) -----
+   Dégradé or 3 arrêts pour boutons primaires éditoriaux.
+   Usage :
+     <Button className="gold-gradient">CTA doré</Button> */
+.gold-gradient {
+  background-image: linear-gradient(
+    135deg,
+    #C5A03D 0%,
+    #D4AF37 50%,
+    #A8862B 100%
+  );
+  color: #F5F0E6;
+  letter-spacing: 0.05em;
+  box-shadow:
+    0 8px 24px rgba(197, 160, 61, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transition: filter 0.2s var(--ease-smooth), transform 0.2s var(--ease-smooth), box-shadow 0.2s var(--ease-smooth);
+}
+.gold-gradient:hover:not(:disabled) {
+  filter: brightness(1.15);
+  transform: translateY(-2px);
+  box-shadow:
+    0 12px 30px rgba(197, 160, 61, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.gold-gradient:active:not(:disabled) {
+  transform: translateY(1px);
+  filter: brightness(0.95);
+  box-shadow:
+    0 4px 12px rgba(197, 160, 61, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+.gold-gradient:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: #2A3545;
+  background-image: none;
+  color: rgba(245, 240, 230, 0.5);
+  box-shadow: none;
+}
+
+/* ----- 3. Aurora Background (brief §1) -----
+   Dégradé conique lent qui rotate — background-fixed global.
+   Usage :
+     <div className="aurora-bg" /> (positionné en absolute/fixed sous le contenu) */
+.aurora-bg {
+  position: absolute;
+  inset: 0;
+  background: conic-gradient(
+    from 0deg at 50% 50%,
+    #080F1F 0%,
+    #1A1035 25%,
+    #0B1128 50%,
+    #0F1525 75%,
+    #080F1F 100%
+  );
+  background-size: 200% 200%;
+  animation: var(--animate-aurora);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ----- 4. Ornate Corner (brief §3, §6I) -----
+   Décorations SVG inline aux coins des cards premium.
+   4 variantes : tl (top-left), tr (top-right), bl (bottom-left), br (bottom-right)
+   Usage :
+     <Card className="relative ornate ornate-tl ornate-tr ornate-bl ornate-br">...</Card>
+   Les décorations sont des losanges dorés 8x8px avec bordure 1px. */
+.ornate {
+  position: relative;
+}
+.ornate::before,
+.ornate::after {
+  content: "";
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border: 1px solid #C5A03D;
+  transform: rotate(45deg);
+  opacity: 0.25;
+  transition: opacity 0.4s var(--ease-smooth);
+  pointer-events: none;
+}
+.ornate:hover::before,
+.ornate:hover::after {
+  opacity: 0.5;
+}
+.ornate-tl::before { top: 12px; left: 12px; }
+.ornate-tr::after  { top: 12px; right: 12px; }
+/* Pour bl + br, on utilise un wrapper interne ou des éléments dédiés */
+.ornate-bl::before { bottom: 12px; left: 12px; top: auto; }
+.ornate-br::after  { bottom: 12px; right: 12px; top: auto; }
+
+/* Multi-corners : combiner .ornate-tl-tr-bl-br via 4 pseudo-éléments
+   nécessite un wrapper. Alternative : utiliser le composant <OrnateCorner />. */
+
+/* ----- 5. Gold Separator (brief §3) -----
+   Séparateur ornemental : ligne gradient + point doré central.
+   Usage :
+     <div className="gold-separator" />
+     <div className="gold-separator gold-separator-thick" /> */
+.gold-separator {
+  position: relative;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(255, 255, 255, 0.1),
+    transparent
+  );
+}
+.gold-separator::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #C5A03D;
+  box-shadow: 0 0 8px rgba(197, 160, 61, 0.4);
+}
+.gold-separator-thick {
+  height: 2px;
+}
+.gold-separator-gold {
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(197, 160, 61, 0.3),
+    transparent
+  );
+}
+
+/* ----- 6. Text Gradient Gold (brief §2) -----
+   Dégradé or sur texte — pour titres premium (sparing use).
+   Usage :
+     <h1 className="text-gradient-gold">Titre premium</h1> */
+.text-gradient-gold {
+  background: linear-gradient(135deg, #E8D6A0 0%, #C5A03D 50%, #A8862B 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* ----- 7. Editorial Card (brief §6F.V1, V3) -----
+   Card premium "luxe éditorial" — fond glass + bordure or subtile.
+   Usage :
+     <Card className="editorial-card">...</Card>
+     <Card className="editorial-card editorial-card-premium">...</Card> (KPI) */
+.editorial-card {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 20px;
+  box-shadow:
+    0 25px 50px -12px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: transform 0.3s var(--ease-smooth), box-shadow 0.3s var(--ease-smooth), border-color 0.3s var(--ease-smooth);
+}
+.editorial-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(197, 160, 61, 0.2);
+  box-shadow:
+    0 30px 60px -12px rgba(0, 0, 0, 0.6),
+    0 0 30px rgba(197, 160, 61, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.editorial-card-premium {
+  background: rgba(197, 160, 61, 0.03);
+  border-top: 2px solid rgba(197, 160, 61, 0.3);
+}
+
+/* ----- 8. Editorial Input (brief §6C.CHAMP 1) -----
+   Input glass avec focus doré.
+   Usage :
+     <Input className="editorial-input" /> */
+.editorial-input {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  color: #F5F0E6;
+  transition: all 0.2s var(--ease-smooth);
+}
+.editorial-input::placeholder {
+  color: rgba(245, 240, 230, 0.35);
+}
+.editorial-input:focus {
+  border-color: #C5A03D;
+  box-shadow: inset 0 0 12px rgba(197, 160, 61, 0.15);
+  background: rgba(255, 255, 255, 0.04);
+  outline: none;
+}
+
+/* ----- 9. Editorial Button Secondary (brief §6A.V2) -----
+   Bouton glass secondaire.
+   Usage :
+     <Button variant="outline" className="editorial-btn-secondary">Annuler</Button> */
+.editorial-btn-secondary {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #E8D6A0;
+  transition: all 0.2s var(--ease-smooth);
+}
+.editorial-btn-secondary:hover:not(:disabled) {
+  background: rgba(197, 160, 61, 0.08);
+  border-color: rgba(197, 160, 61, 0.5);
+  color: #F5F0E6;
+  box-shadow: 0 0 15px rgba(197, 160, 61, 0.1);
+}
+
+/* ----- 10. Editorial Active Tab (brief §6B.TYPE B) -----
+   Trait doré animé sous l'onglet actif.
+   Usage :
+     <TabsTrigger className="editorial-tab">Onglet</TabsTrigger>
+     data-[state=active]:editorial-tab */
+.editorial-tab {
+  position: relative;
+  color: #B8B0A0;
+  transition: color 0.3s var(--ease-smooth);
+}
+.editorial-tab:hover {
+  color: #F5F0E6;
+}
+.editorial-tab[data-state="active"] {
+  color: #F5F0E6;
+}
+.editorial-tab[data-state="active"]::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(to right, #C5A03D, #D4AF37, #C5A03D);
+  border-radius: 1px;
+}
+
+/* ----- 11. Glow Gold (brief §6A.V1 focus) -----
+   Halo doré pour focus clavier.
+   Usage :
+     <Button className="focus-visible:glow-gold">...</Button>
+     <Input className="focus-visible:glow-gold" /> */
+.glow-gold {
+  box-shadow: 0 0 0 3px rgba(197, 160, 61, 0.25);
+}
+
+/* ----- 12. Decorative Heading (brief §2) -----
+   Titre serif éditorial avec trait doré décoratif en dessous.
+   Usage :
+     <h3 className="decorative-heading">Titre du module</h3>
+   Ajoute un trait 48px x 2px doré en dessous (margin-top 8px). */
+.decorative-heading {
+  position: relative;
+  padding-bottom: 12px;
+}
+.decorative-heading::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 48px;
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(to right, #C5A03D, #D4AF37);
+}
+
+/* ----- 13. Sync Indicator (brief §5 PAGE 1) -----
+   Petit point doré pulsant pour indiquer sync temps réel.
+   Usage :
+     <span className="sync-indicator" aria-label="Synchronisé" /> */
+.sync-indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #C5A03D;
+  animation: var(--animate-gold-pulse);
+}
+
+/* ----- 14. Loading Dots (brief §6A.V1 loading) -----
+   3 points dorés pulsants pour boutons en chargement.
+   Usage :
+     <Button disabled><span className="loading-dots" /></Button> */
+.loading-dots {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+.loading-dots::before,
+.loading-dots::after,
+.loading-dots > span {
+  content: "";
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: var(--animate-dot-pulse);
+}
+.loading-dots > span:nth-child(2) { animation-delay: 0.2s; }
+.loading-dots > span:nth-child(3) { animation-delay: 0.4s; }
+.loading-dots::before { animation-delay: 0s; }
+.loading-dots::after { animation-delay: 0.4s; }
+
+/* ----- 15. Editorial Background (brief §1) -----
+   Fond navy profond avec aurora subtile — pour pages auth/landing.
+   Usage :
+     <main className="editorial-bg">...</main>
+   À combiner avec <AuroraBackground /> pour l'effet animé. */
+.editorial-bg {
+  background-color: #080F1F;
+  color: #F5F0E6;
+  position: relative;
+  min-height: 100dvh;
+}
+
+/* ----- 16. Editorial Scrollbar (brief §6I) -----
+   Scrollbar dorée sur fond sombre.
+   Usage : scoped via .editorial-scroll sur un container. */
+.editorial-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #C5A03D transparent;
+}
+.editorial-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.editorial-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.editorial-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(to bottom, #C5A03D, #A8862B);
+  border-radius: 10px;
+}
+.editorial-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(to bottom, #D4AF37, #C5A03D);
+}
+
+/* ----- 17. Editorial Tables (brief §6G) -----
+   En-tête sticky + ligne sélectionnée avec barre dorée gauche.
+   Usage :
+     <Table className="editorial-table">...</Table> */
+.editorial-table {
+  background: transparent;
+}
+.editorial-table :where(thead) :where(th) {
+  background: rgba(255, 255, 255, 0.03);
+  color: #B8B0A0;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.editorial-table :where(tbody) :where(tr) {
+  border-bottom: 1px solid transparent;
+  background-image: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.04), transparent);
+  background-size: 100% 1px;
+  background-position: bottom;
+  background-repeat: no-repeat;
+  transition: background-color 0.2s var(--ease-smooth);
+}
+.editorial-table :where(tbody) :where(tr):hover {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+/* ----- 18. Reduced motion guards (brief §7 accessibilité) -----
+   Désactive les animations éditoriales si l'utilisateur préfère
+   reduced-motion. Conserve uniquement les transitions d'opacité. */
+@media (prefers-reduced-motion: reduce) {
+  .aurora-bg,
+  .sync-indicator,
+  .loading-dots::before,
+  .loading-dots::after,
+  .loading-dots > span {
+    animation: none !important;
+  }
+  .editorial-card,
+  .editorial-card:hover,
+  .gold-gradient,
+  .gold-gradient:hover:not(:disabled),
+  .gold-gradient:active:not(:disabled),
+  .editorial-input,
+  .editorial-btn-secondary,
+  .editorial-tab,
+  .editorial-checkbox,
+  .editorial-switch,
+  .editorial-slider-thumb,
+  .ornate::before,
+  .ornate::after,
+  .ornate:hover::before,
+  .ornate:hover::after {
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
+/* ----- 19. Editorial Select Item (brief §6C form system) -----
+   Options du SelectContent éditorial : texte ivory-dim, hover/focus bg gold/8.
+   S'active automatiquement quand le SelectContent parent porte data-editorial=true.
+   Usage : <SelectContent variant="editorial">...<SelectItem /></SelectContent> */
+[data-editorial="true"][data-slot="select-content"] [data-slot="select-item"] {
+  color: #B8B0A0;
+  transition: background-color 0.2s var(--ease-smooth), color 0.2s var(--ease-smooth);
+}
+[data-editorial="true"][data-slot="select-content"] [data-slot="select-item"]:focus,
+[data-editorial="true"][data-slot="select-content"] [data-slot="select-item"][data-highlighted] {
+  background-color: rgba(197, 160, 61, 0.08);
+  color: #F5F0E6;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-editorial="true"][data-slot="select-content"] [data-slot="select-item"] {
+    transition: none !important;
+  }
+}
+
+/* ----- 20. Editorial Checkbox / Switch / Slider (brief §6C, §6E) -----
+   Variantes éditoriales pour les contrôles binaires et le slider.
+   S'activent via la prop variant="editorial" sur chaque composant. */
+
+/* Checkbox éditoriale — bordure ivory, fond gold/15 + bordure or quand cochée,
+   coche blanche animée (scale 0→1 + rotation -45°→0). */
+.editorial-checkbox {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.3);
+  transition: all 0.2s var(--ease-smooth);
+}
+.editorial-checkbox[data-state="checked"] {
+  background-color: rgba(197, 160, 61, 0.15);
+  border-color: #C5A03D;
+}
+.editorial-checkbox[data-state="checked"] [data-slot="checkbox-indicator"] {
+  color: #F5F0E6;
+  animation: editorial-check-pop 0.25s var(--ease-smooth);
+}
+@keyframes editorial-check-pop {
+  0% {
+    transform: scale(0) rotate(-45deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .editorial-checkbox[data-state="checked"] [data-slot="checkbox-indicator"] {
+    animation: none !important;
+  }
+}
+
+/* Switch éditorial — fond ivory/10 → actif dégradé or, pastille ivory,
+   transition 0.3s, focus halo doré. */
+.editorial-switch {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.08);
+  transition: all 0.3s var(--ease-smooth);
+}
+.editorial-switch[data-state="checked"] {
+  background-image: linear-gradient(to right, #C5A03D, #D4AF37);
+  border-color: rgba(197, 160, 61, 0.6);
+}
+.editorial-switch:focus-visible {
+  box-shadow: 0 0 0 3px rgba(197, 160, 61, 0.25);
+}
+.editorial-switch-thumb {
+  background: #F5F0E6;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.3s var(--ease-smooth);
+}
+@media (prefers-reduced-motion: reduce) {
+  .editorial-switch,
+  .editorial-switch-thumb {
+    transition: none !important;
+  }
+}
+
+/* Slider éditorial — piste ivory/10, remplissage or, poussoir 18px ivory borduré or. */
+.editorial-slider-track {
+  background: rgba(255, 255, 255, 0.1);
+}
+.editorial-slider-range {
+  background-image: linear-gradient(to right, #C5A03D, #C5A03D);
+}
+.editorial-slider-thumb {
+  width: 18px;
+  height: 18px;
+  background: #F5F0E6;
+  border: 2px solid #C5A03D;
+  box-shadow: 0 0 12px rgba(197, 160, 61, 0.3);
+  transition: box-shadow 0.2s var(--ease-smooth), transform 0.2s var(--ease-smooth);
+}
+.editorial-slider-thumb:hover {
+  box-shadow: 0 0 18px rgba(197, 160, 61, 0.5);
+  transform: scale(1.08);
+}
+.editorial-slider-thumb:focus-visible {
+  box-shadow: 0 0 0 3px rgba(197, 160, 61, 0.3), 0 0 18px rgba(197, 160, 61, 0.5);
+}
+@media (prefers-reduced-motion: reduce) {
+  .editorial-slider-thumb,
+  .editorial-slider-thumb:hover {
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
+/* ----- 21. Editorial Dialog (brief §6H modals) -----
+   Modal éditoriale — fond navy card + bordure or + coins ornés + titre playfair.
+   S'active via la prop variant="editorial" sur DialogContent. */
+[data-editorial="true"][data-slot="dialog-overlay"] {
+  background-color: rgba(8, 15, 31, 0.6);
+  backdrop-filter: blur(8px) saturate(140%);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+}
+[data-editorial="true"][data-slot="dialog-content"] {
+  background-color: #0C1326;
+  color: #F5F0E6;
+  border-color: rgba(197, 160, 61, 0.3);
+  box-shadow:
+    0 25px 50px -12px rgba(0, 0, 0, 0.6),
+    0 0 30px rgba(197, 160, 61, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+[data-editorial="true"][data-slot="dialog-content"] [data-slot="dialog-title"] {
+  font-family: var(--font-playfair), ui-serif, Georgia, "Times New Roman", serif;
+  color: #F5F0E6;
+  letter-spacing: 0.01em;
+}
+[data-editorial="true"][data-slot="dialog-content"] [data-slot="dialog-description"] {
+  color: #B8B0A0;
+}
+
+/* ----- 22. Editorial Tabs (brief §6B) -----
+   List et Trigger éditoriaux — fond transparent + bordure inférieure subtile
+   + trait doré animé sous l'onglet actif. S'active via variant="editorial". */
+[data-editorial="true"][data-slot="tabs-list"] {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0;
+}
+[data-editorial="true"][data-slot="tabs-trigger"] {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: #B8B0A0;
+  box-shadow: none;
+  position: relative;
+  transition: color 0.3s var(--ease-smooth);
+}
+[data-editorial="true"][data-slot="tabs-trigger"]:hover {
+  color: #F5F0E6;
+}
+[data-editorial="true"][data-slot="tabs-trigger"][data-state="active"] {
+  color: #F5F0E6;
+  background: transparent;
+  box-shadow: none;
+  font-weight: 600;
+}
+[data-editorial="true"][data-slot="tabs-trigger"][data-state="active"]::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(to right, #C5A03D, #D4AF37, #C5A03D);
+  border-radius: 1px;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-editorial="true"][data-slot="tabs-trigger"] {
+    transition: none !important;
+  }
+}
+
+/* ----- 23. Editorial Table (brief §6G) -----
+   Table éditoriale — fond transparent, header glass + uppercase 11px + hover ligne.
+   S'active via variant="editorial" sur Table. */
+[data-editorial="true"][data-slot="table"] :where(thead) :where(th) {
+  background: rgba(255, 255, 255, 0.03);
+  color: #B8B0A0;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  font-weight: 500;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+[data-editorial="true"][data-slot="table"] :where(tbody) :where(tr) {
+  border-bottom: 1px solid transparent;
+  background-image: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.04), transparent);
+  background-size: 100% 1px;
+  background-position: bottom;
+  background-repeat: no-repeat;
+  transition: background-color 0.2s var(--ease-smooth);
+}
+[data-editorial="true"][data-slot="table"] :where(tbody) :where(tr):hover {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+[data-editorial="true"][data-slot="table"] :where(td) {
+  color: #F5F0E6;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-editorial="true"][data-slot="table"] :where(tbody) :where(tr) {
+    transition: none !important;
   }
 }
