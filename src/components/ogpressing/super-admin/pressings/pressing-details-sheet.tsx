@@ -527,7 +527,7 @@ export function PressingDetailsSheet({
 
                 <Button
                   type="button"
-                  variant={isSuspendu ? "default" : "destructive"}
+                  variant={isSuspendu ? "success" : "warning"}
                   className="w-full gap-2"
                   onClick={() => setConfirmOpen(true)}
                   disabled={pending}
@@ -584,8 +584,8 @@ export function PressingDetailsSheet({
               disabled={pending}
               className={
                 isSuspendu
-                  ? "bg-secondary text-white hover:bg-secondary/90"
-                  : "bg-danger text-white hover:bg-danger/90"
+                  ? "bg-success text-success-foreground hover:bg-success/90"
+                  : "bg-warning text-warning-foreground hover:bg-warning/90"
               }
             >
               {pending ? (

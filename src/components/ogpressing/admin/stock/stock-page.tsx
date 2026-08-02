@@ -22,6 +22,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Plus, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ViewToggle } from "@/components/shared";
+import { useViewMode } from "@/hooks/use-view-mode";
 import { StockFilters } from "./stock-filters";
 import { StockList } from "./stock-list";
 import { AddProductDialog } from "./add-product-dialog";
@@ -35,6 +37,7 @@ interface StockPageProps {
 }
 
 export function StockPage({ basePath = "/admin" }: StockPageProps = {}) {
+  const { viewMode, setViewMode } = useViewMode("stock");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [produits, setProduits] = useState<ProduitStock[]>([]);
@@ -88,10 +91,13 @@ export function StockPage({ basePath = "/admin" }: StockPageProps = {}) {
             Biodétergents et consommables — suivez vos entrées et sorties.
           </p>
         </div>
-        <Button onClick={() => setAddOpen(true)} className="h-11">
-          <Plus className="mr-2 size-4" />
-          Ajouter un produit
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ViewToggle value={viewMode} onChange={setViewMode} />
+          <Button onClick={() => setAddOpen(true)} className="h-11">
+            <Plus className="mr-2 size-4" />
+            Ajouter un produit
+          </Button>
+        </div>
       </div>
 
       {/* Filtres */}
@@ -107,6 +113,7 @@ export function StockPage({ basePath = "/admin" }: StockPageProps = {}) {
       <StockList
         produits={produits}
         loading={loading}
+        viewMode={viewMode}
         onMouvement={(p) => setMouvementProduit(p)}
         onEdit={(p) => setEditProduit(p)}
       />

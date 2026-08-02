@@ -146,7 +146,7 @@ export function DeleteServiceDialog({
               void handleConfirm();
             }}
             disabled={deleting}
-            className="bg-danger text-white hover:bg-danger/90"
+            className="bg-gradient-danger text-white hover:bg-danger/90"
           >
             {deleting ? (
               <>

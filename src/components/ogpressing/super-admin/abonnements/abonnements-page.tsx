@@ -35,6 +35,8 @@ import {
 import { StatCard } from "@/components/ogpressing/stat-card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ViewToggle } from "@/components/shared";
+import { useViewMode } from "@/hooks/use-view-mode";
 import { formatFCFA } from "@/lib/utils/format";
 import {
   AbonnementsFilters,
@@ -130,6 +132,10 @@ export function AbonnementsPage() {
   const [stats, setStats] = useState({ starter: 0, pro: 0, business: 0 });
   const [alertes, setAlertes] = useState({ expireBientot: 0, expires: 0 });
   const [loading, setLoading] = useState(true);
+
+  // Persistance du mode d'affichage (liste vs grille) — clé localStorage
+  // `ogp:view-mode:abonnements`. Voir hooks/use-view-mode.ts.
+  const { viewMode, setViewMode } = useViewMode("abonnements");
 
   // Debounce recherche 300ms + reset pagination
   useEffect(() => {
@@ -248,11 +254,17 @@ export function AbonnementsPage() {
         onPlanChange={setPlan}
       />
 
-      {/* Liste (tableau desktop / cards mobile) */}
+      {/* Barre d'actions liste : toggle Liste/Grille */}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <ViewToggle value={viewMode} onChange={setViewMode} />
+      </div>
+
+      {/* Liste (tableau desktop / cards mobile — ou grille si viewMode='grid') */}
       <AbonnementsTable
         abonnements={abonnements}
         loading={loading}
         onUpdated={fetchAbonnements}
+        viewMode={viewMode}
       />
 
       {/* Pagination */}

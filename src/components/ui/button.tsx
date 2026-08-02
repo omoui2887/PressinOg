@@ -54,6 +54,12 @@ const buttonVariants = cva(
           "bg-gradient-danger text-white shadow-xs hover:-translate-y-px hover:shadow-md focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 motion-reduce:hover:translate-y-0",
         warning:
           "bg-gradient-warning text-warning-foreground shadow-xs hover:-translate-y-px hover:shadow-md focus-visible:ring-warning/20 dark:focus-visible:ring-warning/40 motion-reduce:hover:translate-y-0",
+        // `success` = vert (alias sémantique de la palette secondary).
+        // À utiliser pour les actions positives : Encaisser, Activer, Réactiver,
+        // Renouveler, Marquer livré, Valider, Confirmer. Permet à l'utilisateur
+        // d'identifier instantanément les actions "qui font avancer / valident".
+        success:
+          "bg-gradient-success text-success-foreground shadow-xs hover:-translate-y-px hover:shadow-md focus-visible:ring-success/20 dark:focus-visible:ring-success/40 motion-reduce:hover:translate-y-0",
         outline:
           "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground hover:-translate-y-px hover:shadow-sm dark:bg-input/30 dark:border-input dark:hover:bg-input/50 motion-reduce:hover:translate-y-0",
         secondary:

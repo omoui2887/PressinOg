@@ -420,7 +420,12 @@ export function EditEmployeeDialog({
           >
             Annuler
           </Button>
-          <Button onClick={handleSubmit} disabled={submitting} className="gap-2">
+          <Button
+            onClick={handleSubmit}
+            disabled={submitting}
+            variant="success"
+            className="gap-2"
+          >
             {submitting ? (
               <>
                 <Loader2 className="size-4 animate-spin" />

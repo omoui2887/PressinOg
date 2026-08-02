@@ -2,8 +2,8 @@
  * OgPressing — PersonnelList
  * ---------------------------
  * Affiche la liste des employés du pressing sous forme de :
- *   - Tableau sur desktop (md+) : Nom, Rôle, Téléphone, Statut, Créé le, Actions
- *   - Cards empilées sur mobile
+ *   - viewMode="list" (défaut) : Tableau sur desktop (md+) + Cards empilées sur mobile
+ *   - viewMode="grid"          : Grille de cards responsive (remplace table + cards mobile)
  *
  * Chaque ligne/card embarque le PersonnelActionsMenu (3 points) qui gère
  * Modifier / Reset password / Renvoyer invitation / Désactiver / Réactiver.
@@ -13,9 +13,10 @@
  */
 "use client";
 
-import { Phone, Mail, UserCog, CalendarDays } from "lucide-react";
+import { Phone, Mail, UserCog, CalendarDays, BadgeCheck } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
+import type { ViewMode } from "@/hooks/use-view-mode";
 import {
   type Employe,
   RoleBadge,
@@ -27,10 +28,17 @@ import { PersonnelActionsMenu } from "./personnel-actions-menu";
 interface PersonnelListProps {
   employes: Employe[];
   loading?: boolean;
+  /** Mode d'affichage : "list" (table desktop + cards mobile) ou "grid" (grille de cards). */
+  viewMode?: ViewMode;
   onUpdated?: () => void;
 }
 
-export function PersonnelList({ employes, loading, onUpdated }: PersonnelListProps) {
+export function PersonnelList({
+  employes,
+  loading,
+  viewMode = "list",
+  onUpdated,
+}: PersonnelListProps) {
   if (loading) {
     return (
       <div className="space-y-3">
@@ -51,6 +59,75 @@ export function PersonnelList({ employes, loading, onUpdated }: PersonnelListPro
     );
   }
 
+  // ---- Mode grille : cards responsives (remplace table + cards mobile) ----
+  if (viewMode === "grid") {
+    return (
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {employes.map((employe) => {
+          const isActif = employe.statut_compte === "actif";
+          return (
+            <article
+              key={employe.id}
+              className="group flex flex-col gap-3 rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 hover:shadow-sm"
+            >
+              {/* En-tête : nom + menu actions */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold text-foreground">
+                    {employe.nom_complet}
+                  </p>
+                  {employe.email && (
+                    <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground">
+                      <Mail className="size-3" />
+                      {employe.email}
+                    </p>
+                  )}
+                </div>
+                <PersonnelActionsMenu
+                  employe={employe}
+                  onUpdated={onUpdated}
+                />
+              </div>
+
+              {/* Téléphone */}
+              {employe.telephone && (
+                <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <Phone className="size-3.5" />
+                  {employe.telephone}
+                </p>
+              )}
+
+              {/* Badges : rôle + statut */}
+              <div className="flex flex-wrap items-center gap-2">
+                <RoleBadge role={employe.role} />
+                <StatutBadge statut={employe.statut_compte} />
+              </div>
+
+              {/* Footer : actif indicator + date création */}
+              <div className="mt-auto flex items-center justify-between border-t pt-2 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1">
+                  {isActif ? (
+                    <>
+                      <BadgeCheck className="size-3.5 text-success" />
+                      <span className="font-medium text-success">Compte actif</span>
+                    </>
+                  ) : (
+                    <span>Inactif</span>
+                  )}
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <CalendarDays className="size-3" />
+                  {formatDateShort(employe.created_at)}
+                </span>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // ---- Mode liste (défaut) : table desktop + cards mobile ----
   return (
     <>
       {/* Desktop : tableau */}

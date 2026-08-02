@@ -22,6 +22,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Building2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ViewToggle } from "@/components/shared";
+import { useViewMode } from "@/hooks/use-view-mode";
 import { PressingsFilters } from "./pressings-filters";
 import { PressingsTable } from "./pressings-table";
 import { PressingDetailsSheet } from "./pressing-details-sheet";
@@ -52,6 +54,10 @@ export function PressingsPage() {
   const [selected, setSelected] = useState<PressingListItem | null>(null);
   // Sheet ouverte ?
   const [sheetOpen, setSheetOpen] = useState(false);
+
+  // Persistance du mode d'affichage (liste vs grille) — clé localStorage
+  // `ogp:view-mode:pressings`. Voir hooks/use-view-mode.ts.
+  const { viewMode, setViewMode } = useViewMode("pressings");
 
   // Debounce recherche 300ms + reset pagination
   useEffect(() => {
@@ -137,11 +143,17 @@ export function PressingsPage() {
       {/* Filtres */}
       <PressingsFilters query={query} onQueryChange={setQuery} />
 
+      {/* Barre d'actions liste : toggle Liste/Grille */}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <ViewToggle value={viewMode} onChange={setViewMode} />
+      </div>
+
       {/* Liste */}
       <PressingsTable
         pressings={pressings}
         loading={loading}
         onSelect={handleSelect}
+        viewMode={viewMode}
       />
 
       {/* Pagination */}

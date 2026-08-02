@@ -22,7 +22,8 @@ import { Inbox, ChevronLeft, ChevronRight } from "lucide-react";
 import { DemandesFilters, type StatutFilter } from "./demandes-filters";
 import { DemandesTable } from "./demandes-table";
 import { DemandeDetailsSheet } from "./demande-details-sheet";
-import { EmptyState } from "@/components/shared";
+import { EmptyState, ViewToggle } from "@/components/shared";
+import { useViewMode } from "@/hooks/use-view-mode";
 import { Button } from "@/components/ui/button";
 import type { DemandeInscription, DemandesApiResponse } from "./types";
 
@@ -44,6 +45,10 @@ export function DemandesPage() {
     null
   );
   const [sheetOpen, setSheetOpen] = useState(false);
+
+  // Persistance du mode d'affichage (liste vs grille) — clé localStorage
+  // `ogp:view-mode:demandes`. Voir hooks/use-view-mode.ts.
+  const { viewMode, setViewMode } = useViewMode("demandes");
 
   // Debounce recherche 300ms + reset pagination
   useEffect(() => {
@@ -129,12 +134,18 @@ export function DemandesPage() {
         onStatutChange={setStatut}
       />
 
+      {/* Barre d'actions liste : toggle Liste/Grille */}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <ViewToggle value={viewMode} onChange={setViewMode} />
+      </div>
+
       {/* Liste / empty state */}
       {loading ? (
         <DemandesTable
           demandes={[]}
           loading
           onVoirDetails={handleVoirDetails}
+          viewMode={viewMode}
         />
       ) : demandes.length === 0 ? (
         <EmptyState
@@ -154,6 +165,7 @@ export function DemandesPage() {
         <DemandesTable
           demandes={demandes}
           onVoirDetails={handleVoirDetails}
+          viewMode={viewMode}
         />
       )}
 

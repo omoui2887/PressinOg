@@ -22,6 +22,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Plus, Tag } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { ViewToggle } from "@/components/shared";
+import { useViewMode } from "@/hooks/use-view-mode";
 import { ServicesList } from "./services-list";
 import { AddServiceDialog } from "./add-service-dialog";
 import { EditServiceDialog } from "./edit-service-dialog";
@@ -29,6 +31,7 @@ import { DeleteServiceDialog } from "./delete-service-dialog";
 import type { ServiceItem } from "./services-helpers";
 
 export function ServicesPage() {
+  const { viewMode, setViewMode } = useViewMode("services");
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -114,16 +117,20 @@ export function ServicesPage() {
             désactivés n&apos;apparaissent plus dans le wizard de commande.
           </p>
         </div>
-        <Button onClick={() => setAddOpen(true)} className="h-11">
-          <Plus className="mr-2 size-4" />
-          Ajouter un service
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ViewToggle value={viewMode} onChange={setViewMode} />
+          <Button onClick={() => setAddOpen(true)} className="h-11">
+            <Plus className="mr-2 size-4" />
+            Ajouter un service
+          </Button>
+        </div>
       </div>
 
       {/* Liste regroupée par type */}
       <ServicesList
         services={services}
         loading={loading}
+        viewMode={viewMode}
         onToggle={handleToggle}
         onEdit={(s) => setEditService(s)}
         onDelete={(s) => setDeleteService(s)}
