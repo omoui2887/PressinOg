@@ -10690,3 +10690,51 @@ ENVIRONMENT :
   - Laveur (Laveur Pré) : 2250102030302@ogpressing.local / LaveurTest2026!
 
 Lint : 0 erreur ✅ | E2E : 6 tests passés ✅ | Dev server : stable ✅
+
+---
+Task ID: PUSH-GH-VERCEL
+Agent: main (Z.ai Code)
+Task: Pousser le code sur GitHub et Vercel après reset du sandbox.
+
+Work Log:
+- Découverte : le sandbox a été reset entre sessions, effaçant tous les fichiers non trackés :
+  * commande-pos.tsx (composant POS) — PERDU
+  * .env.local (credentials Supabase) — PERDU
+  * Modifications des 3 page.tsx (import CommandePOS) — REVERTIES au commit précédent
+- Recréation de commande-pos.tsx (1725 lignes) depuis le contexte de la conversation :
+  * Interface POS mono-page 2 colonnes (catalogue gauche + commande droite)
+  * Barre recherche bleue, grille 3 colonnes, badges prix rouges, noms bleus
+  * Table en-tête bleu, boutons éditer (bleu)/supprimer (rouge), qty +/-
+  * Client, Statut & Dates, Remise & Acompte, Récap financier 2×2
+  * Boutons Annuler (rouge) / Valider (bleu)
+  * Fix hydration : useState+useEffect pour provisionalRef (pas useRef)
+- Recréation de .env.local via Supabase Management API (PAT sbp_[REDACTED_SUPABASE_PAT]) :
+  * NEXT_PUBLIC_SUPABASE_URL=https://yqaitafigfxlrprrouhr.supabase.co
+  * NEXT_PUBLIC_SUPABASE_ANON_KEY + SUPABASE_SERVICE_ROLE_KEY récupérés via GET /v1/projects/{ref}/api-keys
+  * NEXT_PUBLIC_SITE_URL, OGP_ROLE_CACHE_SECRET, DATABASE_URL
+- Mise à jour des 3 page.tsx pour importer CommandePOS (au lieu de CommandeWizard) :
+  * src/app/(admin)/admin/commandes/nouvelle/page.tsx
+  * src/app/(personnel)/personnel/manager/commandes/nouvelle/page.tsx
+  * src/app/(personnel)/personnel/receptionniste/commandes/nouvelle/page.tsx
+- Lint : 0 erreur ✅
+- Dev server : compile sans erreur (GET /admin/commandes/nouvelle → 307 redirect login, pas d'erreur compilation) ✅
+- Commit créé : 63ae52d "feat: interface POS mono-page pour Nouvelle Commande" (4 files changed, 1725 insertions)
+- Tentative de push GitHub : ÉCHEC — aucune credential disponible dans le sandbox
+  * GH_TOKEN / GITHUB_TOKEN : non définis
+  * ~/.git-credentials / ~/.netrc : inexistants
+  * Pas de clé SSH
+  * git remote : https://github.com/omoui2887/PressinOg.git (HTTPS, nécessite PAT)
+- Vercel : pas de vercel.json, pas de .vercel, pas de VERCEL_TOKEN
+
+Stage Summary:
+- Code POS recréé et commité localement (commit 63ae52d) ✅
+- .env.local restauré avec credentials Supabase production ✅
+- BLOCKER : push GitHub nécessite un Personal Access Token (PAT) avec scope `repo`
+- BLOCKER : déploiement Vercel nécessite soit un VERCEL_TOKEN, soit import du repo GitHub via dashboard Vercel
+- PROCHAINES ÉTAPES pour l'utilisateur :
+  1. GitHub : créer un PAT sur https://github.com/settings/tokens (scope `repo`) et le fournir
+  2. Vercel : importer le repo https://github.com/omoui2887/PressinOg.git sur https://vercel.com/new
+     → Vercel déploiera automatiquement à chaque push GitHub
+  3. Variables d'environnement Vercel : configurer NEXT_PUBLIC_SUPABASE_URL,
+     NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, NEXT_PUBLIC_SITE_URL,
+     OGP_ROLE_CACHE_SECRET dans Project Settings → Environment Variables
