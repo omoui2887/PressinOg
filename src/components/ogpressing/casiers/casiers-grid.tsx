@@ -33,12 +33,14 @@ import {
   ArchiveRestore,
   ArrowRight,
   Clock,
+  Info,
   LayoutGrid,
   MapPin,
   Percent,
   Phone,
   RefreshCw,
   Search,
+  Shirt,
   User,
   X,
 } from "lucide-react";
@@ -287,26 +289,103 @@ export function CasiersGrid({
     const isFilteredOut = !codesFiltres.has(code);
     if (isFilteredOut) return null;
 
-    // Casier libre — tuile statique en pointillés gris
+    // Casier libre — tuile cliquable avec popover explicatif
+    // (aide l'utilisateur à comprendre comment assigner un article à ce casier)
     if (!occ) {
       return (
-        <div
-          key={code}
-          className={cn(
-            "flex aspect-square min-h-[72px] flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/30 bg-muted/30 p-1 text-center",
-            "select-none"
-          )}
-          aria-label={`Casier ${code} — libre`}
-          title={`Casier ${code} — libre`}
-        >
-          <span className="font-mono text-base font-bold text-muted-foreground/70">
-            {code}
-          </span>
-          <ArchiveRestore
-            className="size-3.5 text-muted-foreground/40"
-            aria-hidden
-          />
-        </div>
+        <Popover key={code}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className={cn(
+                "group flex aspect-square min-h-[72px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/30 bg-muted/30 p-1 text-center",
+                "transition-all hover:border-primary/40 hover:bg-primary/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+              )}
+              aria-label={`Casier ${code} — libre (cliquer pour savoir comment l'assigner)`}
+              title={`Casier ${code} — libre · cliquez pour savoir comment l'assigner`}
+            >
+              <span className="font-mono text-base font-bold text-muted-foreground/70 group-hover:text-primary/70">
+                {code}
+              </span>
+              <ArchiveRestore
+                className="size-3.5 text-muted-foreground/40 group-hover:text-primary/50"
+                aria-hidden
+              />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
+            className="w-72 p-0"
+            align="center"
+            sideOffset={6}
+          >
+            <div className="border-b p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <ArchiveRestore className="size-4" />
+                  </span>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Casier
+                    </p>
+                    <p className="font-mono text-base font-bold leading-none text-foreground">
+                      {code}
+                    </p>
+                  </div>
+                </div>
+                <StatusBadge
+                  status="libre"
+                  label="Libre"
+                  variant="neutral"
+                />
+              </div>
+            </div>
+            <div className="space-y-3 p-3 text-sm">
+              <div className="space-y-1.5">
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <Info className="size-3" /> Comment ranger un article ici
+                </p>
+                <ol className="space-y-1.5 text-xs text-muted-foreground">
+                  <li className="flex gap-1.5">
+                    <span className="font-bold text-primary">1.</span>
+                    <span>
+                      Ouvrez une commande avec des articles repassés (statut
+                      «&nbsp;Repassé&nbsp;»).
+                    </span>
+                  </li>
+                  <li className="flex gap-1.5">
+                    <span className="font-bold text-primary">2.</span>
+                    <span>
+                      Changez le statut de l&apos;article en «&nbsp;Prêt&nbsp;».
+                    </span>
+                  </li>
+                  <li className="flex gap-1.5">
+                    <span className="font-bold text-primary">3.</span>
+                    <span>
+                      Saisissez le code{" "}
+                      <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-bold text-foreground">
+                        {code}
+                      </code>{" "}
+                      dans la boîte de dialogue.
+                    </span>
+                  </li>
+                </ol>
+              </div>
+              <Button
+                asChild
+                size="sm"
+                className="w-full"
+                variant="default"
+              >
+                <Link href={`${basePath}/commandes`}>
+                  <Shirt className="size-4" />
+                  Voir mes commandes
+                  <ArrowRight className="size-4" />
+                </Link>
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
       );
     }
 
@@ -704,6 +783,74 @@ export function CasiersGrid({
     );
   }
 
+  /* ------------------- Sous-composant : Bannière d'aide ------------------- */
+
+  function renderHelpBanner() {
+    if (loading || error || !data) return null;
+    // Affiche la bannière uniquement si aucun casier n'est occupé
+    // (cas : nouveaux pressings ou aucun article rangé — l'utilisateur
+    // pourrait ne pas savoir comment assigner un casier).
+    if (data.total_occupees > 0) return null;
+    return (
+      <div
+        role="note"
+        className="flex flex-col gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4 text-sm sm:flex-row sm:items-start"
+      >
+        <Info
+          className="size-5 shrink-0 text-primary"
+          aria-hidden
+        />
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <p className="font-semibold text-primary">
+            Aucun article n&apos;est rangé en casier pour le moment
+          </p>
+          <p className="text-muted-foreground">
+            Pour ranger un article propre dans un casier :
+          </p>
+          <ol className="ml-1 space-y-1 text-muted-foreground">
+            <li className="flex gap-2">
+              <span className="font-bold text-primary">1.</span>
+              <span>
+                Ouvrez une commande depuis{" "}
+                <Link
+                  href={`${basePath}/commandes`}
+                  className="font-medium text-primary hover:underline"
+                >
+                  Mes commandes
+                </Link>
+                .
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span className="font-bold text-primary">2.</span>
+              <span>
+                Dans la liste des articles, changez le statut d&apos;un article
+                repassé vers «&nbsp;Prêt&nbsp;».
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span className="font-bold text-primary">3.</span>
+              <span>
+                Une boîte de dialogue s&apos;ouvre : saisissez le code du casier
+                (ex: <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs font-bold text-foreground">A1</code>) et confirmez.
+              </span>
+            </li>
+          </ol>
+          <p className="pt-1 text-xs text-muted-foreground">
+            💡 Astuce : cliquez sur n&apos;importe quel casier libre ci-dessous
+            pour voir le code à utiliser.
+          </p>
+        </div>
+        <Button asChild size="sm" variant="default" className="shrink-0">
+          <Link href={`${basePath}/commandes`}>
+            <Shirt className="size-4" />
+            Voir mes commandes
+          </Link>
+        </Button>
+      </div>
+    );
+  }
+
   /* ------------------- Rendu principal ------------------- */
 
   return (
@@ -744,6 +891,9 @@ export function CasiersGrid({
 
       {/* 3. Bannière migration non appliquée */}
       {renderMigrationBanner()}
+
+      {/* 3b. Bannière d'aide (si aucun casier occupé) */}
+      {renderHelpBanner()}
 
       {/* 4. StatCards (4) */}
       {renderStatCards()}
