@@ -18,8 +18,8 @@
  *    rôle. L'API POST /api/admin/commandes accepte n'importe quel personnel
  *    actif (actif=true, statut_compte='actif'), peu importe le rôle.
  */
-import { CommandeWizard } from "@/components/ogpressing/admin/commande-wizard/commande-wizard";
+import { CommandePOS } from "@/components/ogpressing/admin/commande-wizard/commande-pos";
 
 export default function PersonnelNouvelleCommandePage() {
-  return <CommandeWizard basePath="/personnel/receptionniste" />;
+  return <CommandePOS basePath="/personnel/receptionniste" />;
 }
