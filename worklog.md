@@ -10738,3 +10738,43 @@ Stage Summary:
   3. Variables d'environnement Vercel : configurer NEXT_PUBLIC_SUPABASE_URL,
      NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, NEXT_PUBLIC_SITE_URL,
      OGP_ROLE_CACHE_SECRET dans Project Settings → Environment Variables
+
+---
+Task ID: POS-1
+Agent: main
+Task: Construire et adapter l'écran POS / Caisse OgPressing selon le prompt PROMPT-POS-CAISSE-OGPRESSING-STANDALONE.md (interface de référence fournie en image).
+
+Work Log:
+- Lecture du prompt POS standalone (498 lignes) + analyse de l'image de référence via VLM (layout 2 colonnes, header Réf bleu/Montant rouge, catalogue à gauche, panier/client/dates/paiement à droite, boutons Annuler/Valider).
+- Lecture des contrats de données existants : state.ts (ArticleInfo, Remise, Acompte), POST /api/admin/commandes (payload), GET /api/admin/services, catalogue-articles.ts, format.ts.
+- Ajout des tokens CSS POS dans globals.css (--pos-primary #006DB6, --pos-primary-dark #005A9C, --pos-primary-light #DDEEFF, --pos-danger #F52222, --pos-bg, --pos-surface, --pos-border, --pos-text, --pos-gold EXPRESS, --pos-green PAYÉ, --pos-orange ACOMPTE) + classes utilitaires (.pos-root, .pos-header, .pos-search-bar, .pos-product-card, .pos-price-badge, .pos-table-head, .pos-action-btn, .pos-pay-btn, .pos-btn-validate/cancel, .pos-badge-*, .pos-scroll).
+- Création de la couche de données /lib/pos/ :
+  - types.ts (PosArticle, PosCartLine, PosClient, PosFinance, PosCommandePayload, PosCategorie, etc.)
+  - calc.ts (fonctions pures : computeSousTotal, computeRemiseMontant, computeFinance, computeTotalEtiquettes, computeDateRetrait, generateReference, prixEffectifLine, statutBadge/Label)
+  - mock-data.ts (7 articles démo + 3 lignes panier démo + 3 clients démo, correspondant à l'image de référence)
+  - data.ts (getArticles/getCategories/searchClients/createCommande : API Supabase réelles + repli mock automatique)
+  - format.ts (formatFcfa "2 000 Fcfa", toDateInputValue, toTimeInputValue, isoFromDateTime)
+  - store.ts (Zustand : panier, client, dates, remise, paiement, contexte, soumission — initSession() anti-mismatch SSR)
+- Création des 13 composants /components/pos/ : pos-header, article-search-bar, product-card, product-grid, category-button, category-bar, order-table, order-row, customer-panel, date-panel, payment-summary, action-buttons + orchestrateur pos-caisse.tsx (raccourcis F2/F3/F9/Échap, validation anti double-clic, écran confirmation succès avec impression étiquettes, dialogue nouveau client, barre flottante mobile).
+- Câblage des 3 pages vers <PosCaisse basePath=... /> : admin, receptionniste, manager (remplace <CommandePOS />).
+- Corrections bugs trouvés via Agent Browser :
+  1. Boucle infinie d'effets (loadArticles dépendait du store entier `s` → recréation callback → re-run effect) → fix : usePosStore.getState() pour les setters, callback stable.
+  2. Mismatch d'hydration SSR (reference/dates/cartLines générés avec new Date()/random au init store → divergent serveur vs client) → fix : état initial déterministe vide + initSession() côté client au montage.
+  3. Warning "NaN for children" (DatePanel rendait new Date("").getDate() avant initSession) → fix : guard Number.isNaN.
+  4. Category bar tronqué (POS forçait h-100vh dans le <main flex-1 p-8> de l'AdminShell) → fix : h-full min-h-0 overflow-hidden.
+- Vérification end-to-end Agent Browser (compte test manager temporaire créé puis supprimé) :
+  * Page /admin/commandes/nouvelle → HTTP 200, aucune erreur hydration/loop/NaN.
+  * Layout vérifié par VLM : header Réf bleu + Montant rouge, 2 colonnes, catalogue gauche (cartes + badges prix rouges), commande droite (table en-tête bleu, 3 lignes démo, client, dates +24h/+48h/+72h, paiement, boutons Annuler rouge/Valider bleu).
+  * Interaction clic article → cart 3→4 lignes, total 2000→3000 Fcfa ✅
+  * Interaction paiement (Payé=1000) → 3 boutons méthode apparaissent, badge IMPAYÉ→ACOMPTE ✅
+  * Aucune erreur console/runtime.
+- Lint : 0 erreur, 0 warning.
+- Nettoyage : compte test (auth user + personnel) supprimé de Supabase.
+
+Stage Summary:
+- Écran POS / Caisse mono-page construit selon le spec, fidèle à l'image de référence, adapté à l'application OgPressing (POST /api/admin/commandes + RLS, paiement déclaratif sans passerelle).
+- Architecture : 13 composants réutilisables typés + store Zustand + couche données abstraite (mock + API).
+- 3 routes câblées : /admin/commandes/nouvelle, /personnel/receptionniste/commandes/nouvelle, /personnel/manager/commandes/nouvelle.
+- Couleur dominante bleu #006DB6 + rouge #F52222, dense/compact/tactile (pas SaaS moderne).
+- Fonctionnalités : recherche articles (A/C + debounce), grille filtrée par catégorie, panier avec Qté/Express/note/étiquettes, client (recherche nom+tél, nouveau, passage, impayé), dates (dépôt/retrait + raccourcis + alerte fermeture), paiement déclaratif (remise Fcfa/%, payé, net, reste, badge statut, méthodes Espèces/Mobile Money/Carte), raccourcis clavier F2/F3/F9/Échap, responsive mobile avec barre flottante.
+- Aucun paiement en ligne (règle absolue respectée).
