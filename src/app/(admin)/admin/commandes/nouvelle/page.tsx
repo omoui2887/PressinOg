@@ -7,8 +7,8 @@
  * Le header (titre + retour), le stepper visuel, le contenu de l'étape
  * courante et les boutons de navigation sont gérés par <CommandeWizard />.
  */
-import { CommandePOS } from "@/components/ogpressing/admin/commande-wizard/commande-pos";
+import { PosCaisse } from "@/components/pos/pos-caisse";
 
 export default function NouvelleCommandePage() {
-  return <CommandePOS />;
+  return <PosCaisse />;
 }

@@ -1339,3 +1339,185 @@ html {
     transition: none !important;
   }
 }
+
+/* ============================================================
+   24. POS / CAISSE — Écran de prise de commande (comptoir)
+   Palette professionnelle pressing, tokens centralisés.
+   Dense · compact · tactile · lisible.
+   ============================================================ */
+:root {
+  --pos-primary: #006DB6;
+  --pos-primary-dark: #005A9C;
+  --pos-primary-light: #DDEEFF;
+  --pos-primary-50: #EEF6FC;
+  --pos-danger: #F52222;
+  --pos-danger-dark: #D11F1F;
+  --pos-bg: #F5F7F9;
+  --pos-surface: #FFFFFF;
+  --pos-border: #C9D4DD;
+  --pos-border-light: #E3EAF0;
+  --pos-text: #555555;
+  --pos-text-muted: #8A97A3;
+  --pos-gold: #C5A03D;        /* EXPRESS */
+  --pos-green: #16A34A;       /* PAYÉ */
+  --pos-orange: #F59E0B;      /* ACOMPTE */
+}
+.dark {
+  --pos-bg: #0B1220;
+  --pos-surface: #131C2E;
+  --pos-border: #243049;
+  --pos-border-light: #1B2540;
+  --pos-text: #C7D2DE;
+  --pos-text-muted: #8A97A3;
+  --pos-primary-light: #14243B;
+  --pos-primary-50: #0F1B2E;
+}
+
+/* Conteneur racine POS : occupe tout l'écran, pas de scroll global. */
+.pos-root {
+  --pos-font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Plus Jakarta Sans", Inter, sans-serif;
+  --pos-font-mono: ui-monospace, "IBM Plex Mono", "SF Mono", "Cascadia Mono", Menlo, monospace;
+  font-family: var(--pos-font-sans);
+  background: var(--pos-bg);
+  color: var(--pos-text);
+  height: 100%;
+}
+.pos-mono { font-family: var(--pos-font-mono); font-variant-numeric: tabular-nums; }
+
+/* En-tête POS : ligne pleine largeur + filet bleu. */
+.pos-header {
+  background: var(--pos-surface);
+  border-bottom: 2px solid var(--pos-primary);
+}
+.pos-ref { color: var(--pos-primary); font-family: var(--pos-font-mono); letter-spacing: 0.02em; }
+.pos-total { color: var(--pos-danger); font-family: var(--pos-font-mono); font-weight: 700; }
+
+/* Barre de recherche bleue. */
+.pos-search-bar {
+  background: var(--pos-primary);
+  border: 1px solid var(--pos-primary-dark);
+}
+.pos-search-input {
+  background: var(--pos-surface);
+  border: 1px solid var(--pos-primary-dark);
+  color: var(--pos-text);
+}
+.pos-search-input::placeholder { color: #6B8AA8; }
+.pos-search-input:focus { outline: 2px solid #FFFFFF88; }
+
+/* Carte article. */
+.pos-product-card {
+  background: var(--pos-surface);
+  border: 1px solid var(--pos-border);
+  transition: border-color .12s ease, transform .12s ease, box-shadow .12s ease;
+}
+.pos-product-card:hover { border-color: var(--pos-primary); box-shadow: 0 2px 6px rgba(0,109,182,.12); }
+.pos-product-card[data-active="true"] { border-color: var(--pos-primary); background: var(--pos-primary-50); }
+.pos-product-card[data-flash="true"] { box-shadow: 0 0 0 3px var(--pos-primary-light); }
+.pos-price-badge {
+  background: var(--pos-danger);
+  color: #fff;
+  font-family: var(--pos-font-mono);
+  font-weight: 700;
+}
+.pos-product-name { color: var(--pos-primary-dark); }
+
+/* Catégories. */
+.pos-cat-btn {
+  background: var(--pos-surface);
+  border: 1px solid var(--pos-border);
+  color: var(--pos-text);
+  transition: all .12s ease;
+}
+.pos-cat-btn:hover { border-color: var(--pos-primary); color: var(--pos-primary); }
+.pos-cat-btn[data-active="true"] {
+  background: var(--pos-primary-light);
+  border-color: var(--pos-primary);
+  color: var(--pos-primary-dark);
+}
+
+/* Tableau de commande. */
+.pos-table-head {
+  background: var(--pos-primary-dark);
+  color: #fff;
+}
+.pos-table-row { border-bottom: 1px solid var(--pos-border-light); }
+.pos-table-row:nth-child(even) { background: var(--pos-primary-50); }
+.pos-action-btn {
+  width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  transition: all .12s ease;
+}
+.pos-action-btn[data-variant="plus"] { background: var(--pos-primary); color: #fff; }
+.pos-action-btn[data-variant="plus"]:hover { background: var(--pos-primary-dark); }
+.pos-action-btn[data-variant="minus"] { background: var(--pos-primary-light); color: var(--pos-primary-dark); border-color: var(--pos-primary); }
+.pos-action-btn[data-variant="minus"]:hover { background: var(--pos-primary); color: #fff; }
+.pos-action-btn[data-variant="delete"] { background: #FEE; color: var(--pos-danger); border-color: var(--pos-danger); }
+.pos-action-btn[data-variant="delete"]:hover { background: var(--pos-danger); color: #fff; }
+
+/* Panneaux. */
+.pos-panel {
+  background: var(--pos-surface);
+  border: 1px solid var(--pos-border);
+  border-radius: 6px;
+}
+.pos-panel-blue {
+  background: var(--pos-surface);
+  border: 1px solid var(--pos-primary);
+  border-radius: 6px;
+}
+
+/* Express liseré or. */
+.pos-express-line { box-shadow: inset 3px 0 0 0 var(--pos-gold); }
+
+/* Badges de statut. */
+.pos-badge { font-family: var(--pos-font-mono); font-weight: 700; letter-spacing: .04em; }
+.pos-badge-paid { background: #E7F6EC; color: var(--pos-green); border: 1px solid var(--pos-green); }
+.pos-badge-acompte { background: #FEF3E2; color: #B45309; border: 1px solid var(--pos-orange); }
+.pos-badge-unpaid { background: #FDECEC; color: var(--pos-danger); border: 1px solid var(--pos-danger); }
+.pos-badge-express { background: #FBF3DD; color: var(--pos-gold); border: 1px solid var(--pos-gold); }
+
+/* Boutons de paiement déclaratif. */
+.pos-pay-btn {
+  border: 2px solid var(--pos-border);
+  background: var(--pos-surface);
+  color: var(--pos-text);
+  transition: all .12s ease;
+}
+.pos-pay-btn:hover { border-color: var(--pos-primary); color: var(--pos-primary); }
+.pos-pay-btn[data-active="true"] {
+  border-color: var(--pos-primary);
+  background: var(--pos-primary-light);
+  color: var(--pos-primary-dark);
+}
+
+/* Boutons du bas. */
+.pos-btn-validate {
+  background: var(--pos-primary);
+  color: #fff;
+  transition: filter .15s ease, transform .08s ease;
+}
+.pos-btn-validate:hover { filter: brightness(1.08); }
+.pos-btn-validate:active { transform: translateY(1px); }
+.pos-btn-validate:disabled { opacity: .6; cursor: not-allowed; }
+.pos-btn-cancel {
+  background: var(--pos-danger);
+  color: #fff;
+  transition: filter .15s ease, transform .08s ease;
+}
+.pos-btn-cancel:hover { filter: brightness(1.08); }
+.pos-btn-cancel:active { transform: translateY(1px); }
+
+/* Scrollbars fines pour les panneaux. */
+.pos-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.pos-scroll::-webkit-scrollbar-track { background: transparent; }
+.pos-scroll::-webkit-scrollbar-thumb { background: var(--pos-border); border-radius: 4px; }
+.pos-scroll::-webkit-scrollbar-thumb:hover { background: var(--pos-primary); }
+
+/* Récap flottant mobile. */
+.pos-mobile-bar {
+  background: var(--pos-primary-dark);
+  color: #fff;
+}
