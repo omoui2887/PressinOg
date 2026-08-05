@@ -24,7 +24,12 @@ export type PosCategorieId =
 
 /** Article/prestation affiché dans la grille du catalogue. */
 export interface PosArticle {
-  /** Identifiant stable unique (service_id + "::" + catalogue_slug). */
+  /**
+   * Identifiant stable unique — composite `${service_id}::${catalogue_slug}`.
+   * Permet de différencier la même carte article entre plusieurs types de
+   * service (ex : "chemise × lavage" vs "chemise × repassage") pour le
+   * dédoublonnage des lignes panier.
+   */
   id: string;
   /** FK vers services.id (pour la création de commande). */
   service_id: string;
@@ -32,10 +37,14 @@ export interface PosArticle {
   service_nom: string;
   /** Catégorie POS dérivée du type de service. */
   categorie: Exclude<PosCategorieId, "tous">;
-  /** Slug du catalogue d'articles (pour l'illustration). */
+  /** Slug du catalogue d'articles (pour l'illustration + identifiant lisible). */
   catalogue_slug: string;
+  /** UUID du catalogue_articles (FK envoyée à POST /api/admin/commandes). */
+  catalogue_article_id: string;
   /** Nom du catalogue (affiché sous l'image). */
   catalogue_nom: string;
+  /** Catégorie du catalogue (Vêtements traités, Linge de maison, etc.). */
+  catalogue_categorie: string;
   /** URL de l'illustration : /images/articles/{slug}.png. */
   icone_url: string;
   /** Prix unitaire en FCFA (entier). */
@@ -50,6 +59,29 @@ export interface PosCategorie {
   label: string;
   /** Slug lucide-react → résolu côté composant (évite d'importer lucide ici). */
   icon: "washing" | "iron" | "shirt" | "sun" | "sparkles";
+}
+
+/**
+ * Catégorie de catalogue (filtre par type de linge).
+ * Indépendante de la catégorie POS (qui dérive du type de service) :
+ * le catalogue est organisé en 9 grandes familles d'articles.
+ */
+export interface PosCatalogueCategorie {
+  /** Identifiant = nom de catégorie (ex : "Vêtements traités"). */
+  id: string;
+  /** Libellé affiché dans la barre de filtre. */
+  label: string;
+  /** Icône lucide → résolue côté composant. */
+  icon:
+    | "shirt"
+    | "bed"
+    | "sparkles"
+    | "briefcase"
+    | "trophy"
+    | "link"
+    | "utensils"
+    | "sofa"
+    | "package";
 }
 
 /** Ligne du panier (commande en cours). */

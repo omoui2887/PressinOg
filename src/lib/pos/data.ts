@@ -2,10 +2,11 @@
  * OgPressing — POS / Caisse : couche d'accès aux données
  * ======================================================
  * Fonctions d'accès aux données derrière une interface stable :
- *   - getArticles()    → catalogue de prestations (services + illustrations)
- *   - getCategories()  → catégories POS
- *   - searchClients()  → recherche client (nom + téléphone)
- *   - createCommande() → POST /api/admin/commandes
+ *   - getArticles()             → catalogue de prestations (services × articles)
+ *   - getCatalogueCategories()  → 9 catégories du catalogue global
+ *   - getCategories()           → catégories POS (barre service-type)
+ *   - searchClients()           → recherche client (nom + téléphone)
+ *   - createCommande()          → POST /api/admin/commandes
  *
  * STRATÉGIE : on tente d'abord les API Supabase réelles (déjà configurées).
  * Si elles échouent ou renvoient un catalogue vide (pressing fraîchement
@@ -17,13 +18,17 @@
  */
 import type {
   PosArticle,
+  PosCatalogueCategorie,
   PosCategorie,
   PosClient,
   PosCommandeCree,
   PosCommandePayload,
 } from "./types";
 import { MOCK_ARTICLES, MOCK_CLIENTS, POS_CATEGORIES } from "./mock-data";
-import { iconeUrlForSlug } from "@/lib/catalogue/catalogue-articles";
+import {
+  CATALOGUE_CATEGORIES,
+  iconeUrlForSlug,
+} from "@/lib/catalogue/catalogue-articles";
 
 /** Mapping type de service DB → catégorie POS. */
 function typeToCategorie(
@@ -50,27 +55,6 @@ function typeToCategorie(
     default:
       return "lavage";
   }
-}
-
-/** Choisit un slug de catalogue selon le nom du service (illustration). */
-function slugForServiceName(nom: string): string {
-  const n = (nom || "").toLowerCase();
-  if (n.includes("chemise")) return "chemise";
-  if (n.includes("costume")) return "costume-ceremonie";
-  if (n.includes("pantalon") || n.includes("jean") || n.includes("culotte"))
-    return "costume-medical";
-  if (n.includes("drap") || n.includes("parure") || n.includes("lit"))
-    return "parure-lit";
-  if (n.includes("robe")) return "robe-textile-delicat";
-  if (n.includes("manteau") || n.includes("blouson")) return "manteau-doudoune";
-  if (n.includes("rideau") || n.includes("voilage")) return "rideau-voilage";
-  if (n.includes("nappe") || n.includes("table")) return "nappe-chemin-table";
-  if (n.includes("coussin")) return "houssse-coussin";
-  if (n.includes("serviette") || n.includes("peignoir"))
-    return "serviette-peignoir";
-  if (n.includes("cravate") || n.includes("foulard")) return "cravate-foulard";
-  if (n.includes("tapis")) return "tapis-bain";
-  return "chemise"; // fallback propre (jamais d'image cassée)
 }
 
 /** Convertit une durée PostgreSQL (ex : "2 days", "48 hours") en heures. */
@@ -103,30 +87,55 @@ interface CatalogueRow {
   icone_url?: string;
 }
 
+interface TarifRow {
+  id: string;
+  catalogue_article_id: string;
+  type_service: string;
+  prix: number;
+  duree_estimee?: string | null;
+  actif?: boolean;
+}
+
 /**
- * Charge le catalogue de prestations.
+ * Charge le catalogue de prestations — VERSION ARTICLE-CENTRIC.
  *
- * 1. GET /api/admin/services (services actifs du pressing connecté).
- * 2. GET /api/public/catalogue-articles (catalogue global, pour les illustrations).
- * 3. Construit les PosArticle[] en associant chaque service à une illustration.
+ * 1. GET /api/admin/services            → services actifs du pressing connecté.
+ * 2. GET /api/public/catalogue-articles → 33 articles du catalogue global.
+ * 3. GET /api/admin/tarifs-articles     → tarifs spécifiques (actifs) par
+ *    couple (article × type_service) pour le pressing connecté.
  *
- * Si l'une des requêtes échoue ou renvoie vide, on complète/bascule vers
- * les données fictives.
+ * Construit une `PosArticle[]` cartésienne : 1 entrée par (service × article
+ * du catalogue). Avec N services et 33 articles, on obtient N×33 cartes au
+ * maximum. Chaque carte hérite :
+ *   - du service  → `service_id`, `service_nom`, `categorie` (type POS)
+ *   - de l'article→ `catalogue_article_id`, `catalogue_slug`, `catalogue_nom`,
+ *                   `catalogue_categorie`, `icone_url`
+ *   - du tarif    → `prix` + `duree_estimee_h` si un tarif spécifique existe
+ *                   pour (article, type_service) ; sinon fallback sur le
+ *                   prix/durée générique du service.
+ *
+ * Si l'une des requêtes critiques (services OU catalogue) échoue ou renvoie
+ * vide, on bascule sur les données fictives.
+ *
+ * Le fetch des tarifs est non bloquant : s'il échoue (401, réseau), on
+ * utilise simplement le prix du service pour toutes les cartes.
  */
 export async function getArticles(): Promise<{
   articles: PosArticle[];
   source: "api" | "mock" | "mixed";
 }> {
   try {
-    const [servicesRes, catalogueRes] = await Promise.allSettled([
+    const [servicesRes, catalogueRes, tarifsRes] = await Promise.allSettled([
       fetch("/api/admin/services", { cache: "no-store" }),
       fetch("/api/public/catalogue-articles", { cache: "no-store" }),
+      fetch("/api/admin/tarifs-articles", { cache: "no-store" }),
     ]);
 
     const services: ServiceRow[] =
       servicesRes.status === "fulfilled" && servicesRes.value.ok
-        ? ((await servicesRes.value.json())?.data as ServiceRow[] | undefined) ??
-          []
+        ? ((await servicesRes.value.json())?.data as
+            | ServiceRow[]
+            | undefined) ?? []
         : [];
     const catalogue: CatalogueRow[] =
       catalogueRes.status === "fulfilled" && catalogueRes.value.ok
@@ -134,32 +143,101 @@ export async function getArticles(): Promise<{
             | CatalogueRow[]
             | undefined) ?? []
         : [];
+    const tarifs: TarifRow[] =
+      tarifsRes.status === "fulfilled" && tarifsRes.value.ok
+        ? ((await tarifsRes.value.json())?.data as
+            | TarifRow[]
+            | undefined) ?? []
+        : [];
 
-    if (!services.length) {
-      // Aucun service configuré → données fictives.
+    // Bascule mock si l'une des deux sources critiques est vide.
+    if (!services.length || !catalogue.length) {
       return { articles: MOCK_ARTICLES, source: "mock" };
     }
 
-    const articles: PosArticle[] = services.map((svc) => {
-      const slug = slugForServiceName(svc.nom);
-      const cat = catalogue.find((c) => c.slug === slug);
-      return {
-        id: svc.id,
-        service_id: svc.id,
-        service_nom: svc.nom,
-        categorie: typeToCategorie(svc.type, svc.nom),
-        catalogue_slug: slug,
-        catalogue_nom: cat?.nom ?? svc.nom,
-        icone_url: cat?.icone_url ?? iconeUrlForSlug(slug),
-        prix: Math.trunc(svc.prix ?? 0),
-        duree_estimee_h: dureeToHours(svc.duree_estimee),
-      };
-    });
+    // Index des tarifs : Map<catalogue_article_id, Map<type_service, {prix, duree_h}>>
+    // Permet une résolution O(1) lors de la construction des cartes.
+    const tarifsByArticle = new Map<
+      string,
+      Map<string, { prix: number; duree_h?: number }>
+    >();
+    for (const t of tarifs) {
+      if (!t.catalogue_article_id) continue;
+      let inner = tarifsByArticle.get(t.catalogue_article_id);
+      if (!inner) {
+        inner = new Map();
+        tarifsByArticle.set(t.catalogue_article_id, inner);
+      }
+      inner.set(t.type_service, {
+        prix: Math.trunc(t.prix ?? 0),
+        duree_h: dureeToHours(t.duree_estimee),
+      });
+    }
 
-    return { articles, source: "api" };
+    // Construction du produit cartésien service × article.
+    const articles: PosArticle[] = [];
+    for (const svc of services) {
+      const cat = typeToCategorie(svc.type, svc.nom);
+      const svcDureeH = dureeToHours(svc.duree_estimee);
+      const svcPrix = Math.trunc(svc.prix ?? 0);
+      for (const art of catalogue) {
+        const tarif = tarifsByArticle.get(art.id)?.get(svc.type);
+        articles.push({
+          id: `${svc.id}::${art.slug}`,
+          service_id: svc.id,
+          service_nom: svc.nom,
+          categorie: cat,
+          catalogue_article_id: art.id,
+          catalogue_slug: art.slug,
+          catalogue_nom: art.nom,
+          catalogue_categorie:
+            art.categorie && art.categorie.trim()
+              ? art.categorie
+              : "Articles spéciaux",
+          icone_url: art.icone_url ?? iconeUrlForSlug(art.slug),
+          prix: tarif?.prix ?? svcPrix,
+          duree_estimee_h: tarif?.duree_h ?? svcDureeH,
+        });
+      }
+    }
+
+    // `mixed` signale qu'on a chargé l'API mais sans tarifs spécifiques
+    // (permet à l'UI d'afficher un indicateur éventuel — non requis ici).
+    const source: "api" | "mixed" = tarifs.length > 0 ? "api" : "mixed";
+    return { articles, source };
   } catch {
     return { articles: MOCK_ARTICLES, source: "mock" };
   }
+}
+
+/**
+ * Les 9 catégories du catalogue global (Vêtements traités, Linge de maison,
+ * Cuir et fourrure, etc.). Repris de `CATALOGUE_CATEGORIES` avec mapping
+ * des icônes lucide-react vers le type string `PosCatalogueCategorie["icon"]`.
+ *
+ * L'ordre est identique à celui de `CATALOGUE_CATEGORIES` (défini côté
+ * `@/lib/catalogue/catalogue-articles`).
+ */
+const CATALOGUE_ICON_BY_NOM: Record<string, PosCatalogueCategorie["icon"]> = {
+  "Vêtements traités": "shirt",
+  "Linge de maison": "bed",
+  "Cuir et fourrure": "sparkles",
+  "Travail et uniformes": "briefcase",
+  "Textiles spéciaux": "trophy",
+  "Accessoires de mode": "link",
+  "Petits textiles & linge de table": "utensils",
+  "Maison et décoration": "sofa",
+  "Articles spéciaux": "package",
+};
+
+export async function getCatalogueCategories(): Promise<
+  PosCatalogueCategorie[]
+> {
+  return CATALOGUE_CATEGORIES.map((c) => ({
+    id: c.nom,
+    label: c.nom,
+    icon: CATALOGUE_ICON_BY_NOM[c.nom] ?? "package",
+  }));
 }
 
 /** Catégories POS (statiques — pourrait être dérivé de la config pressing). */
