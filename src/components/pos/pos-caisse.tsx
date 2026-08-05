@@ -140,6 +140,54 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
     loadArticles();
   }, [loadArticles]);
 
+  // ---------- Synchronisation auto avec le module « Tarifs par article » ----------
+  // Lorsque l'administrateur modifie un tarif dans /admin/tarifs (souvent dans
+  // un onglet séparé) et revient sur l'onglet POS, on recharge automatiquement
+  // les articles pour refléter les nouveaux prix. Cela garantit que le POS est
+  // toujours synchronisé avec la dernière configuration tarifaire, sans que
+  // l'utilisateur n'ait à cliquer manuellement sur le bouton refresh.
+  useEffect(() => {
+    let lastReload = Date.now();
+    const MIN_INTERVAL_MS = 5000; // anti-rafaîchissement excessif (throttle 5s)
+
+    const reloadIfStale = () => {
+      const now = Date.now();
+      if (now - lastReload < MIN_INTERVAL_MS) return;
+      lastReload = now;
+      // Recharge silencieusement (sans toast « mode démonstration » même si mock).
+      // On appelle getArticles() directement pour éviter le toast du loadArticles().
+      void (async () => {
+        try {
+          const [{ articles, source }, cats, catalogueCats] = await Promise.all([
+            getArticles(),
+            getCategories(),
+            getCatalogueCategories(),
+          ]);
+          const store = usePosStore.getState();
+          store.setArticles(articles, source);
+          setCategories(cats);
+          setCatalogueCategories(catalogueCats);
+        } catch {
+          /* silent — on garde les données existantes */
+        }
+      })();
+    };
+
+    // L'utilisateur revient sur l'onglet POS (après avoir edité les tarifs).
+    const onFocus = () => reloadIfStale();
+    // L'onglet redevient visible (cas multi-fenêtres).
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") reloadIfStale();
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+
   // ---------- Raccourcis clavier comptoir ----------
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

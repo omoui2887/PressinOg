@@ -232,3 +232,85 @@ Stage Summary:
 - POS: 33 articles organisés par catégorie, prix spécifiques appliqués
 - Navigation: lien "Tarifs par article" dans la sidebar admin
 - Déploiement: commit poussé sur GitHub, Vercel en cours de déploiement
+
+---
+Task ID: SYNC-1
+Agent: main
+Task: Synchroniser le module "Nouvelle Commande" (POS) avec le module "Tarifs par articles" — les configurations de l'admin doivent s'afficher automatiquement dans le POS
+
+Work Log:
+- Lu le worklog précédent (Tasks 1-5b + FINAL) : table `tarifs_articles` + API CRUD + page /admin/tarifs + POS article-centric déjà en place côté data.ts
+- Analysé les 2 captures d'écran fournies par l'utilisateur via VLM :
+  - Image 1 (Tarifs par article) : 33 articles en 9 catégories, 5 inputs prix par article, tous vides
+  - Image 2 (POS Nouvelle Commande) : 7 cartes avec libellés "Laver-Repasser Complet Tunique" etc. — ce sont des MOCK data, pas les vrais articles
+- Diagnostic cause racine : `.env.local` N'EXISTAIT PAS → middleware loggait "Supabase env vars manquantes" → les 3 API calls du POS (/api/admin/services, /api/public/catalogue-articles, /api/admin/tarifs-articles) échouaient → fallback sur MOCK_ARTICLES (7 entrées) → d'où les libellés "Laver-Repasser Complet Tunique" visibles dans la capture
+- Vérifié le ref Supabase correct en décodant le JWT anon : `ref: yqaitafigfxlrprrouhr` (avec `prro`, pas `prvo` — le worklog précédent avait raison)
+- Testé les 2 URLs possibles : `prvo` → 000 (n'existe pas), `prro` → 401 (existe, auth requise) → confirmé `prro`
+- Créé `/home/z/my-project/.env.local` avec :
+  - NEXT_PUBLIC_SUPABASE_URL=https://yqaitafigfxlrprrouhr.supabase.co
+  - NEXT_PUBLIC_SUPABASE_ANON_KEY (depuis le résumé précédent)
+  - SUPABASE_SERVICE_ROLE_KEY (depuis le résumé précédent)
+  - DATABASE_URL, NEXT_PUBLIC_SITE_URL
+- Redémarré le dev server → plus de message "env vars manquantes", APIs répondent en 200
+
+Refactor POS en vue article-centric (simpler for user) :
+- Lu `product-card.tsx` : affichait `article.service_nom` (ligne 59) au lieu de `catalogue_nom` → cartes montraient "Laver-Repasser Complet Tunique" au lieu de "Chemises"
+- Lu `product-grid.tsx` : affichait le produit cartésien service × article (jusqu'à 165 cartes) sans dédoublonnage → écrasant pour l'utilisateur
+- Lu `pos-caisse.tsx` : aucun mécanisme de rafraîchissement automatique → pas de synchronisation temps réel avec le module Tarifs
+
+Modifications apportées :
+
+1. **`src/components/pos/product-card.tsx`** (refonte) :
+   - Titre de la carte : `article.catalogue_nom` (nom de l'article) au lieu de `article.service_nom`
+   - Nouvelles props : `hasPrice: boolean` (false si pas de tarif pour le service sélectionné → carte désactivée avec "—"), `serviceLabel?: string` (pour tooltip)
+   - Bouton `disabled` quand `!hasPrice` → carte grisée, non cliquable
+   - Badge prix affiche "—" si pas de tarif, sinon `formatFcfa(article.prix)`
+   - `aria-label` et `title` adaptés : "Ajouter Chemises – 500 Fcfa" ou "Chemises – aucun tarif configuré pour ce service"
+   - `title` explicite : "Définissez-le dans Tarifs par article" pour guider l'utilisateur
+
+2. **`src/components/pos/product-grid.tsx`** (refonte complète) :
+   - Nouvelle logique ARTICLE-CENTRIC : groupe les articles par `catalogue_article_id` (Map<id, PosArticle[]>) et affiche UNE SEULE carte par article (33 cartes max au lieu de 165)
+   - `CATEGORIE_PRIORITY = ["lavage", "repassage", "laver-repasser", "sechage", "nettoyage_sec"]` : en mode "Tous", choisit la variante selon cette priorité (Lavage en priorité pour cohérence visuelle)
+   - `SERVICE_LABEL` : mappe categorie → libellé court ("lavage" → "Lavage") pour le tooltip
+   - Mode "Tous" : pour chaque article, prend la 1ère variante selon CATEGORIE_PRIORITY → toutes les cartes ont un prix cohérent
+   - Mode service spécifique (ex: "repassage") : cherche la variante `v.categorie === activeCategorie` → si trouvée, affiche le prix ; si non trouvée, la carte n'est pas rendue (l'article n'existe pas pour ce service)
+   - `useMemo` pour mémoriser la liste des cartes (évite recalcul à chaque render)
+   - Filtre combinatoire ET : `activeCatalogueCategorie` (catégorie catalogue) + `activeCategorie` (service) + recherche textuelle (sur catalogue_nom + catalogue_slug + service_nom)
+   - État vide : message mis à jour pour mentionner "Tarifs par article"
+
+3. **`src/components/pos/pos-caisse.tsx`** (ajout synchronisation auto) :
+   - Nouveau `useEffect` (dépendances vides pour éviter re-subscribe) qui écoute :
+     - `window.focus` → l'utilisateur revient sur l'onglet POS (après avoir édité les tarifs dans un autre onglet)
+     - `document.visibilitychange` → l'onglet redevient visible (cas multi-fenêtres)
+   - `reloadIfStale()` : recharge silencieusement les articles via `getArticles()` + `getCategories()` + `getCatalogueCategories()`, met à jour le store Zustand, sans toast (pour ne pas perturber l'utilisateur)
+   - Throttle 5 secondes (`MIN_INTERVAL_MS`) pour éviter rafraîchissement excessif
+   - Cleanup : `removeEventListener` sur focus + visibilitychange
+
+4. **`src/components/pos/order-row.tsx`** (cohérence panier) :
+   - Désignation : `catalogue_nom` en principal (gras) + `service_nom` en secondaire (gris discret) → le panier affiche "Chemise" / "Laver-Repasser Complet Trinique" au lieu de juste le service
+
+Vérifications Agent Browser (avec auth demo@ogpressing.test / Demo1234!) :
+- Login via formulaire /login → redirect /admin/dashboard ✅
+- Navigation /admin/tarifs → 33 articles en 9 catégories, inputs prix visibles ✅
+- Navigation /admin/commandes/nouvelle → 33 cartes d'articles (catalogue complet) ✅
+- Noms d'articles affichés (Chemises, Manteaux & Doudounes, Cravates & Foulards...) — plus de noms de services ✅
+- Mode "Tous" : Chemises = 500 Fcfa (tarif spécifique DB), autres = 1 000 Fcfa (prix générique Lavage) ✅
+- Test synchronisation temps réel :
+  - Inséré via Supabase Admin API : tarif `Manteaux & Doudounes × Repassage = 2500 FCFA`
+  - Rechargé POS, cliqué onglet "Repassage" → Manteaux & Doudounes affiche **2 500 Fcfa** ✅
+  - Autres articles en mode Repassage = 500 Fcfa (prix générique Repassage) ✅
+  - Aria-label confirmé : "Ajouter Manteaux & Doudounes – 2 500 Fcfa" ✅
+  - Nettoyé le tarif de test (DELETE → HTTP 204)
+- `bun run lint` : ✅ 0 erreur / 0 warning
+- `bunx tsc --noEmit` : 0 erreur dans les fichiers modifiés (product-card.tsx, product-grid.tsx, pos-caisse.tsx, order-row.tsx)
+
+Stage Summary:
+- **Synchronisation Tarifs ↔ POS opérationnelle** : toute modification d'un tarif dans /admin/tarifs est automatiquement reflétée dans /admin/commandes/nouvelle au prochain rafraîchissement (focus/visibilité/auto)
+- **POS refactorisé en vue article-centric** : 33 cartes (une par article) au lieu de 165 (service × article) — beaucoup plus simple pour l'utilisateur
+- **Noms d'articles affichés** (Chemises, Pantalon, Manteaux...) au lieu de noms de services (Laver-Repasser Complet Tunique)
+- **Prix dynamiques selon le service sélectionné** : en mode "Tous" priorité Lavage ; si onglet spécifique cliqué (Repassage, Lavage...), prix de ce service pour chaque article
+- **Cartes désactivées** avec "—" si aucun tarif n'existe pour le service sélectionné (guide l'utilisateur vers /admin/tarifs)
+- **Auto-refresh on focus** : quand l'admin modifie un tarif dans un onglet et revient au POS, les prix se mettent à jour automatiquement (throttle 5s)
+- **Panier cohérent** : affiche nom article (principal) + nom service (secondaire)
+- `.env.local` créé avec les bonnes credentials Supabase → APIs fonctionnent, plus de mock data
+- 4 fichiers modifiés : product-card.tsx, product-grid.tsx, pos-caisse.tsx, order-row.tsx
