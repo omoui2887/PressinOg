@@ -204,3 +204,31 @@ Stage Summary:
 - POST /api/admin/commandes corrigé : envoie le vrai UUID `catalogue_article_id` (au lieu du slug qui cassait la validation FK côté API).
 - Aucune nouvelle primitive UI créée — réutilise `.pos-cat-btn` (déjà défini dans globals.css) et les variables CSS `--pos-*` existantes pour un rendu visuel homogène avec la CategoryBar.
 - Fichiers modifiés : 6 (types.ts, mock-data.ts, data.ts, catalogue-category-bar.tsx [nouveau], product-grid.tsx, pos-caisse.tsx).
+
+---
+Task ID: FINAL
+Agent: main
+Task: Vérification finale et déploiement
+
+Work Log:
+- Corrigé l'erreur TypeScript dans /api/admin/tarifs-articles (catalogue_article join retourné en array)
+- Corrigé l'erreur de tri PostgREST (ORDER BY sur colonne jointe non supporté → tri côté application)
+- Créé 5 services pour le pressing démo (Lavage 1000, Repassage 500, Nettoyage à sec 2000, Détachage 1500, Blanchisserie 800)
+- Vérification Agent Browser:
+  - Page /admin/tarifs: 33 articles affichés, groupés par 9 catégories, CRUD des prix fonctionnel
+  - Tarif Chemise+Lavage=500 FCFA créé et sauvegardé en DB
+  - POS /admin/commandes/nouvelle: 33 articles réels affichés, filtrage par catégorie fonctionnel
+  - Prix spécifique (500 FCFA) appliqué pour Chemise+Lavage au lieu du prix service (1000 FCFA)
+- Lint: 0 erreurs, 0 warnings
+- TypeScript: 0 erreurs dans les nouveaux fichiers
+- Commit 3bc8f99 poussé vers GitHub (beac9aa..3bc8f99)
+- Déploiement Vercel précédent (beac9aa2) en succès
+
+Stage Summary:
+- Fonctionnalité complète: tarifs par article + POS article-centrique avec catégories
+- Base de données: table tarifs_articles opérationnelle sur Supabase cloud
+- API: 4 endpoints CRUD avec auth manager + RLS
+- Page /admin/tarifs: gestion des prix par article × type de service (manager uniquement)
+- POS: 33 articles organisés par catégorie, prix spécifiques appliqués
+- Navigation: lien "Tarifs par article" dans la sidebar admin
+- Déploiement: commit poussé sur GitHub, Vercel en cours de déploiement
