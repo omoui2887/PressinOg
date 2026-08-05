@@ -15,13 +15,14 @@ import type { PosArticle, PosCartLine, PosCategorie, PosClient } from "./types";
 import { iconeUrlForSlug } from "@/lib/catalogue/catalogue-articles";
 import { localId } from "./calc";
 
-/** Catégories POS (barre du bas). Toujours 4 + "Tous". */
+/** Catégories POS — 6 services possibles (Lavage, Repassage, Laver-Repasser, Séchage, Nettoyage à sec, Détachage). */
 export const POS_CATEGORIES: PosCategorie[] = [
   { id: "lavage", label: "Lavage", icon: "washing" },
   { id: "repassage", label: "Repassage", icon: "iron" },
   { id: "laver-repasser", label: "Laver-Repasser", icon: "shirt" },
   { id: "sechage", label: "Séchage", icon: "sun" },
   { id: "nettoyage_sec", label: "Nettoyage à sec", icon: "sparkles" },
+  { id: "detachage", label: "Détachage", icon: "spray" },
 ];
 
 /** Slug du catalogue par défaut (pour associer un article mock à une illustration). */
