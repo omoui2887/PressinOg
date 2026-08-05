@@ -51,7 +51,6 @@ import {
 import { usePosStore } from "@/lib/pos/store";
 import {
   getArticles,
-  getCategories,
   getCatalogueCategories,
   createCommande,
 } from "@/lib/pos/data";
@@ -60,7 +59,6 @@ import type {
   PosArticle,
   PosCartLine,
   PosCatalogueCategorie,
-  PosCategorie,
   PosClient,
   PosCommandeCree,
 } from "@/lib/pos/types";
@@ -70,7 +68,7 @@ import { PosHeader } from "./pos-header";
 import { ArticleSearchBar } from "./article-search-bar";
 import { CatalogueCategoryBar } from "./catalogue-category-bar";
 import { ProductGrid } from "./product-grid";
-import { CategoryBar } from "./category-bar";
+import { ArticleActionsDialog } from "./article-actions-dialog";
 import { OrderTable } from "./order-table";
 import { CustomerPanel } from "./customer-panel";
 import { DatePanel } from "./date-panel";
@@ -91,7 +89,6 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
   const clientSearchRef = useRef<HTMLInputElement | null>(null);
 
   // États locaux UI (ne survivent pas nécessairement — mais le panier oui).
-  const [categories, setCategories] = useState<PosCategorie[]>([]);
   // 9 catégories du catalogue global (Vêtements traités, Linge de maison, …).
   const [catalogueCategories, setCatalogueCategories] = useState<
     PosCatalogueCategorie[]
@@ -100,6 +97,16 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
   const [activeCatalogueCategorie, setActiveCatalogueCategorie] = useState<
     string | "tous"
   >("tous");
+  // État du dialogue d'actions (ouvert au clic sur un article du catalogue).
+  // L'article représentatif sert pour l'en-tête (image + nom), les variants
+  // correspondent aux différentes actions possibles (Repassage, Laver-Repasser,
+  // Séchage, Nettoyage à sec, Détachage, etc.) avec leur prix spécifique.
+  const [actionsDialogArticle, setActionsDialogArticle] =
+    useState<PosArticle | null>(null);
+  const [actionsDialogVariants, setActionsDialogVariants] = useState<
+    PosArticle[]
+  >([]);
+  const [actionsDialogOpen, setActionsDialogOpen] = useState(false);
   const [confirmAnnuler, setConfirmAnnuler] = useState(false);
   const [newClientOpen, setNewClientOpen] = useState(false);
   const [newClient, setNewClient] = useState({
@@ -117,13 +124,11 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
   const loadArticles = useCallback(async () => {
     const store = usePosStore.getState();
     store.setLoadingArticles(true);
-    const [{ articles, source }, cats, catalogueCats] = await Promise.all([
+    const [{ articles, source }, catalogueCats] = await Promise.all([
       getArticles(),
-      getCategories(),
       getCatalogueCategories(),
     ]);
     store.setArticles(articles, source);
-    setCategories(cats);
     setCatalogueCategories(catalogueCats);
     if (source === "mock") {
       toast({
@@ -133,6 +138,32 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
       });
     }
   }, [toast]);
+
+  // ---------- Ouvre le dialogue de choix d'action ----------
+  // Appelé quand l'utilisateur clique sur une carte article du catalogue.
+  // Ouvre le dialogue qui liste toutes les actions disponibles pour cet
+  // article, avec leur prix (tarif spécifique ou prix générique du service).
+  const handleOpenActions = useCallback(
+    (article: PosArticle, variants: PosArticle[]) => {
+      setActionsDialogArticle(article);
+      setActionsDialogVariants(variants);
+      setActionsDialogOpen(true);
+    },
+    []
+  );
+
+  // ---------- Choix d'une action dans le dialogue ----------
+  // Ajoute la variante sélectionnée (article × service spécifique) au panier
+  // et ferme le dialogue. Le store deduplique par article.id (clé composite
+  // `${service_id}::${slug}`), donc cliquer 2× sur la même action incrémente
+  // la quantité de la ligne existante.
+  const handlePickAction = useCallback(
+    (variant: PosArticle) => {
+      s.addArticle(variant);
+      setActionsDialogOpen(false);
+    },
+    [s]
+  );
 
   useEffect(() => {
     // Initialise les valeurs dépendant du temps côté client (anti mismatch SSR).
@@ -158,14 +189,12 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
       // On appelle getArticles() directement pour éviter le toast du loadArticles().
       void (async () => {
         try {
-          const [{ articles, source }, cats, catalogueCats] = await Promise.all([
+          const [{ articles, source }, catalogueCats] = await Promise.all([
             getArticles(),
-            getCategories(),
             getCatalogueCategories(),
           ]);
           const store = usePosStore.getState();
           store.setArticles(articles, source);
-          setCategories(cats);
           setCatalogueCategories(catalogueCats);
         } catch {
           /* silent — on garde les données existantes */
@@ -464,11 +493,13 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
           </div>
           {/*
             Barre de filtre par catégorie de catalogue (Vêtements, Linge, …).
-            Indépendante de la <CategoryBar /> ci-dessous (qui filtre par type
-            de service) : les deux dimensions se combinent (ET logique).
-            Toujours rendue (comme la CategoryBar) : tant que les catégories
-            ne sont pas chargées, seul "Tous" est visible — pas de saut de
-            layout lors de l'hydratation.
+            Toujours rendue : tant que les catégories ne sont pas chargées,
+            seul "Tous" est visible — pas de saut de layout lors de l'hydratation.
+
+            Le choix de l'action (Repassage, Laver-Repasser, Séchage, etc.) se
+            fait désormais via le dialogue <ArticleActionsDialog /> qui s'ouvre
+            au clic sur une carte — la barre de filtre par type de service a été
+            retirée pour simplifier l'UX.
           */}
           <CatalogueCategoryBar
             categories={catalogueCategories}
@@ -478,16 +509,10 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
           <ProductGrid
             articles={s.articles}
             query={s.searchQuery}
-            activeCategorie={s.activeCategorie}
             activeCatalogueCategorie={activeCatalogueCategorie}
             quantiteParArticle={quantiteParArticle}
             flashId={s.flashId}
-            onAdd={(a: PosArticle) => s.addArticle(a)}
-          />
-          <CategoryBar
-            categories={categories}
-            active={s.activeCategorie}
-            onSelect={s.setActiveCategorie}
+            onOpenActions={handleOpenActions}
           />
         </section>
 
@@ -675,6 +700,15 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ===== Dialogue de choix d'action (clic sur un article du catalogue) ===== */}
+      <ArticleActionsDialog
+        article={actionsDialogArticle}
+        variants={actionsDialogVariants}
+        open={actionsDialogOpen}
+        onPick={handlePickAction}
+        onClose={() => setActionsDialogOpen(false)}
+      />
     </div>
   );
 }

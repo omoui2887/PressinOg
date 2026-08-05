@@ -1,61 +1,50 @@
 /**
- * <ProductCard /> — Carte d'article du catalogue POS (vue article-centric).
+ * <ProductCard /> — Carte d'article du catalogue POS (vue article-centric, sans prix).
  *
  * Affiche UNE carte par article du catalogue (dédupliquée par catalogue_article_id).
- * L'image + le nom de l'article + le prix correspondant au service actuellement
- * sélectionné dans la <CategoryBar /> du bas (ou le 1er service disponible en
- * mode « Tous »). Un petit badge indique le service associé au prix affiché,
- * pour que l'utilisateur sache toujours ce qu'il commande.
+ * La carte ne contient PLUS de prix : un simple clic ouvre une boîte de dialogue
+ * (cf. <ArticleActionsDialog />) qui liste toutes les actions possibles pour cet
+ * article (Repassage, Laver-Repasser, Séchage, Nettoyage à sec, Détachage…)
+ * avec le prix correspondant à chacune. Les prix sont ceux configurés par
+ * l'administrateur dans le module « Tarifs par articles » (avec fallback sur
+ * le prix générique du service).
  *
- * Si aucun tarif n'existe pour cet article × le service sélectionné, la carte
- * est désactivée (grisée) et affiche « — » au lieu d'un prix.
+ * Un compteur discret en haut à droite indique la quantité déjà au panier pour
+ * cet article (toutes actions confondues).
  */
 "use client";
 import Image from "next/image";
 import { memo } from "react";
-import { Package } from "lucide-react";
 import type { PosArticle } from "@/lib/pos/types";
-import { formatFcfa } from "@/lib/pos/format";
 
 interface ProductCardProps {
+  /** Article représentatif (pour l'image et le nom — l'id n'est pas utilisé ici). */
   article: PosArticle;
-  /** Indique si un tarif existe pour cet article × le service sélectionné. */
-  hasPrice: boolean;
-  /** Libellé court du service associé au prix affiché (ex : « Lavage »). */
-  serviceLabel?: string;
+  /** Nombre d'unités de cet article déjà au panier (toutes actions confondues). */
   quantiteDansPanier: number;
+  /** Animation « flash » brève après ajout au panier. */
   flash: boolean;
-  onAdd: () => void;
+  /** Ouvre la boîte de dialogue de choix de l'action. */
+  onOpenActions: () => void;
 }
 
 function ProductCardImpl({
   article,
-  hasPrice,
-  serviceLabel,
   quantiteDansPanier,
   flash,
-  onAdd,
+  onOpenActions,
 }: ProductCardProps) {
   return (
     <button
       type="button"
-      onClick={hasPrice ? onAdd : undefined}
-      disabled={!hasPrice}
+      onClick={onOpenActions}
       data-active={quantiteDansPanier > 0}
       data-flash={flash}
-      className="pos-product-card group relative flex flex-col overflow-hidden rounded-md text-left disabled:cursor-not-allowed disabled:opacity-50"
-      aria-label={
-        hasPrice
-          ? `Ajouter ${article.catalogue_nom} – ${formatFcfa(article.prix)}`
-          : `${article.catalogue_nom} – aucun tarif pour ce service`
-      }
-      title={
-        hasPrice
-          ? `${article.catalogue_nom} – ${serviceLabel ?? "Service"} – ${formatFcfa(article.prix)}`
-          : `${article.catalogue_nom} – aucun tarif configuré pour ce service. Définissez-le dans Tarifs par article.`
-      }
+      className="pos-product-card group relative flex flex-col overflow-hidden rounded-md text-left"
+      aria-label={`Choisir une action pour ${article.catalogue_nom}`}
+      title={`Cliquez pour choisir une action (Repassage, Lavage, etc.) pour ${article.catalogue_nom}`}
     >
-      {/* Illustration */}
+      {/* Illustration — plus de bandeau prix en bas */}
       <div className="relative aspect-[4/3] w-full bg-[var(--pos-primary-light)]">
         <Image
           src={article.icone_url}
@@ -65,11 +54,7 @@ function ProductCardImpl({
           className="object-contain p-1.5"
           loading="eager"
         />
-        {/* Badge prix rouge en bas de l'image (ou « — » si pas de tarif) */}
-        <span className="pos-price-badge absolute bottom-0 left-0 right-0 block py-0.5 text-center text-[11px] leading-tight">
-          {hasPrice ? formatFcfa(article.prix) : "—"}
-        </span>
-        {/* Compteur discret si déjà au panier */}
+        {/* Compteur discret si déjà au panier (toutes actions confondues) */}
         {quantiteDansPanier > 0 && (
           <span className="absolute right-1 top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--pos-primary)] px-1 text-[11px] font-bold text-white shadow pos-mono">
             {quantiteDansPanier}
@@ -78,7 +63,6 @@ function ProductCardImpl({
       </div>
       {/* Nom de l'article (catalogue_nom) — la source de vérité visuelle */}
       <div className="flex items-center justify-center gap-1 px-1 py-1.5 text-center">
-        <Package className="hidden h-3 w-3 shrink-0 text-[var(--pos-text-muted)]" />
         <span className="pos-product-name line-clamp-2 text-[11px] font-medium leading-tight">
           {article.catalogue_nom}
         </span>

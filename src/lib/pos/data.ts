@@ -30,7 +30,17 @@ import {
   iconeUrlForSlug,
 } from "@/lib/catalogue/catalogue-articles";
 
-/** Mapping type de service DB → catégorie POS. */
+/**
+ * Mapping type de service DB → catégorie POS.
+ *
+ * Détecte d'abord les cas ambigus via le nom du service (ex : "Laver-Repasser"
+ * contient à la fois "laver" et "repasser" → catégorie "laver-repasser",
+ * même si le type DB est "lavage"). Sinon, mappe directement le type DB.
+ *
+ * Le type "detachage" est maintenant mappé à sa propre catégorie (et non
+ * fusionné avec "lavage") afin que le dialogue d'action puisse l'afficher
+ * distinctement avec son prix spécifique.
+ */
 function typeToCategorie(
   type: string,
   nom: string
@@ -41,6 +51,7 @@ function typeToCategorie(
     return "repassage";
   }
   if (n.includes("séchage") || n.includes("sechage")) return "sechage";
+  if (n.includes("detachage") || n.includes("détachage")) return "detachage";
   switch (type) {
     case "lavage":
       return "lavage";
@@ -51,7 +62,7 @@ function typeToCategorie(
     case "blanchisserie":
       return "lavage";
     case "detachage":
-      return "lavage";
+      return "detachage";
     default:
       return "lavage";
   }

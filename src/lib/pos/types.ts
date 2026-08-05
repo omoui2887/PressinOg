@@ -13,14 +13,23 @@
  *   - Dates JJ/MM/AAAA, heures HH:mm.
  */
 
-/** Catégorie de service POS (barre du bas du panneau gauche). */
+/**
+ * Catégorie de service POS (détermine l'ordre d'affichage dans le dialogue
+ * d'action lorsqu'on clique sur un article du catalogue).
+ *
+ * L'utilisateur final choisit l'action (Repassage, Laver-Repasser, Séchage,
+ * Nettoyage à sec, Détachage) via une boîte de dialogue — cette enum sert
+ * principalement à ordonner les actions dans le dialogue selon la préférence
+ * métier (voir ACTION_PRIORITY dans article-actions-dialog.tsx).
+ */
 export type PosCategorieId =
   | "tous"
   | "lavage"
   | "repassage"
   | "laver-repasser"
   | "sechage"
-  | "nettoyage_sec";
+  | "nettoyage_sec"
+  | "detachage";
 
 /** Article/prestation affiché dans la grille du catalogue. */
 export interface PosArticle {
@@ -58,7 +67,7 @@ export interface PosCategorie {
   id: Exclude<PosCategorieId, "tous">;
   label: string;
   /** Slug lucide-react → résolu côté composant (évite d'importer lucide ici). */
-  icon: "washing" | "iron" | "shirt" | "sun" | "sparkles";
+  icon: "washing" | "iron" | "shirt" | "sun" | "sparkles" | "spray";
 }
 
 /**

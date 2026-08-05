@@ -1,53 +1,40 @@
 /**
- * <ProductGrid /> — Grille filtrée des articles du catalogue (vue article-centric).
+ * <ProductGrid /> — Grille filtrée des articles du catalogue (vue article-centric, sans prix).
  * =================================================================================
  *
- * AFFICHE UNE SEULE CARTE PAR ARTICLE DU CATALOGUE (33 max), au lieu du produit
- * cartésien service × article (165 cartes). Le prix affiché sur chaque carte
- * correspond au tarif de l'article pour le service actuellement sélectionné
- * dans la <CategoryBar /> du bas :
+ * AFFICHE UNE SEULE CARTE PAR ARTICLE DU CATALOGUE (33 max). Aucun prix n'est
+ * affiché sur la carte : un clic ouvre la boîte de dialogue <ArticleActionsDialog />
+ * qui liste les actions possibles (Repassage, Laver-Repasser, Séchage, Nettoyage
+ * à sec, Détachage, etc.) avec leur prix — prix configurés par l'admin dans le
+ * module « Tarifs par articles ».
  *
- *   - Si `activeCategorie === "tous"` : on choisit la 1ère variante disponible
- *     pour chaque article (priorité : lavage → repassage → laver-repasser →
- *     séchage → nettoyage à sec), afin qu'une carte ait toujours un prix
- *     pertinent à afficher en mode « Tous ».
- *
- *   - Si `activeCategorie === "lavage"` (ou autre service spécifique) : on
- *     cherche la variante dont `article.categorie === activeCategorie`. Si
- *     aucune variante ne correspond (le pressing n'offre pas ce service pour
- *     cet article), la carte est affichée en état désactivé avec « — » comme
- *     prix, pour que l'utilisateur comprenne qu'il n'y a pas de tarif pour
- *     ce couple (article × service).
+ * FILTRES (ET logique) :
+ *   - `activeCatalogueCategorie` (catégorie du catalogue : Vêtements, Linge, …)
+ *   - recherche textuelle (sur catalogue_nom + catalogue_slug + service_nom)
  *
  * SYNCHRONISATION AVEC LE MODULE « TARIFS PAR ARTICLE » :
- *   Les prix affichés sont ceux retournés par /api/admin/tarifs-articles
- *   (tarifs spécifiques par article × type_service) avec fallback sur le prix
- *   générique du service. Lorsque l'administrateur modifie un tarif dans le
- *   module /admin/tarifs, la prochaine fois que le POS recharge les données
- *   (au focus de la fenêtre, au clic sur le bouton refresh, ou à la navigation),
- *   le nouveau prix est automatiquement reflété ici.
- *
- * Filtres combinés (ET logique) :
- *   - `activeCatalogueCategorie` (catégorie du catalogue : Vêtements, Linge, …)
- *   - `activeCategorie`         (type de service : lavage, repassage, …)
- *   - recherche textuelle       (sur catalogue_nom + catalogue_slug)
+ *   Les variantes (une par service disponible pour l'article) sont passées au
+ *   parent via `onOpenActions(article, variants)`. Les prix de chaque variante
+ *   proviennent déjà de /api/admin/tarifs-articles (avec fallback sur service.prix)
+ *   côté data.ts. Lorsque l'admin modifie un tarif, le prochain rafraîchissement
+ *   du POS (focus, bouton refresh, navigation) reflète automatiquement le changement.
  */
 "use client";
 import { memo, useMemo } from "react";
 import { SearchX } from "lucide-react";
-import type { PosArticle, PosCategorieId } from "@/lib/pos/types";
+import type { PosArticle } from "@/lib/pos/types";
 import { ProductCard } from "./product-card";
 
 interface ProductGridProps {
   articles: PosArticle[];
   query: string;
-  /** Filtre par type de service (dimension 1). */
-  activeCategorie: PosCategorieId;
-  /** Filtre par catégorie du catalogue (dimension 2). */
+  /** Filtre par catégorie du catalogue (Vêtements, Linge, …). */
   activeCatalogueCategorie: string | "tous";
+  /** Quantité par article (toutes actions confondues) — pour le badge compteur. */
   quantiteParArticle: Record<string, number>;
   flashId: string | null;
-  onAdd: (article: PosArticle) => void;
+  /** Appelé quand l'utilisateur clique sur une carte (ouvre le dialogue d'action). */
+  onOpenActions: (article: PosArticle, variants: PosArticle[]) => void;
 }
 
 /** Normalise une chaîne (minuscules, sans accents). */
@@ -58,64 +45,31 @@ function normalize(s: string): string {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-/**
- * Priorité d'affichage en mode « Tous » : on préfère toujours montrer le
- * tarif Lavage (le plus courant), puis Repassage, puis Laver-Repasser, etc.
- * Cela donne une cohérence visuelle : toutes les cartes affichent un prix
- * Lavage si disponible, plutôt qu'un mélange aléatoire de services.
- */
-const CATEGORIE_PRIORITY: Exclude<PosCategorieId, "tous">[] = [
-  "lavage",
-  "repassage",
-  "laver-repasser",
-  "sechage",
-  "nettoyage_sec",
-];
-
-/** Libellé court d'un service pour le tooltip / aria-label de la carte. */
-const SERVICE_LABEL: Record<Exclude<PosCategorieId, "tous">, string> = {
-  lavage: "Lavage",
-  repassage: "Repassage",
-  "laver-repasser": "Laver-Repasser",
-  sechage: "Séchage",
-  nettoyage_sec: "Nettoyage à sec",
-};
-
 interface ResolvedCard {
-  /** Article choisi pour l'affichage (variante correspondant au service sélectionné). */
+  /** Article représentatif (1ère variante) pour l'image et le nom. */
   article: PosArticle;
-  /** true si un prix existe (variante trouvée), false sinon (carte désactivée). */
-  hasPrice: boolean;
-  /** Libellé court du service associé au prix affiché. */
-  serviceLabel: string;
+  /** Toutes les variantes (une par service disponible pour cet article). */
+  variants: PosArticle[];
+  /** Quantité totale au panier pour cet article (toutes actions confondues). */
+  quantite: number;
 }
 
 function ProductGridImpl({
   articles,
   query,
-  activeCategorie,
   activeCatalogueCategorie,
   quantiteParArticle,
   flashId,
-  onAdd,
+  onOpenActions,
 }: ProductGridProps) {
   const q = normalize(query.trim());
 
   /**
-   * Construit la liste des cartes à afficher : une par article unique.
-   *
-   * Étapes :
-   *   1. Filtrer par catégorie de catalogue + recherche textuelle
-   *      (on garde toutes les variantes service × article qui matchent).
-   *   2. Grouper par `catalogue_article_id` (Map<id, PosArticle[]>).
-   *   3. Pour chaque groupe, choisir la variante à afficher selon
-   *      `activeCategorie` :
-   *      - "tous" → 1ère variante selon la priorité CATEGORIE_PRIORITY
-   *      - "lavage" (ou autre) → variante dont `categorie === activeCategorie`,
-   *        ou aucune (carte désactivée avec « — »).
+   * Construit la liste des cartes à afficher : une par article unique
+   * (dédoublonné par catalogue_article_id), avec toutes ses variantes.
    */
   const cards = useMemo<ResolvedCard[]>(() => {
-    // Étape 1 : filtrer
+    // Étape 1 : filtrer par catégorie + recherche textuelle
     const filtered = articles.filter((a) => {
       if (
         activeCatalogueCategorie !== "tous" &&
@@ -131,7 +85,7 @@ function ProductGridImpl({
       );
     });
 
-    // Étape 2 : grouper par catalogue_article_id
+    // Étape 2 : grouper par catalogue_article_id → Map<id, PosArticle[]>
     const grouped = new Map<string, PosArticle[]>();
     for (const a of filtered) {
       const key = a.catalogue_article_id;
@@ -144,40 +98,23 @@ function ProductGridImpl({
       bucket.push(a);
     }
 
-    // Étape 3 : choisir la variante par article
+    // Étape 3 : pour chaque groupe, calculer la quantité totale au panier
+    // (somme des quantités de toutes les variantes de cet article).
     const out: ResolvedCard[] = [];
     for (const [, variants] of grouped) {
       if (!variants.length) continue;
-      let chosen: PosArticle | undefined;
-      let label: string;
-
-      if (activeCategorie === "tous") {
-        // Mode « Tous » : priorité lavage > repassage > laver-repasser > …
-        for (const cat of CATEGORIE_PRIORITY) {
-          chosen = variants.find((v) => v.categorie === cat);
-          if (chosen) break;
-        }
-        if (!chosen) chosen = variants[0];
-        label = SERVICE_LABEL[chosen.categorie] ?? chosen.service_nom;
-      } else {
-        // Mode service spécifique : cherche la variante correspondante
-        chosen = variants.find((v) => v.categorie === activeCategorie);
-        label = SERVICE_LABEL[activeCategorie] ?? "Service";
-      }
-
-      if (chosen) {
-        out.push({
-          article: chosen,
-          hasPrice: activeCategorie === "tous" || !!chosen,
-          serviceLabel: label,
-        });
-      }
-      // Si `chosen` est undefined (service spécifique sans variante),
-      // on n'affiche pas la carte — l'utilisateur ne peut pas commander
-      // un service qui n'existe pas pour cet article.
+      const quantite = variants.reduce(
+        (sum, v) => sum + (quantiteParArticle[v.id] ?? 0),
+        0
+      );
+      out.push({
+        article: variants[0],
+        variants,
+        quantite,
+      });
     }
     return out;
-  }, [articles, q, activeCategorie, activeCatalogueCategorie]);
+  }, [articles, q, activeCatalogueCategorie, quantiteParArticle]);
 
   if (!cards.length) {
     return (
@@ -198,13 +135,9 @@ function ProductGridImpl({
         <ProductCard
           key={c.article.catalogue_article_id}
           article={c.article}
-          hasPrice={c.hasPrice}
-          serviceLabel={c.serviceLabel}
-          quantiteDansPanier={
-            quantiteParArticle[c.article.id] ?? 0
-          }
+          quantiteDansPanier={c.quantite}
           flash={flashId === c.article.id}
-          onAdd={() => onAdd(c.article)}
+          onOpenActions={() => onOpenActions(c.article, c.variants)}
         />
       ))}
     </div>

@@ -10,6 +10,7 @@ import {
   Sun,
   Sparkles,
   Wind,
+  SprayCan,
   type LucideIcon,
 } from "lucide-react";
 import type { PosCategorie } from "@/lib/pos/types";
@@ -20,6 +21,7 @@ const ICONS: Record<PosCategorie["icon"], LucideIcon> = {
   shirt: Shirt,
   sun: Sun,
   sparkles: Sparkles,
+  spray: SprayCan,
 };
 
 interface CategoryButtonProps {
