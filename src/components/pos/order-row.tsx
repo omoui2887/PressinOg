@@ -76,14 +76,18 @@ function OrderRowImpl({
         </div>
       </td>
 
-      {/* Désignation */}
+      {/* Désignation : nom de l'article (principal) + service (secondaire) */}
       <td className="px-2 py-1.5 align-middle">
         <div className="flex flex-col gap-0.5">
           <div className="flex items-center gap-1">
             <span className="line-clamp-2 text-[12px] font-medium leading-tight text-[var(--pos-text)]">
-              {line.article.service_nom}
+              {line.article.catalogue_nom}
             </span>
           </div>
+          {/* Service associé (secondaire, discret) */}
+          <span className="text-[10px] leading-tight text-[var(--pos-text-muted)]">
+            {line.article.service_nom}
+          </span>
           {/* Express toggle + note */}
           <div className="flex items-center gap-1.5">
             <button
