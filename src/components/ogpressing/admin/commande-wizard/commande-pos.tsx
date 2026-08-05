@@ -56,6 +56,7 @@ import {
   UserPlus,
   UserX,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -88,6 +89,10 @@ import type {
   RemiseType,
 } from "@/lib/types/database.types";
 import type { CatalogueArticle } from "@/lib/catalogue/catalogue-articles";
+import {
+  CATALOGUE_CATEGORIES,
+  getIconForCategorie,
+} from "@/lib/catalogue/catalogue-articles";
 import {
   TYPES_SERVICES,
   typeServiceIcon,
@@ -285,15 +290,35 @@ function ImpayeBadge({ solde }: { solde: number }) {
 interface CatalogueSectionProps {
   services: ServiceItem[];
   servicesLoading: boolean;
-  onAddArticle: (article: CatalogueArticle, service: ServiceItem) => void;
+  onAddArticle: (article: CatalogueArticle, service: ServiceItem, prixUnitaire?: number) => void;
+}
+
+/**
+ * Lookup des tarifs spécifiques par article × type de service.
+ * `tarifParArticle[articleId][serviceType] = prix` (en FCFA).
+ * Construit depuis `GET /api/admin/tarifs-articles` (actifs seulement).
+ */
+type TarifParArticle = Record<string, Record<string, number>>;
+
+/** Catégorie disponible dans le catalogue avec son compte d'articles. */
+interface CategorieDispo {
+  nom: string;
+  icon: LucideIcon;
+  count: number;
 }
 
 function CatalogueSection({ services, servicesLoading, onAddArticle }: CatalogueSectionProps) {
   const [catalogue, setCatalogue] = useState<CatalogueArticle[]>([]);
   const [catalogueLoading, setCatalogueLoading] = useState(true);
+  const [tarifParArticle, setTarifParArticle] = useState<TarifParArticle>({});
   const [searchQuery, setSearchQuery] = useState("");
   const [activeServiceType, setActiveServiceType] = useState<string>(TAB_TOUS);
+  const [activeCategorie, setActiveCategorie] = useState<string>(TAB_TOUS);
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
+    () => new Set<string>()
+  );
 
+  // --- Chargement du catalogue global (actifs seulement) ---
   useEffect(() => {
     let cancelled = false;
     fetch("/api/public/catalogue-articles", { cache: "no-store" })
@@ -316,17 +341,179 @@ function CatalogueSection({ services, servicesLoading, onAddArticle }: Catalogue
     };
   }, []);
 
+  // --- Chargement des tarifs spécifiques par article (actifs seulement) ---
+  // Les tarifs sont un ENRICHISSEMENT : on ne bloque pas l'affichage du
+  // catalogue dessus. Tant qu'ils ne sont pas chargés, on utilise le prix
+  // générique du service (currentService.prix).
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/tarifs-articles", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.success && Array.isArray(data.data)) {
+          const map: TarifParArticle = {};
+          for (const t of data.data) {
+            if (!t || !t.catalogue_article_id || !t.type_service) continue;
+            if (typeof t.prix !== "number" || !Number.isFinite(t.prix)) continue;
+            if (!map[t.catalogue_article_id]) {
+              map[t.catalogue_article_id] = {};
+            }
+            map[t.catalogue_article_id][t.type_service] = t.prix;
+          }
+          setTarifParArticle(map);
+        }
+      })
+      .catch(() => {
+        // Erreur d'auth/réseau → on garde le fallback prix générique.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const currentService = useMemo<ServiceItem | null>(() => {
     if (services.length === 0) return null;
     if (activeServiceType === TAB_TOUS) return services[0];
     return services.find((s) => s.type === activeServiceType) ?? services[0];
   }, [services, activeServiceType]);
 
+  // --- Filtre par recherche + catégorie ---
   const filteredCatalogue = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return catalogue;
-    return catalogue.filter((a) => a.nom.toLowerCase().includes(q));
-  }, [catalogue, searchQuery]);
+    return catalogue.filter((a) => {
+      if (q && !a.nom.toLowerCase().includes(q)) return false;
+      if (activeCategorie !== TAB_TOUS && a.categorie !== activeCategorie) return false;
+      return true;
+    });
+  }, [catalogue, searchQuery, activeCategorie]);
+
+  // --- Liste des catégories présentes dans le catalogue (pour les onglets) ---
+  // On garde l'ordre déclaré dans CATALOGUE_CATEGORIES, puis on ajoute à la
+  // fin toute catégorie personnalisée (ajoutée par le Super Admin) avec
+  // l'icône générique `Package`.
+  const availableCategories = useMemo<CategorieDispo[]>(() => {
+    const cats: CategorieDispo[] = [];
+    const seen = new Set<string>();
+    for (const cat of CATALOGUE_CATEGORIES) {
+      const count = catalogue.filter((a) => a.categorie === cat.nom).length;
+      if (count > 0) {
+        cats.push({ nom: cat.nom, icon: cat.icon, count });
+        seen.add(cat.nom);
+      }
+    }
+    const autres = Array.from(
+      new Set(catalogue.map((a) => a.categorie).filter((c) => !seen.has(c)))
+    ).sort();
+    for (const nom of autres) {
+      const count = catalogue.filter((a) => a.categorie === nom).length;
+      cats.push({ nom, icon: Package, count });
+    }
+    return cats;
+  }, [catalogue]);
+
+  // --- Groupement par catégorie (ordre déclaré d'abord, puis autres triés) ---
+  const groupedCatalogue = useMemo<{
+    categorie: string;
+    articles: CatalogueArticle[];
+  }[]>(() => {
+    const groups: { categorie: string; articles: CatalogueArticle[] }[] = [];
+    const seen = new Set<string>();
+    for (const cat of CATALOGUE_CATEGORIES) {
+      const arts = filteredCatalogue.filter((a) => a.categorie === cat.nom);
+      if (arts.length > 0) {
+        groups.push({ categorie: cat.nom, articles: arts });
+        seen.add(cat.nom);
+      }
+    }
+    const autres = Array.from(
+      new Set(filteredCatalogue.map((a) => a.categorie).filter((c) => !seen.has(c)))
+    ).sort();
+    for (const nom of autres) {
+      const arts = filteredCatalogue.filter((a) => a.categorie === nom);
+      groups.push({ categorie: nom, articles: arts });
+    }
+    return groups;
+  }, [filteredCatalogue]);
+
+  /**
+   * Résout le prix à afficher/utiliser pour un article donné, en fonction
+   * du service actuellement sélectionné. Priorité :
+   *   1. Tarif spécifique `tarifParArticle[article.id][service.type]`
+   *   2. Prix générique du service `service.prix`
+   */
+  const resolveArticlePrice = useCallback(
+    (article: CatalogueArticle): { price: number | null; isSpecific: boolean } => {
+      if (!currentService) return { price: null, isSpecific: false };
+      const serviceType = currentService.type;
+      if (serviceType) {
+        const specific = tarifParArticle[article.id]?.[serviceType];
+        if (typeof specific === "number" && Number.isFinite(specific)) {
+          return { price: specific, isSpecific: true };
+        }
+      }
+      return { price: currentService.prix, isSpecific: false };
+    },
+    [tarifParArticle, currentService]
+  );
+
+  function toggleCategory(categorie: string) {
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(categorie)) next.delete(categorie);
+      else next.add(categorie);
+      return next;
+    });
+  }
+
+  // --- Carte article (réutilisée dans chaque groupe) ---
+  function renderArticleCard(article: CatalogueArticle) {
+    const { price, isSpecific } = resolveArticlePrice(article);
+    return (
+      <button
+        key={article.id}
+        type="button"
+        onClick={() =>
+          currentService &&
+          onAddArticle(article, currentService, price ?? currentService.prix)
+        }
+        disabled={!currentService}
+        className="group relative flex flex-col overflow-hidden rounded-md border bg-background text-left transition-all hover:border-primary/50 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-50"
+        aria-label={`Ajouter ${article.nom} à la commande`}
+        title={isSpecific ? `Tarif spécifique (${formatFCFA(price ?? 0)})` : undefined}
+      >
+        {/* Photo de l'article (format carré, style POS) */}
+        <span className="flex aspect-square items-center justify-center bg-muted/30 p-2">
+          <ArticleIcon
+            src={article.icone_url}
+            alt={article.nom}
+            className="size-full object-contain"
+          />
+        </span>
+        {/* Badge prix — vert (secondary) si tarif spécifique, rouge (danger) sinon */}
+        <span
+          className={`absolute right-1 top-1 rounded px-1.5 py-0.5 text-[11px] font-bold leading-none shadow-sm ${
+            isSpecific
+              ? "bg-secondary text-secondary-foreground"
+              : "bg-danger text-danger-foreground"
+          }`}
+        >
+          {price != null ? formatFCFA(price) : "—"}
+        </span>
+        {/* Pastille verte si tarif spécifique appliqué */}
+        {isSpecific && (
+          <span
+            className="absolute left-1 top-1 size-2 rounded-full bg-secondary shadow-sm ring-1 ring-background"
+            aria-hidden
+          />
+        )}
+        {/* Nom de l'article en bleu (style POS) */}
+        <span className="line-clamp-2 border-t bg-card px-1.5 py-1 text-center text-[11px] font-medium leading-tight text-primary">
+          {article.nom}
+        </span>
+      </button>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col gap-3 rounded-lg border bg-card p-3">
@@ -359,8 +546,71 @@ function CatalogueSection({ services, servicesLoading, onAddArticle }: Catalogue
         </button>
       </div>
 
-      {/* Grille catalogue */}
-      <div className="min-h-[200px] flex-1 overflow-y-auto pr-1">
+      {/* Filtre par catégorie — barre horizontale scrollable */}
+      {!catalogueLoading && catalogue.length > 0 && (
+        <div
+          className="flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:thin]"
+          role="tablist"
+          aria-label="Filtrer par catégorie d'article"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeCategorie === TAB_TOUS}
+            onClick={() => setActiveCategorie(TAB_TOUS)}
+            className={`flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+              activeCategorie === TAB_TOUS
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
+            }`}
+          >
+            <Shirt className="size-3.5" aria-hidden />
+            Tous
+            <span
+              className={`rounded-full px-1 text-[10px] tabular-nums ${
+                activeCategorie === TAB_TOUS
+                  ? "bg-primary-foreground/20 text-primary-foreground"
+                  : "bg-background text-muted-foreground"
+              }`}
+            >
+              {catalogue.length}
+            </span>
+          </button>
+          {availableCategories.map((cat) => {
+            const Icon = cat.icon;
+            const active = activeCategorie === cat.nom;
+            return (
+              <button
+                key={cat.nom}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setActiveCategorie(cat.nom)}
+                className={`flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                  active
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
+                }`}
+              >
+                <Icon className="size-3.5" aria-hidden />
+                <span className="whitespace-nowrap">{cat.nom}</span>
+                <span
+                  className={`rounded-full px-1 text-[10px] tabular-nums ${
+                    active
+                      ? "bg-primary-foreground/20 text-primary-foreground"
+                      : "bg-background text-muted-foreground"
+                  }`}
+                >
+                  {cat.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Grille catalogue — groupée par catégorie (en-têtes repliables) */}
+      <div className="min-h-[200px] flex-1 overflow-y-auto pr-1 [scrollbar-width:thin]">
         {catalogueLoading ? (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {Array.from({ length: 9 }).map((_, i) => (
@@ -380,42 +630,56 @@ function CatalogueSection({ services, servicesLoading, onAddArticle }: Catalogue
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {filteredCatalogue.map((article) => {
-              const price = currentService?.prix;
+          <div className="space-y-3">
+            {groupedCatalogue.map((group) => {
+              const Icon = getIconForCategorie(group.categorie);
+              const isCollapsed = collapsedCategories.has(group.categorie);
               return (
-                <button
-                  key={article.id}
-                  type="button"
-                  onClick={() => currentService && onAddArticle(article, currentService)}
-                  disabled={!currentService}
-                  className="group relative flex flex-col overflow-hidden rounded-md border bg-background text-left transition-all hover:border-primary/50 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-50"
-                  aria-label={`Ajouter ${article.nom} à la commande`}
+                <section
+                  key={group.categorie}
+                  className="overflow-hidden rounded-md border bg-card"
                 >
-                  {/* Photo de l'article (format carré, style POS) */}
-                  <span className="flex aspect-square items-center justify-center bg-muted/30 p-2">
-                    <ArticleIcon
-                      src={article.icone_url}
-                      alt={article.nom}
-                      className="size-full object-contain"
+                  <button
+                    type="button"
+                    onClick={() => toggleCategory(group.categorie)}
+                    className="flex w-full items-center justify-between gap-2 bg-muted/40 px-2.5 py-1.5 text-left transition-colors hover:bg-muted"
+                    aria-expanded={!isCollapsed}
+                    aria-controls={`cat-grid-${group.categorie.replace(/[^a-zA-Z0-9]/g, "-")}`}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <Icon className="size-4 shrink-0 text-primary" aria-hidden />
+                      <span className="truncate text-xs font-semibold text-foreground">
+                        {group.categorie}
+                      </span>
+                      <span className="shrink-0 rounded-full bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground tabular-nums">
+                        {group.articles.length}
+                      </span>
+                    </span>
+                    <ChevronDown
+                      className={`size-4 shrink-0 text-muted-foreground transition-transform ${
+                        isCollapsed ? "" : "rotate-180"
+                      }`}
+                      aria-hidden
                     />
-                  </span>
-                  {/* Badge prix rouge (style POS — coin supérieur droit) */}
-                  <span className="absolute right-1 top-1 rounded bg-danger px-1.5 py-0.5 text-[11px] font-bold leading-none text-danger-foreground shadow-sm">
-                    {price != null ? formatFCFA(price) : "—"}
-                  </span>
-                  {/* Nom de l'article en bleu (style POS) */}
-                  <span className="line-clamp-2 border-t bg-card px-1.5 py-1 text-center text-[11px] font-medium leading-tight text-primary">
-                    {article.nom}
-                  </span>
-                </button>
+                  </button>
+                  {!isCollapsed && (
+                    <div
+                      id={`cat-grid-${group.categorie.replace(/[^a-zA-Z0-9]/g, "-")}`}
+                      className="grid grid-cols-2 gap-2 bg-background p-2 sm:grid-cols-3"
+                    >
+                      {group.articles.map(renderArticleCard)}
+                    </div>
+                  )}
+                </section>
               );
             })}
           </div>
         )}
       </div>
 
-      {/* Onglets catégories — miniatures style POS (icône au-dessus, label en dessous) */}
+      {/* Onglets services — miniatures style POS (icône au-dessus, label en dessous).
+          Détermine le service appliqué au clic sur un article. Indépendant du
+          filtre par catégorie ci-dessus. */}
       <div className="grid grid-cols-3 gap-1.5 border-t pt-2 sm:grid-cols-5">
         <button
           type="button"
@@ -1517,7 +1781,11 @@ export function CommandePOS({ basePath = "/admin" }: { basePath?: string } = {})
   }, []);
 
   // --- Handlers ---
-  function handleAddArticle(article: CatalogueArticle, service: ServiceItem) {
+  function handleAddArticle(
+    article: CatalogueArticle,
+    service: ServiceItem,
+    prixUnitaire?: number
+  ) {
     const newArticle: ArticleInfo = {
       id: genArticleId(),
       service_id: service.id,
@@ -1530,7 +1798,12 @@ export function CommandePOS({ basePath = "/admin" }: { basePath?: string } = {})
       couleur_libre: undefined,
       etat: "bon",
       description_etat: undefined,
-      prix_unitaire: service.prix,
+      // Prix résolu côté CatalogueSection : tarif spécifique par article si
+      // disponible, sinon prix générique du service. Le POST /api/admin/commandes
+      // reçoit ce prix via `service_id` (le service reste la source de vérité
+      // côté DB) — le prix unitaire est uniquement utilisé pour l'affichage
+      // du panier et des totaux côté UI.
+      prix_unitaire: prixUnitaire ?? service.prix,
       quantite: 1,
     };
     dispatch({ type: "ADD_ARTICLE", article: newArticle });

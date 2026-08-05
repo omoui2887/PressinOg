@@ -49,11 +49,17 @@ import {
 } from "lucide-react";
 
 import { usePosStore } from "@/lib/pos/store";
-import { getArticles, getCategories, createCommande } from "@/lib/pos/data";
+import {
+  getArticles,
+  getCategories,
+  getCatalogueCategories,
+  createCommande,
+} from "@/lib/pos/data";
 import { computeFinance, computeTotalEtiquettes } from "@/lib/pos/calc";
 import type {
   PosArticle,
   PosCartLine,
+  PosCatalogueCategorie,
   PosCategorie,
   PosClient,
   PosCommandeCree,
@@ -62,6 +68,7 @@ import { formatFcfa, formatDateTime } from "@/lib/pos/format";
 
 import { PosHeader } from "./pos-header";
 import { ArticleSearchBar } from "./article-search-bar";
+import { CatalogueCategoryBar } from "./catalogue-category-bar";
 import { ProductGrid } from "./product-grid";
 import { CategoryBar } from "./category-bar";
 import { OrderTable } from "./order-table";
@@ -85,6 +92,14 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
 
   // États locaux UI (ne survivent pas nécessairement — mais le panier oui).
   const [categories, setCategories] = useState<PosCategorie[]>([]);
+  // 9 catégories du catalogue global (Vêtements traités, Linge de maison, …).
+  const [catalogueCategories, setCatalogueCategories] = useState<
+    PosCatalogueCategorie[]
+  >([]);
+  // Filtre actif par catégorie de catalogue ("tous" = aucun filtre).
+  const [activeCatalogueCategorie, setActiveCatalogueCategorie] = useState<
+    string | "tous"
+  >("tous");
   const [confirmAnnuler, setConfirmAnnuler] = useState(false);
   const [newClientOpen, setNewClientOpen] = useState(false);
   const [newClient, setNewClient] = useState({
@@ -102,10 +117,14 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
   const loadArticles = useCallback(async () => {
     const store = usePosStore.getState();
     store.setLoadingArticles(true);
-    const { articles, source } = await getArticles();
-    const cats = await getCategories();
+    const [{ articles, source }, cats, catalogueCats] = await Promise.all([
+      getArticles(),
+      getCategories(),
+      getCatalogueCategories(),
+    ]);
     store.setArticles(articles, source);
     setCategories(cats);
+    setCatalogueCategories(catalogueCats);
     if (source === "mock") {
       toast({
         title: "Mode démonstration",
@@ -213,7 +232,10 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
         notes: s.notes.trim() || undefined,
         articles: s.cartLines.map((l) => ({
           service_id: l.article.service_id,
-          catalogue_article_id: l.article.catalogue_slug,
+          // UUID réel du catalogue_articles (résolu côté data.ts depuis
+          // /api/public/catalogue-articles). La source de vérité DB reste
+          // service_id — l'UUID catalogue sert de FK pour les articles_vetements.
+          catalogue_article_id: l.article.catalogue_article_id,
           catalogue_article_nom: l.article.catalogue_nom,
           couleur: l.couleur ?? "autre",
           etat: l.etat ?? "correct",
@@ -347,6 +369,9 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
   function handleNouvelleCommande() {
     s.reset();
     setPassageTelephone("");
+    // Réinitialise aussi le filtre par catégorie de catalogue (parité avec
+    // s.reset() qui remet activeCategorie à "tous" côté store).
+    setActiveCatalogueCategorie("tous");
     loadArticles();
   }
 
@@ -389,10 +414,24 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
               registerRef={(el) => (articleSearchRef.current = el)}
             />
           </div>
+          {/*
+            Barre de filtre par catégorie de catalogue (Vêtements, Linge, …).
+            Indépendante de la <CategoryBar /> ci-dessous (qui filtre par type
+            de service) : les deux dimensions se combinent (ET logique).
+            Toujours rendue (comme la CategoryBar) : tant que les catégories
+            ne sont pas chargées, seul "Tous" est visible — pas de saut de
+            layout lors de l'hydratation.
+          */}
+          <CatalogueCategoryBar
+            categories={catalogueCategories}
+            active={activeCatalogueCategorie}
+            onSelect={setActiveCatalogueCategorie}
+          />
           <ProductGrid
             articles={s.articles}
             query={s.searchQuery}
             activeCategorie={s.activeCategorie}
+            activeCatalogueCategorie={activeCatalogueCategorie}
             quantiteParArticle={quantiteParArticle}
             flashId={s.flashId}
             onAdd={(a: PosArticle) => s.addArticle(a)}

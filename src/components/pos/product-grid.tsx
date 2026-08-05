@@ -1,7 +1,10 @@
 /**
  * <ProductGrid /> — Grille filtrée des articles du catalogue.
- * Filtre par catégorie active + recherche (nom ou code), insensible aux
- * accents et à la casse, debounce 200 ms géré par l'orchestrateur.
+ * Filtre selon DEUX dimensions indépendantes + recherche textuelle :
+ *   - `activeCategorie`         (type de service : lavage, repassage, …)
+ *   - `activeCatalogueCategorie` (catégorie du catalogue : Vêtements, Linge, …)
+ * La recherche (insensible aux accents/casse) s'applique sur le nom du
+ * service, le nom de l'article et le slug du catalogue.
  */
 "use client";
 import { memo } from "react";
@@ -12,7 +15,10 @@ import { ProductCard } from "./product-card";
 interface ProductGridProps {
   articles: PosArticle[];
   query: string;
+  /** Filtre par type de service (dimension 1). */
   activeCategorie: PosCategorieId;
+  /** Filtre par catégorie du catalogue (dimension 2). */
+  activeCatalogueCategorie: string | "tous";
   quantiteParArticle: Record<string, number>;
   flashId: string | null;
   onAdd: (article: PosArticle) => void;
@@ -30,6 +36,7 @@ function ProductGridImpl({
   articles,
   query,
   activeCategorie,
+  activeCatalogueCategorie,
   quantiteParArticle,
   flashId,
   onAdd,
@@ -37,6 +44,11 @@ function ProductGridImpl({
   const q = normalize(query.trim());
   const filtered = articles.filter((a) => {
     if (activeCategorie !== "tous" && a.categorie !== activeCategorie)
+      return false;
+    if (
+      activeCatalogueCategorie !== "tous" &&
+      a.catalogue_categorie !== activeCatalogueCategorie
+    )
       return false;
     if (!q) return true;
     return (

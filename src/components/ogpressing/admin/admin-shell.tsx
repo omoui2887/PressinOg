@@ -25,6 +25,7 @@
  *     - Personnel             → /admin/personnel
  *     - Stock biodétergents   → /admin/stock
  *     - Services et tarifs    → /admin/services
+ *     - Tarifs par article    → /admin/tarifs
  *
  *   FINANCES
  *     - Rapports              → /admin/rapports
@@ -54,6 +55,7 @@ import {
   UserCog,
   Package,
   Tag,
+  ReceiptText,
   BarChart3,
   Settings,
 } from "lucide-react";
@@ -89,6 +91,7 @@ const NAV_GROUPS: DashboardNavGroup[] = [
       { href: "/admin/personnel", label: "Personnel", icon: UserCog },
       { href: "/admin/stock", label: "Stock biodétergents", icon: Package },
       { href: "/admin/services", label: "Services et tarifs", icon: Tag },
+      { href: "/admin/tarifs", label: "Tarifs par article", icon: ReceiptText },
     ],
   },
   {
