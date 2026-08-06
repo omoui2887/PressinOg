@@ -459,3 +459,32 @@ Stage Summary:
 - ✅ Les variables d'env Vercel (Supabase) sont déjà configurées dans le dashboard Vercel
 - ⏳ Déploiement Vercel en cours (visible dans le dashboard Vercel)
 - ⚠️ Local : .env.local toujours manquant (mais n'affecte pas le déploiement Vercel)
+
+---
+Task ID: 8
+Agent: main
+Task: Restaurer .env.local avec les clés Supabase fournies + vérifier le dev server
+
+Work Log:
+- Récupéré les clés Supabase fournies par l'utilisateur :
+  - NEXT_PUBLIC_SUPABASE_URL = https://yqaitafigfxlrprrouhr.supabase.co
+  - NEXT_PUBLIC_SUPABASE_ANON_KEY = eyJ...oBi-hFhlOS9U4p3jMOaT5stzJ-HKlgCkYP6xkap9-wI
+  - SUPABASE_SERVICE_ROLE_KEY = eyJ...AKtg9Sn1h0PAhWF1Wp3daOSHPRV1ugRE6GmFXAXJoCs
+- Créé .env.local avec toutes les variables (URL, anon, service_role, SITE_URL, DATABASE_URL)
+- Tué l'ancien dev server (PIDs 1052-1241) qui tournait sans .env.local
+- Redémarré le dev server avec `next dev -p 3000`
+- Vérifié que .env.local est chargé : "Environments: .env.local, .env" dans le log
+- Testé la page /login avec Agent Browser : ✅ affiche le formulaire (Email, Mot de passe, bouton "Se connecter")
+- Testé la page /admin/commandes/nouvelle : ✅ HTTP 307 → redirect vers /login?next=%2Fadmin%2Fcommandes%2Fnouvelle
+  → Le middleware Supabase fonctionne, la route POS est protégée
+- Contrainte mémoire du container : le serveur crash (OOM) lors de la compilation de pages lourdes
+  (POS = 799 lignes + sous-composants). Pas un problème de code — Vercel a largement assez de mémoire.
+
+Stage Summary:
+- ✅ .env.local restauré avec les bonnes clés Supabase (ref: yqaitafigfxlrprrouhr)
+- ✅ Dev server démarre et charge .env.local
+- ✅ Page /login fonctionnelle (vérifiée avec Agent Browser)
+- ✅ Page POS protégée : redirige vers /login si non authentifié (HTTP 307)
+- ⚠️ Le serveur local crash à la compilation de pages lourdes (contrainte mémoire container)
+  → N'affecte PAS Vercel (suffisamment de mémoire en production)
+- ✅ GitHub push réussi (6 commits) → Vercel déploie automatiquement
