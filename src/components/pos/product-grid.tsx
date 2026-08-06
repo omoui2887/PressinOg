@@ -4,7 +4,7 @@
  *
  * AFFICHE UNE SEULE CARTE PAR ARTICLE DU CATALOGUE (33 max). Aucun prix n'est
  * affiché sur la carte : un clic ouvre la boîte de dialogue <ArticleActionsDialog />
- * qui liste les actions possibles (Repassage, Laver-Repasser, Séchage, Nettoyage
+ * qui liste les actions possibles (Lavage, Repassage, Laver-Repasser, Nettoyage
  * à sec, Détachage, etc.) avec leur prix — prix configurés par l'admin dans le
  * module « Tarifs par articles ».
  *

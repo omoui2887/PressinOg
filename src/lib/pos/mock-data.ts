@@ -15,14 +15,14 @@ import type { PosArticle, PosCartLine, PosCategorie, PosClient } from "./types";
 import { iconeUrlForSlug } from "@/lib/catalogue/catalogue-articles";
 import { localId } from "./calc";
 
-/** Catégories POS — 6 services possibles (Lavage, Repassage, Laver-Repasser, Séchage, Nettoyage à sec, Détachage). */
+/** Catégories POS — 6 services possibles (Lavage, Repassage, Laver-Repasser, Nettoyage à sec, Détachage, Blanchisserie). */
 export const POS_CATEGORIES: PosCategorie[] = [
   { id: "lavage", label: "Lavage", icon: "washing" },
   { id: "repassage", label: "Repassage", icon: "iron" },
   { id: "laver-repasser", label: "Laver-Repasser", icon: "shirt" },
-  { id: "sechage", label: "Séchage", icon: "sun" },
   { id: "nettoyage_sec", label: "Nettoyage à sec", icon: "sparkles" },
   { id: "detachage", label: "Détachage", icon: "spray" },
+  { id: "blanchisserie", label: "Blanchisserie", icon: "washing-machine" },
 ];
 
 /** Slug du catalogue par défaut (pour associer un article mock à une illustration). */
@@ -56,6 +56,7 @@ export const MOCK_ARTICLES: PosArticle[] = [
     icone_url: iconeUrlForSlug(SLUG_CHEMISE),
     prix: 1000,
     duree_estimee_h: 48,
+    tarifConfigure: true,
   },
   {
     id: "svc-rep-pantalon::costume-medical",
@@ -69,6 +70,7 @@ export const MOCK_ARTICLES: PosArticle[] = [
     icone_url: iconeUrlForSlug(SLUG_PANTALON),
     prix: 500,
     duree_estimee_h: 48,
+    tarifConfigure: true,
   },
   {
     id: "svc-lr-costume::costume-ceremonie",
@@ -82,6 +84,7 @@ export const MOCK_ARTICLES: PosArticle[] = [
     icone_url: iconeUrlForSlug(SLUG_COSTUME),
     prix: 2000,
     duree_estimee_h: 48,
+    tarifConfigure: true,
   },
   {
     id: "svc-lav-drap::parure-lit",
@@ -95,6 +98,7 @@ export const MOCK_ARTICLES: PosArticle[] = [
     icone_url: iconeUrlForSlug(SLUG_DRAP),
     prix: 1000,
     duree_estimee_h: 48,
+    tarifConfigure: true,
   },
   {
     id: "svc-lr-pantalon::costume-medical",
@@ -108,19 +112,21 @@ export const MOCK_ARTICLES: PosArticle[] = [
     icone_url: iconeUrlForSlug(SLUG_PANTALON),
     prix: 500,
     duree_estimee_h: 48,
+    tarifConfigure: true,
   },
   {
-    id: "svc-sec-drap::parure-lit",
-    service_id: "svc-sec-drap",
-    service_nom: "Séchage Drap 2 Places",
-    categorie: "sechage",
+    id: "svc-bla-drap::parure-lit",
+    service_id: "svc-bla-drap",
+    service_nom: "Blanchisserie Drap 2 Places",
+    categorie: "blanchisserie",
     catalogue_slug: SLUG_DRAP,
     catalogue_article_id: "mock-drap",
     catalogue_nom: "Drap",
     catalogue_categorie: "Linge de maison",
     icone_url: iconeUrlForSlug(SLUG_DRAP),
-    prix: 1000,
+    prix: 1500,
     duree_estimee_h: 48,
+    tarifConfigure: true,
   },
   {
     id: "svc-lav-culotte::sacs-bagages",
@@ -134,6 +140,7 @@ export const MOCK_ARTICLES: PosArticle[] = [
     icone_url: iconeUrlForSlug(SLUG_CULOTTE),
     prix: 500,
     duree_estimee_h: 48,
+    tarifConfigure: true,
   },
 ];
 

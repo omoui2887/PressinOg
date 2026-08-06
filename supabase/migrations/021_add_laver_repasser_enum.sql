@@ -1,0 +1,35 @@
+-- ============================================================
+-- OgPressing — Migration 021 : Ajout du type 'laver_repasser'
+-- ============================================================
+-- Fichier    : 021_add_laver_repasser_enum.sql
+-- Version    : 1.0
+-- Description : Ajoute la valeur 'laver_repasser' à l'enum type_service
+--               pour permettre une tarification indépendante de l'action
+--               "Laver-Repasser" (distincte du "Lavage" simple).
+--
+--   Avant : type_service = (lavage, repassage, nettoyage_sec, detachage,
+--                           blanchisserie)  → 5 valeurs
+--   Après : type_service = (lavage, repassage, laver_repasser,
+--                           nettoyage_sec, detachage, blanchisserie) → 6 valeurs
+--
+--   Cela permet à l'administrateur de fixer un prix spécifique pour
+--   chacune des 6 actions dans "Tarifs par article" :
+--     1. Lavage
+--     2. Repassage
+--     3. Laver-Repasser
+--     4. Nettoyage à sec
+--     5. Détachage
+--     6. Blanchisserie
+--
+-- ⚠️  À EXÉCUTER DANS LE SUPABASE SQL EDITOR :
+--     https://supabase.com/dashboard/project/yqaitafigfxlrprrouhr/sql/new
+--
+-- IDEMPOTENT : ALTER TYPE ... ADD VALUE IF NOT EXISTS
+-- ============================================================
+
+-- Ajoute la nouvelle valeur à l'enum type_service
+ALTER TYPE type_service ADD VALUE IF NOT EXISTS 'laver_repasser';
+
+-- ============================================================
+-- Fin de la migration 021_add_laver_repasser_enum.sql
+-- ============================================================

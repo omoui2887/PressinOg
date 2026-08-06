@@ -27,6 +27,7 @@ export const dynamic = "force-dynamic";
 const TYPES_VALID = [
   "lavage",
   "repassage",
+  "laver_repasser",
   "nettoyage_sec",
   "detachage",
   "blanchisserie",

@@ -99,8 +99,8 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
   >("tous");
   // État du dialogue d'actions (ouvert au clic sur un article du catalogue).
   // L'article représentatif sert pour l'en-tête (image + nom), les variants
-  // correspondent aux différentes actions possibles (Repassage, Laver-Repasser,
-  // Séchage, Nettoyage à sec, Détachage, etc.) avec leur prix spécifique.
+  // correspondent aux différentes actions possibles (Lavage, Repassage,
+  // Laver-Repasser, Nettoyage à sec, Détachage, Blanchisserie) avec leur prix.
   const [actionsDialogArticle, setActionsDialogArticle] =
     useState<PosArticle | null>(null);
   const [actionsDialogVariants, setActionsDialogVariants] = useState<
@@ -496,7 +496,7 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
             Toujours rendue : tant que les catégories ne sont pas chargées,
             seul "Tous" est visible — pas de saut de layout lors de l'hydratation.
 
-            Le choix de l'action (Repassage, Laver-Repasser, Séchage, etc.) se
+            Le choix de l'action (Lavage, Repassage, Laver-Repasser, etc.) se
             fait désormais via le dialogue <ArticleActionsDialog /> qui s'ouvre
             au clic sur une carte — la barre de filtre par type de service a été
             retirée pour simplifier l'UX.

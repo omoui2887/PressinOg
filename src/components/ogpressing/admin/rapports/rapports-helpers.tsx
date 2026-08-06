@@ -146,10 +146,11 @@ export const REMISE_TYPE_LABELS: Record<string, string> = {
   fidelite: "Remise fidélité",
 };
 
-// --- Type de service (5 valeurs, aligné sur services-helpers.tsx) ---
+// --- Type de service (6 valeurs, aligné sur services-helpers.tsx) ---
 export const TYPE_SERVICE_LABELS: Record<string, string> = {
   lavage: "Lavage",
   repassage: "Repassage",
+  laver_repasser: "Laver-Repasser",
   nettoyage_sec: "Nettoyage à sec",
   detachage: "Détachage",
   blanchisserie: "Blanchisserie",
@@ -159,6 +160,7 @@ export const TYPE_SERVICE_LABELS: Record<string, string> = {
 export const TYPES_SERVICE_ORDONNES = [
   "lavage",
   "repassage",
+  "laver_repasser",
   "nettoyage_sec",
   "detachage",
   "blanchisserie",
@@ -181,6 +183,7 @@ export const CHART_COLORS = {
   warning: "oklch(0.769 0.188 70.08)", // ambre
   danger: "oklch(0.637 0.237 25.18)", // rouge
   chart3: "oklch(0.769 0.188 70.08)", // ambre (identique warning)
+  chart4: "oklch(0.637 0.237 25.18)", // rouge (identique danger)
   chart5: "oklch(0.627 0.265 303.9)", // violet
   muted: "oklch(0.922 0 0)", // gris clair (grid)
   textMuted: "oklch(0.556 0 0)", // gris texte axes
@@ -197,6 +200,7 @@ export const COULEURS_MODE_PAIEMENT: Record<string, string> = {
 export const COULEURS_TYPE_SERVICE: Record<string, string> = {
   lavage: CHART_COLORS.primary, // bleu
   repassage: CHART_COLORS.secondary, // vert
+  laver_repasser: CHART_COLORS.chart4, // rouge (laver-repasser)
   nettoyage_sec: CHART_COLORS.chart3, // ambre
   detachage: CHART_COLORS.warning, // ambre (identique chart3 — distingué par libellé)
   blanchisserie: CHART_COLORS.chart5, // violet

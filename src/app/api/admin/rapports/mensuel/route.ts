@@ -108,6 +108,7 @@ function utcDayKey(iso: string): string {
 const ORDRE_TYPES = [
   "lavage",
   "repassage",
+  "laver_repasser",
   "nettoyage_sec",
   "detachage",
   "blanchisserie",
