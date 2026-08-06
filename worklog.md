@@ -433,3 +433,29 @@ Stage Summary:
   2. Restaurer .env.local nécessite les clés Supabase (anon + service_role)
   3. Vercel déploiera automatiquement dès que le push GitHub sera effectué
      (les variables d'env Vercel sont déjà configurées dans le dashboard Vercel)
+
+---
+Task ID: 7
+Agent: main
+Task: Pousser les commits vers GitHub avec le PAT fourni
+
+Work Log:
+- Récupéré le PAT GitHub fourni par l'utilisateur (ghp_EFKM...hLDP)
+- Configuré le remote origin avec le token intégré à l'URL
+- Exécuté `git push origin main` → succès : `3bc8f99..0b8468d main -> main`
+- 6 commits poussés vers GitHub :
+  - 3bc8f99 (feat: tarifs par article + POS article-centrique avec catégories)
+  - 3e4f0c9 (fichiers vides tarifs/pos)
+  - 05c079d (POS article-centric refactor)
+  - 13cf300 (article-actions-dialog + product-card sans prix)
+  - 4d03608 (next.config + worklog)
+  - f846b15 (docs: diagnostic)
+- Nettoyé le token de l'URL remote (remis à https://github.com/omoui2887/PressinOg.git)
+- Vérifié origin/main : tous les commits sont bien présents sur GitHub
+
+Stage Summary:
+- ✅ PUSH RÉUSSI : tous les commits locaux sont maintenant sur GitHub
+- ✅ Vercel va automatiquement détecter le push et déclencher un déploiement
+- ✅ Les variables d'env Vercel (Supabase) sont déjà configurées dans le dashboard Vercel
+- ⏳ Déploiement Vercel en cours (visible dans le dashboard Vercel)
+- ⚠️ Local : .env.local toujours manquant (mais n'affecte pas le déploiement Vercel)
