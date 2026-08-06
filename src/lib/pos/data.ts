@@ -222,11 +222,29 @@ export async function getArticles(): Promise<{
         if (!tarif) continue; // pas de tarif pour ce type → action non proposée
 
         const svc = serviceByType.get(typeService);
+
+        // ⚠️ Si un tarif existe mais qu'aucun service de ce type n'existe
+        // dans le pressing, on NE PEUT PAS créer de commande : la table
+        // commande_lignes.service_id est une FK vers services.id, et l'API
+        // POST /api/admin/commandes valide `service_id est requis`.
+        // On saute donc cette variante — l'action ne s'affichera pas dans
+        // le dialogue. L'admin doit créer le service dans /admin/services.
+        if (!svc) {
+          if (typeof console !== "undefined" && console.warn) {
+            console.warn(
+              `[pos/data] Tarif trouvé pour « ${art.nom} × ${typeService} » ` +
+                `mais aucun service de type "${typeService}" n'existe dans ce pressing. ` +
+                `Action masquée. Créez le service dans /admin/services.`
+            );
+          }
+          continue;
+        }
+
         const cat = typeToCategorie(typeService);
         articles.push({
-          id: `${svc?.id ?? "no-svc"}::${art.slug}::${typeService}`,
-          service_id: svc?.id ?? "",
-          service_nom: svc?.nom ?? typeService,
+          id: `${svc.id}::${art.slug}::${typeService}`,
+          service_id: svc.id,
+          service_nom: svc.nom,
           categorie: cat,
           catalogue_article_id: art.id,
           catalogue_slug: art.slug,
