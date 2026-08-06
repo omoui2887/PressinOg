@@ -70,8 +70,20 @@ export interface PosArticle {
 export interface PosCategorie {
   id: Exclude<PosCategorieId, "tous">;
   label: string;
-  /** Slug lucide-react → résolu côté composant (évite d'importer lucide ici). */
-  icon: "washing" | "iron" | "shirt" | "sparkles" | "spray" | "washing-machine";
+  /** Slug lucide-react → résolu côté composant (évite d'importer lucide ici).
+   *  - "droplets"        → Lavage (goutte d'eau, distinct de Blanchisserie)
+   *  - "iron"            → Repassage
+   *  - "shirt"           → Laver-Repasser
+   *  - "sparkles"        → Nettoyage à sec
+   *  - "spray"           → Détachage
+   *  - "washing-machine" → Blanchisserie (machine industrielle) */
+  icon:
+    | "droplets"
+    | "iron"
+    | "shirt"
+    | "sparkles"
+    | "spray"
+    | "washing-machine";
 }
 
 /**
@@ -109,9 +121,12 @@ export interface PosCartLine {
   express: boolean;
   /** Note courte par ligne (ex : "tache encre col"). */
   note?: string;
-  /** Couleur dominante (enum DB). Défaut "autre". */
+  /** Couleur dominante (enum DB couleur_vetement). Défaut "blanc".
+   *  ⚠️ Si "autre", `couleur_libre` devient obligatoire côté API
+   *     (validation 400). Le POS n'exposant pas ce champ, on évite "autre". */
   couleur?: string;
-  /** État du vêtement (enum DB). Défaut "correct". */
+  /** État du vêtement (enum DB etat_vetement). Défaut "bon".
+   *  Valeurs valides : bon, acceptable, use, dechire, tache. */
   etat?: string;
 }
 

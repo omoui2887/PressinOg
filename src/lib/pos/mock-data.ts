@@ -17,7 +17,7 @@ import { localId } from "./calc";
 
 /** Catégories POS — 6 services possibles (Lavage, Repassage, Laver-Repasser, Nettoyage à sec, Détachage, Blanchisserie). */
 export const POS_CATEGORIES: PosCategorie[] = [
-  { id: "lavage", label: "Lavage", icon: "washing" },
+  { id: "lavage", label: "Lavage", icon: "droplets" },
   { id: "repassage", label: "Repassage", icon: "iron" },
   { id: "laver-repasser", label: "Laver-Repasser", icon: "shirt" },
   { id: "nettoyage_sec", label: "Nettoyage à sec", icon: "sparkles" },
@@ -157,24 +157,25 @@ export function buildMockCartLines(): PosCartLine[] {
       article: find("svc-lr-chemise::chemise"),
       quantite: 1,
       express: false,
-      couleur: "autre",
-      etat: "correct",
+      // Défauts valides (enum DB). Voir note dans store.ts addArticle.
+      couleur: "blanc",
+      etat: "bon",
     },
     {
       id: localId(),
       article: find("svc-rep-pantalon::costume-medical"),
       quantite: 1,
       express: false,
-      couleur: "autre",
-      etat: "correct",
+      couleur: "bleu",
+      etat: "bon",
     },
     {
       id: localId(),
       article: find("svc-lav-culotte::sacs-bagages"),
       quantite: 1,
       express: false,
-      couleur: "autre",
-      etat: "correct",
+      couleur: "noir",
+      etat: "acceptable",
     },
   ];
 }

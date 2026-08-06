@@ -5,6 +5,7 @@
 "use client";
 import { memo } from "react";
 import {
+  Droplets,
   WashingMachine,
   Shirt,
   Sparkles,
@@ -15,7 +16,7 @@ import {
 import type { PosCategorie } from "@/lib/pos/types";
 
 const ICONS: Record<PosCategorie["icon"], LucideIcon> = {
-  washing: WashingMachine,
+  droplets: Droplets,
   iron: Wind,
   shirt: Shirt,
   sparkles: Sparkles,

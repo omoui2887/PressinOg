@@ -314,8 +314,11 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
           // service_id — l'UUID catalogue sert de FK pour les articles_vetements.
           catalogue_article_id: l.article.catalogue_article_id,
           catalogue_article_nom: l.article.catalogue_nom,
-          couleur: l.couleur ?? "autre",
-          etat: l.etat ?? "correct",
+          // Fallbacks alignés sur l'enum DB (cf. store.ts addArticle).
+          // ⚠️ "autre" exigerait couleur_libre (validation 400).
+          // ⚠️ "correct" n'est PAS dans l'enum etat_vetement.
+          couleur: l.couleur ?? "blanc",
+          etat: l.etat ?? "bon",
           description_etat: l.note,
           quantite: l.quantite,
         })),
