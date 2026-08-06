@@ -178,8 +178,13 @@ export const usePosStore = create<PosState>((set, get) => ({
         article,
         quantite: 1,
         express: false,
-        couleur: "autre",
-        etat: "correct",
+        // Défauts alignés sur l'enum DB (couleur_vetement / etat_vetement).
+        // ⚠️ Ne PAS utiliser "autre" pour couleur : cela déclencherait
+        //    l'exigence de `couleur_libre` côté API (validation 400).
+        // ⚠️ Ne PAS utiliser "correct" pour etat : valeur absente de l'enum
+        //    (valeurs valides : bon, acceptable, use, dechire, tache).
+        couleur: "blanc",
+        etat: "bon",
       };
       return { cartLines: [...s.cartLines, line], flashId: line.id };
     }),
