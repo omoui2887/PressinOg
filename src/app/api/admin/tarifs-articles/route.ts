@@ -34,6 +34,82 @@ const TYPES_VALID = [
 
 type TypeService = (typeof TYPES_VALID)[number];
 
+/**
+ * Libellés français par défaut pour l'auto-provisionnement des services.
+ * Utilisés quand un service doit être créé automatiquement suite à la
+ * configuration d'un tarif (le manager n'a pas besoin d'aller dans la
+ * page Services pour que le tarif soit opérationnel dans le POS).
+ */
+const SERVICE_LABELS: Record<TypeService, string> = {
+  lavage: "Lavage",
+  repassage: "Repassage",
+  laver_repasser: "Laver-Repasser",
+  nettoyage_sec: "Nettoyage à sec",
+  detachage: "Détachage",
+  blanchisserie: "Blanchisserie",
+};
+
+/**
+ * Garantit qu'un service de ce type existe pour le pressing connecté.
+ * Si aucun service n'existe, en crée un automatiquement avec un nom par
+ * défaut et le prix du tarif. Cela évite l'erreur « service_id est requis »
+ * dans le POS quand l'admin configure des tarifs sans créer les services.
+ *
+ * RLS : opère via le client anon + JWT du manager (RLS autorise l'INSERT
+ * sur services pour le pressing du manager connecté).
+ */
+async function ensureServiceExists(
+  supabase: NonNullable<Awaited<ReturnType<typeof getSupabaseServer>>>,
+  pressingId: string,
+  typeService: TypeService,
+  prix: number,
+  dureeEstimee: string | null
+): Promise<void> {
+  // Vérifie s'il existe déjà un service (actif ou inactif) de ce type.
+  const { data: existing, error: checkErr } = await supabase
+    .from("services")
+    .select("id")
+    .eq("pressing_id", pressingId)
+    .eq("type", typeService)
+    .maybeSingle();
+
+  if (checkErr) {
+    console.warn(
+      "[tarifs-articles] ensureServiceExists: check failed:",
+      checkErr.message
+    );
+    return; // non-bloquant — le tarif est quand même créé
+  }
+  if (existing) return; // service déjà présent, rien à faire
+
+  // Crée le service manquant avec un nom par défaut.
+  const insertPayload: Record<string, unknown> = {
+    pressing_id: pressingId,
+    type: typeService,
+    nom: SERVICE_LABELS[typeService],
+    prix,
+    actif: true,
+  };
+  if (dureeEstimee) {
+    insertPayload.duree_estimee = dureeEstimee;
+  }
+
+  const { error: insertErr } = await supabase
+    .from("services")
+    .insert(insertPayload);
+
+  if (insertErr) {
+    // 23505 = violation unique → un service a été créé entre-temps (race).
+    // Ce n'est pas une erreur fatale : le service existe, c'est l'essentiel.
+    if (insertErr.code !== "23505") {
+      console.warn(
+        "[tarifs-articles] ensureServiceExists: insert failed:",
+        insertErr.message
+      );
+    }
+  }
+}
+
 /** Vérifie l'auth + retourne le personnel connecté. `allowWrite=true` exige manager. */
 async function getConnectedPersonnel(allowWrite: boolean) {
   const supabase = await getSupabaseServer();
@@ -208,6 +284,17 @@ export async function POST(request: NextRequest) {
   ) {
     dureeEstimee = body.duree_estimee.trim();
   }
+
+  // Auto-provisionne le service correspondant s'il n'existe pas encore.
+  // Sans service, le tarif ne pourrait pas être utilisé dans le POS
+  // (commande_lignes.service_id est une FK vers services.id).
+  await ensureServiceExists(
+    supabase,
+    pressingId,
+    typeService as TypeService,
+    prix,
+    dureeEstimee
+  );
 
   // Upsert : si un tarif existe déjà pour (pressing, article, type), on UPDATE le prix
   const upsertPayload: Record<string, unknown> = {

@@ -124,6 +124,18 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
   const loadArticles = useCallback(async () => {
     const store = usePosStore.getState();
     store.setLoadingArticles(true);
+
+    // Best-effort : synchronise les services avec les tarifs existants.
+    // Auto-crée les services manquants pour les tarifs configurés avant
+    // l'auto-provisionnement. Non-bloquant, silencieux (403 si non-manager).
+    // Sans cela, les articles tarifés sans service ne pourraient pas être
+    // commandés (erreur API « service_id est requis »).
+    fetch("/api/admin/tarifs-articles/sync-services", {
+      method: "POST",
+    }).catch(() => {
+      /* silencieux : best-effort, non-bloquant */
+    });
+
     const [{ articles, source }, catalogueCats] = await Promise.all([
       getArticles(),
       getCatalogueCategories(),
@@ -269,9 +281,17 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
   }, [s.cartLines]);
 
   // ---------- Validation ----------
+  // Détecte les lignes dont le service_id est vide (tarif orphelin sans
+  // service correspondant dans le pressing). Ces lignes ne peuvent pas
+  // être soumises à l'API (validation 400 « service_id est requis »).
+  const linesWithoutService = s.cartLines.filter(
+    (l) => !l.article.service_id
+  );
+
   const canValidate =
     s.cartLines.length > 0 &&
     !s.submitting &&
+    linesWithoutService.length === 0 &&
     (s.client !== null ||
       (s.clientPassage && passageTelephone.trim().length >= 8)) &&
     // Si un paiement est saisi, la méthode est obligatoire.
@@ -281,11 +301,14 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
     if (!canValidate) {
       toast({
         title: "Validation impossible",
-        description: !s.client && !s.clientPassage
-          ? "Sélectionnez un client ou activez le client de passage."
-          : s.cartLines.length === 0
-            ? "Ajoutez au moins un article."
-            : "Veuillez compléter les informations manquantes.",
+        description: linesWithoutService.length > 0
+          ? "Un ou plusieurs articles n'ont pas de service associé. " +
+            "Créez le service manquant dans la page Services, puis réessayez."
+          : !s.client && !s.clientPassage
+            ? "Sélectionnez un client ou activez le client de passage."
+            : s.cartLines.length === 0
+              ? "Ajoutez au moins un article."
+              : "Veuillez compléter les informations manquantes.",
         variant: "destructive",
       });
       return;

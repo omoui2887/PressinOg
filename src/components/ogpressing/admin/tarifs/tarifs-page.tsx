@@ -77,9 +77,19 @@ export function TarifsPage() {
   const [activeCategorie, setActiveCategorie] = useState<string>(TAB_TOUS);
 
   // -------- Fetch initial : catalogue + tarifs en parallèle --------
+  // En arrière-plan, synchronise les services avec les tarifs existants
+  // (auto-crée les services manquants pour les tarifs configurés avant
+  // l'auto-provisionnement). Non-bloquant, silencieux en cas de succès.
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
+      // Sync des services en parallèle du fetch (best-effort, non-bloquant).
+      fetch("/api/admin/tarifs-articles/sync-services", {
+        method: "POST",
+      }).catch(() => {
+        /* silencieux : la sync est un best-effort */
+      });
+
       const [catRes, tarifRes] = await Promise.all([
         fetch("/api/public/catalogue-articles", { cache: "no-store" }),
         fetch("/api/admin/tarifs-articles?all=true", { cache: "no-store" }),
