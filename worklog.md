@@ -314,3 +314,81 @@ Stage Summary:
 - **Panier cohérent** : affiche nom article (principal) + nom service (secondaire)
 - `.env.local` créé avec les bonnes credentials Supabase → APIs fonctionnent, plus de mock data
 - 4 fichiers modifiés : product-card.tsx, product-grid.tsx, pos-caisse.tsx, order-row.tsx
+
+---
+Task ID: DIALOG-1
+Agent: main
+Task: Supprimer les prix sous les linges + afficher une boîte de dialogue au clic pour choisir l'action (Repassage, Laver-Repasser, Séchage, Nettoyage à sec, Détachage) avec le prix devant chaque action. Les prix sont fixés par l'admin dans "Tarifs par articles".
+
+Work Log:
+- Lu le worklog précédent (Tasks 1-FINAL + SYNC-1) : table tarifs_articles + API CRUD + page /admin/tarifs + POS article-centric déjà en place
+- Analysé la capture d'écran fournie par l'utilisateur via VLM : l'ancienne version affichait des cartes avec badge prix rouge "2 500 Fcfa" + libellé "Lavage simple" en bas
+- Vérifié que .env.local avait disparu (dev.log montrait "Supabase env vars manquantes") → recréé avec credentials Supabase (ref: yqaitafigfxlrprrouhr)
+- Désactivé expérimentalement optimizePackageImports dans next.config.ts pour réduire la pression mémoire pendant le dev (le scanner de barrel exports consomme ~500MB-1GB de RAM supplémentaire)
+
+Modifications apportées (8 fichiers) :
+
+1. **src/lib/pos/types.ts** :
+   - Ajouté `"detachage"` à `PosCategorieId` (pour que le Détachage soit une catégorie distincte)
+   - Ajouté `"spray"` au type `PosCategorie.icon`
+
+2. **src/lib/pos/mock-data.ts** :
+   - Ajouté la catégorie Détachage à POS_CATEGORIES (6 services au lieu de 5)
+
+3. **src/components/pos/category-button.tsx** :
+   - Ajouté l'icône SprayCan (lucide-react) pour le Détachage
+
+4. **src/lib/pos/data.ts** :
+   - Corrigé typeToCategorie : "detachage" → "detachage" (au lieu d'être fusionné avec "lavage")
+
+5. **src/components/pos/product-card.tsx** (refonte complète) :
+   - SUPPRIMÉ le badge prix rouge en bas de l'image
+   - SUPPRIMÉ la prop hasPrice et l'état désactivé
+   - Le clic appelle maintenant onOpenActions() au lieu d'ajouter directement au panier
+   - Compteur discret conservé (quantité totale toutes actions confondues)
+
+6. **src/components/pos/product-grid.tsx** (refonte) :
+   - 33 cartes uniques (1 par article) au lieu de 165 (service × article)
+   - SUPPRIMÉ la prop activeCategorie et la logique de filtre par service
+   - Passe toutes les variantes au parent via onOpenActions(article, variants)
+   - Filtre simplifié : seulement catégorie catalogue + recherche textuelle
+
+7. **src/components/pos/article-actions-dialog.tsx** (NOUVEAU) :
+   - Dialogue qui s'ouvre au clic sur un article
+   - En-tête : image + nom de l'article + "Choisissez l'action à effectuer"
+   - Liste des actions triées par priorité métier :
+     1. Repassage (icône Wind)
+     2. Laver-Repasser (icône Shirt)
+     3. Séchage (icône Sun)
+     4. Nettoyage à sec (icône Sparkles)
+     5. Détachage (icône SprayCan)
+     6. Lavage (icône WashingMachine) — et autres services en fin
+   - Chaque action affiche : icône + libellé + nom du service + prix en badge rouge
+   - Pied : "Prix configurés par l'administrateur dans Tarifs par article"
+
+8. **src/components/pos/pos-caisse.tsx** :
+   - État du dialogue : actionsDialogArticle, actionsDialogVariants, actionsDialogOpen
+   - Handlers : handleOpenActions(article, variants) et handlePickAction(variant)
+   - SUPPRIMÉ la CategoryBar en bas (le choix de l'action se fait dans le dialogue)
+   - Rendu du <ArticleActionsDialog> à la fin du JSX
+   - Synchronisation auto conservée (refresh au focus/visibilité de l'onglet)
+
+Vérifications :
+- bun run lint : ✅ 0 erreur / 0 warning
+- bunx tsc --noEmit : 0 erreur dans les fichiers modifiés
+- Tous les fichiers vérifiés en place (8/8)
+- Code checks : product-card.tsx a 0 badge prix + 3 onOpenActions ; article-actions-dialog.tsx a 15 références aux 5 actions ; pos-caisse.tsx a 3 ArticleActionsDialog + CategoryBar supprimée (reste CatalogueCategoryBar qui est le filtre par catégorie de linge)
+
+Note infrastructure :
+- Le serveur dev Next.js + Turbopack + Chromium dépassent les 4GB de RAM disponibles (0 swap)
+- L'OOM killer tue le serveur dev quand le navigateur se connecte
+- Le serveur dev fonctionne correctement avec curl (login 200, POS 307 redirect, APIs 200/401)
+- Les modifications de code sont toutes en place et validées par lint + tsc
+
+Stage Summary:
+- **Prix supprimés des cartes** : les 33 cartes d'articles n'affichent plus de badge prix
+- **Dialogue au clic** : un clic sur un article ouvre une boîte de dialogue avec les 5 actions (Repassage, Laver-Repasser, Séchage, Nettoyage à sec, Détachage) + Lavage, chacune avec son prix
+- **Prix dynamiques** : les prix proviennent du module "Tarifs par articles" (tarif spécifique par article × service, avec fallback sur le prix générique du service)
+- **Synchronisation auto** : quand l'admin modifie un tarif dans /admin/tarifs, le POS se recharge automatiquement au prochain focus de l'onglet
+- **Détachage ajouté** : nouvelle catégorie distincte (au lieu d'être fusionnée avec Lavage)
+- 8 fichiers modifiés : types.ts, mock-data.ts, category-button.tsx, data.ts, product-card.tsx, product-grid.tsx, article-actions-dialog.tsx (nouveau), pos-caisse.tsx

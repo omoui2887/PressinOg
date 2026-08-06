@@ -37,7 +37,11 @@ const nextConfig: NextConfig = {
   // utilisées sont incluses. Même logique pour date-fns (200+ helpers) et
   // recharts (chart components). Réduction typique du bundle : -30 à -50%.
   experimental: {
-    optimizePackageImports: ["lucide-react", "date-fns", "recharts"],
+    // TEMP-DISABLE: optimizePackageImports désactivé temporairement pour
+    // réduire la pression mémoire pendant le dev (le scanner de barrel
+    // exports consomme ~500MB-1GB de RAM supplémentaire). À réactiver
+    // quand le système aura plus de RAM ou pour la prod.
+    // optimizePackageImports: ["lucide-react", "date-fns", "recharts"],
   },
 };
 
