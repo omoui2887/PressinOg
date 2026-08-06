@@ -549,3 +549,37 @@ Stage Summary:
 - ⚠️ Migration DB 021 à exécuter manuellement dans le SQL Editor Supabase
 - ✅ Lint OK, dev server OK (page home 200, .env.local chargé)
 - ⚠️ Page POS crash par OOM en local (contrainte mémoire container) — OK sur Vercel
+
+---
+Task ID: audit-couleur-libre
+Agent: main (Z.ai Code)
+Task: Corriger l'erreur « couleur_libre est requis quand couleur='autre' » + audit complet de l'application POS
+
+Work Log:
+- Analyse de la capture d'erreur via VLM (z-ai vision) : erreur 400 « Article 1 : couleur_libre est requis quand couleur='autre' » lors du clic sur IMPAYÉ dans /admin/commandes/nouvelle
+- Audit complet de la chaîne POS : types.ts → store.ts → mock-data.ts → pos-caisse.tsx → API /api/admin/commandes/route.ts → migrations DB (001_enums.sql, 002_tables.sql)
+- Identification de 4 bugs :
+  1. CRITIQUE : store.ts addArticle() initialisait couleur='autre' → déclenche l'exigence couleur_libre côté API (validation 400) car l'UI POS n'expose pas ce champ
+  2. CRITIQUE : etat='correct' n'existe PAS dans l'enum DB etat_vetement (valeurs valides : bon, acceptable, use, dechire, tache) — aurait causé une 2e erreur après la 1re
+  3. pos-caisse.tsx : fallbacks ?? 'autre' / ?? 'correct' reproduisaient les bugs 1+2
+  4. MINEUR : icône Lavage = WashingMachine (identique à Blanchisserie) dans la barre de catégories, alors que le dialogue d'action utilise Droplets — incohérence visuelle
+- Vérification de la synergie Tarifs ↔ Nouvelle commande : la page /admin/tarifs configure déjà les 6 actions (Lavage, Repassage, Laver-Repasser, Nettoyage à sec, Détachage, Blanchisserie) via TYPES_SERVICES dans tarifs-helpers.ts. Le dialogue d'action (article-actions-dialog.tsx) liste bien les 6 actions fixes et n'affiche que celles qui ont un tarif configuré. La couche data.ts construit le catalogue POS à partir des tarifs. Synergie OK.
+- Corrections appliquées :
+  • store.ts : couleur='blanc', etat='bon' (alignés sur enum DB + wizard step-articles)
+  • mock-data.ts : 3 lignes démo avec couleurs/etats valides et variés (blanc/bon, bleu/bon, noir/acceptable)
+  • pos-caisse.tsx : fallbacks corrigés → 'blanc' / 'bon'
+  • types.ts : commentaires mis à jour pourdocumenter les contraintes d'enum + ajout icône 'droplets'
+  • category-button.tsx : ajout Droplets pour l'icône lavage (différencie de blanchisserie)
+  • mock-data.ts POS_CATEGORIES : lavage → icon 'droplets' (au lieu de 'washing')
+- Lint : bun run lint → 0 erreur, 0 warning
+- Compilation : route /admin/commandes/nouvelle compile correctement (HTTP 307 redirect vers login = OK)
+- Commit local : 29b43c3 « fix(pos): corrige l'erreur 'couleur_libre est requis quand couleur=autre' »
+- Push GitHub : ÉCHEC (aucun token GitHub configuré dans cet environnement)
+
+Stage Summary:
+- Bug critique corrigé : la création de commande POS ne échouera plus avec l'erreur couleur_libre
+- Bug latent corrigé : etat='correct' (invalide) remplacé par 'bon' (valide)
+- Synergie Tarifs ↔ Nouvelle commande vérifiée et fonctionnelle pour les 6 actions
+- Icône Lavage différenciée de Blanchisserie (Droplets vs WashingMachine)
+- Commit local prêt (29b43c3) — nécessite un push manuel vers GitHub pour déclencher le déploiement Vercel
+- Fichiers modifiés : src/lib/pos/store.ts, src/lib/pos/mock-data.ts, src/lib/pos/types.ts, src/components/pos/pos-caisse.tsx, src/components/pos/category-button.tsx
