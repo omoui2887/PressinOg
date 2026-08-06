@@ -1,13 +1,13 @@
 /**
  * <ProductCard /> — Carte d'article du catalogue POS (vue article-centric, sans prix).
  *
- * Affiche UNE carte par article du catalogue (dédupliquée par catalogue_article_id).
- * La carte ne contient PLUS de prix : un simple clic ouvre une boîte de dialogue
- * (cf. <ArticleActionsDialog />) qui liste toutes les actions possibles pour cet
- * article (Repassage, Laver-Repasser, Séchage, Nettoyage à sec, Détachage…)
- * avec le prix correspondant à chacune. Les prix sont ceux configurés par
- * l'administrateur dans le module « Tarifs par articles » (avec fallback sur
- * le prix générique du service).
+ * Affiche UNE carte par article du catalogue (uniquement les articles ayant
+ * au moins un tarif configuré dans « Tarifs par article »). Aucun prix n'est
+ * affiché sur la carte : un clic ouvre la boîte de dialogue <ArticleActionsDialog />
+ * qui liste les 6 actions possibles pour cet article (Lavage, Repassage,
+ * Laver-Repasser, Nettoyage à sec, Détachage, Blanchisserie) avec le prix
+ * correspondant à chacune. Les prix sont ceux configurés par l'administrateur
+ * dans le module « Tarifs par article ».
  *
  * Un compteur discret en haut à droite indique la quantité déjà au panier pour
  * cet article (toutes actions confondues).

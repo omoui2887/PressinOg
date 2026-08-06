@@ -28,11 +28,12 @@ import {
  * L'ordre du tableau définit l'ordre d'affichage des groupes dans la liste.
  *
  * `icon` : icône Lucide illustrant visuellement la catégorie de service.
- *   - lavage         → Droplets (eau)
- *   - repassage      → Wind (vapeur / flux d'air du fer)
- *   - nettoyage_sec  → Sparkles (éclat du nettoyage à sec)
- *   - detachage      → SprayCan (spray détachant)
- *   - blanchisserie  → Shirt (vêtement blanchi)
+ *   - lavage          → Droplets (eau)
+ *   - repassage       → Wind (vapeur / flux d'air du fer)
+ *   - laver_repasser  → Shirt (lavage + repassage combinés)
+ *   - nettoyage_sec   → Sparkles (éclat du nettoyage à sec)
+ *   - detachage       → SprayCan (spray détachant)
+ *   - blanchisserie   → Shirt (vêtement blanchi)
  */
 export const TYPES_SERVICES = [
   {
@@ -46,6 +47,12 @@ export const TYPES_SERVICES = [
     label: "Repassage",
     badgeClass: "bg-secondary/10 text-secondary border-secondary/20",
     icon: Wind,
+  },
+  {
+    value: "laver_repasser",
+    label: "Laver-Repasser",
+    badgeClass: "bg-chart-4/10 text-chart-4 border-chart-4/20",
+    icon: Shirt,
   },
   {
     value: "nettoyage_sec",

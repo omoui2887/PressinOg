@@ -2,23 +2,24 @@
  * <ArticleActionsDialog /> — Boîte de dialogue de choix de l'action.
  * ====================================================================
  *
- * S'ouvre lorsque l'utilisateur clique sur un article du catalogue POS.
- * Liste toutes les actions (services) disponibles pour cet article, avec
+ * S'ouvre automatiquement lorsque l'utilisateur clique sur un article du
+ * catalogue POS. Liste les 6 actions possibles pour cet article, avec
  * le prix correspondant à chacune :
  *
- *   - Repassage
- *   - Laver-Repasser
- *   - Séchage
- *   - Nettoyage à sec
- *   - Détachage
- *   - (toute autre action configurée par le pressing)
+ *   1. Lavage
+ *   2. Repassage
+ *   3. Laver-Repasser
+ *   4. Nettoyage à sec
+ *   5. Détachage
+ *   6. Blanchisserie
  *
- * Les prix proviennent du module « Tarifs par articles » (/api/admin/tarifs-articles)
- * avec fallback sur le prix générique du service — résolus côté data.ts lors de
- * la construction du produit cartésien service × article.
+ * SYNERGIE AVEC « TARIFS PAR ARTICLE » :
+ *   Les prix proviennent exclusivement des tarifs configurés par
+ *   l'administrateur dans /admin/tarifs. Les actions SANS tarif
+ *   s'affichent « Non configuré » et ne sont pas cliquables.
  *
- * L'utilisateur clique sur une action → l'article (avec le service sélectionné)
- * est ajouté au panier et le dialogue se ferme.
+ * L'utilisateur clique sur une action configurée → l'article (avec le
+ * service sélectionné) est ajouté au panier et le dialogue se ferme.
  */
 "use client";
 import { memo, useMemo } from "react";
@@ -31,13 +32,14 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import {
-  WashingMachine,
+  Droplets,
   Wind,
   Shirt,
-  Sun,
   Sparkles,
   SprayCan,
+  WashingMachine,
   ChevronRight,
+  Lock,
   type LucideIcon,
 } from "lucide-react";
 import type { PosArticle, PosCategorieId } from "@/lib/pos/types";
@@ -46,7 +48,7 @@ import { formatFcfa } from "@/lib/pos/format";
 interface ArticleActionsDialogProps {
   /** Article représentatif (pour l'image + le nom dans l'en-tête). */
   article: PosArticle | null;
-  /** Toutes les variantes (une par service disponible). */
+  /** Toutes les variantes (une par service tarifé). */
   variants: PosArticle[];
   open: boolean;
   /** Appelé quand l'utilisateur choisit une action (variante spécifique). */
@@ -56,40 +58,23 @@ interface ArticleActionsDialogProps {
 }
 
 /**
- * Ordre d'affichage préféré des actions dans le dialogue.
- * Les actions non listées ici apparaissent à la fin, dans leur ordre d'arrivée.
- *
- * Cet ordre correspond à la demande métier : Repassage en premier (le plus
- * courant), puis Laver-Repasser, Séchage, Nettoyage à sec, Détachage.
+ * Les 6 actions fixes affichées dans le dialogue, dans l'ordre métier.
+ * Chaque action a : un id (PosCategorieId), un libellé, une icône Lucide,
+ * et le type_service DB correspondant (pour retrouver la variante tarifée).
  */
-const ACTION_PRIORITY: Exclude<PosCategorieId, "tous">[] = [
-  "repassage",
-  "laver-repasser",
-  "sechage",
-  "nettoyage_sec",
-  "detachage",
-  "lavage",
+const ACTIONS: Array<{
+  id: Exclude<PosCategorieId, "tous">;
+  label: string;
+  icon: LucideIcon;
+  typeService: string;
+}> = [
+  { id: "lavage", label: "Lavage", icon: Droplets, typeService: "lavage" },
+  { id: "repassage", label: "Repassage", icon: Wind, typeService: "repassage" },
+  { id: "laver-repasser", label: "Laver-Repasser", icon: Shirt, typeService: "laver_repasser" },
+  { id: "nettoyage_sec", label: "Nettoyage à sec", icon: Sparkles, typeService: "nettoyage_sec" },
+  { id: "detachage", label: "Détachage", icon: SprayCan, typeService: "detachage" },
+  { id: "blanchisserie", label: "Blanchisserie", icon: WashingMachine, typeService: "blanchisserie" },
 ];
-
-/** Icône lucide associée à chaque catégorie de service. */
-const ACTION_ICON: Partial<Record<Exclude<PosCategorieId, "tous">, LucideIcon>> = {
-  repassage: Wind,
-  "laver-repasser": Shirt,
-  sechage: Sun,
-  nettoyage_sec: Sparkles,
-  detachage: SprayCan,
-  lavage: WashingMachine,
-};
-
-/** Libellé affichable pour chaque catégorie de service. */
-const ACTION_LABEL: Record<Exclude<PosCategorieId, "tous">, string> = {
-  lavage: "Lavage",
-  repassage: "Repassage",
-  "laver-repasser": "Laver-Repasser",
-  sechage: "Séchage",
-  nettoyage_sec: "Nettoyage à sec",
-  detachage: "Détachage",
-};
 
 function ArticleActionsDialogImpl({
   article,
@@ -99,22 +84,17 @@ function ArticleActionsDialogImpl({
   onClose,
 }: ArticleActionsDialogProps) {
   /**
-   * Trie les variantes selon l'ordre préféré (ACTION_PRIORITY).
-   * Les catégories inconnues apparaissent à la fin.
+   * Map d'accès rapide : type_service → variante (PosArticle).
+   * Permet de retrouver en O(1) la variante pour chaque action fixe.
    */
-  const sortedVariants = useMemo<PosArticle[]>(() => {
-    if (!variants.length) return [];
-    const priorityIndex = (cat: PosArticle["categorie"]): number => {
-      const idx = ACTION_PRIORITY.indexOf(cat);
-      return idx === -1 ? ACTION_PRIORITY.length : idx;
-    };
-    return [...variants].sort((a, b) => {
-      const pa = priorityIndex(a.categorie);
-      const pb = priorityIndex(b.categorie);
-      if (pa !== pb) return pa - pb;
-      // Tri secondaire alphabétique sur le nom du service pour stabilité.
-      return a.service_nom.localeCompare(b.service_nom, "fr");
-    });
+  const variantByType = useMemo<Map<string, PosArticle>>(() => {
+    const m = new Map<string, PosArticle>();
+    for (const v of variants) {
+      // La clé est le type_service DB, reconstruit depuis la catégorie POS
+      const typeService = categorieToTypeService(v.categorie);
+      m.set(typeService, v);
+    }
+    return m;
   }, [variants]);
 
   return (
@@ -143,56 +123,83 @@ function ArticleActionsDialogImpl({
           </DialogHeader>
         )}
 
-        {/* Liste des actions disponibles avec leur prix */}
+        {/* Liste des 6 actions fixes */}
         <div className="pos-scroll max-h-[60vh] overflow-y-auto p-2">
-          {!sortedVariants.length ? (
-            <div className="px-3 py-8 text-center text-sm text-[var(--pos-text-muted)]">
-              Aucune action disponible pour cet article.
-              <br />
-              Configurez les services et tarifs dans{" "}
-              <strong>Tarifs par article</strong>.
-            </div>
-          ) : (
-            <ul className="flex flex-col gap-1">
-              {sortedVariants.map((v) => {
-                const Icon = ACTION_ICON[v.categorie] ?? WashingMachine;
-                const label = ACTION_LABEL[v.categorie] ?? v.service_nom;
+          <ul className="flex flex-col gap-1">
+            {ACTIONS.map((action) => {
+              const variant = variantByType.get(action.typeService);
+              const configured = !!variant;
+              const Icon = action.icon;
+
+              if (!configured) {
+                // Action sans tarif → affichée en grisé, non cliquable
                 return (
-                  <li key={v.id}>
-                    <button
-                      type="button"
-                      onClick={() => onPick(v)}
-                      className="flex w-full items-center gap-3 rounded-md border border-transparent bg-[var(--pos-surface)] px-3 py-2.5 text-left transition-colors hover:border-[var(--pos-primary)] hover:bg-[var(--pos-primary-light)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-primary)]"
-                      aria-label={`Ajouter ${label} – ${formatFcfa(v.prix)}`}
+                  <li key={action.id}>
+                    <div
+                      className="flex w-full cursor-not-allowed items-center gap-3 rounded-md border border-transparent bg-[var(--pos-surface)] px-3 py-2.5 opacity-50"
+                      aria-label={`${action.label} — Non configuré`}
+                      role="button"
+                      aria-disabled="true"
                     >
-                      {/* Icône action */}
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--pos-primary-light)] text-[var(--pos-primary)]">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--pos-bg)] text-[var(--pos-text-muted)]">
                         <Icon className="h-5 w-5" aria-hidden />
                       </span>
-                      {/* Libellé action */}
                       <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-medium leading-tight text-[var(--pos-text)]">
-                          {label}
+                        <span className="block text-sm font-medium leading-tight text-[var(--pos-text-muted)]">
+                          {action.label}
                         </span>
-                        <span className="block truncate text-[11px] leading-tight text-[var(--pos-text-muted)]">
-                          {v.service_nom}
+                        <span className="block text-[11px] leading-tight text-[var(--pos-text-muted)]">
+                          Non configuré
                         </span>
                       </span>
-                      {/* Prix */}
-                      <span className="shrink-0 rounded-md bg-[var(--pos-danger)] px-2.5 py-1 text-sm font-bold text-white pos-mono">
-                        {formatFcfa(v.prix)}
+                      <span className="shrink-0 rounded-md bg-[var(--pos-bg)] px-2.5 py-1 text-xs font-medium text-[var(--pos-text-muted)]">
+                        —
                       </span>
-                      {/* Chevron */}
-                      <ChevronRight
+                      <Lock
                         className="h-4 w-4 shrink-0 text-[var(--pos-text-muted)]"
                         aria-hidden
                       />
-                    </button>
+                    </div>
                   </li>
                 );
-              })}
-            </ul>
-          )}
+              }
+
+              // Action configurée → cliquable, avec le prix
+              return (
+                <li key={action.id}>
+                  <button
+                    type="button"
+                    onClick={() => onPick(variant)}
+                    className="flex w-full items-center gap-3 rounded-md border border-transparent bg-[var(--pos-surface)] px-3 py-2.5 text-left transition-colors hover:border-[var(--pos-primary)] hover:bg-[var(--pos-primary-light)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-primary)]"
+                    aria-label={`Ajouter ${action.label} – ${formatFcfa(variant.prix)}`}
+                  >
+                    {/* Icône action */}
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--pos-primary-light)] text-[var(--pos-primary)]">
+                      <Icon className="h-5 w-5" aria-hidden />
+                    </span>
+                    {/* Libellé action */}
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium leading-tight text-[var(--pos-text)]">
+                        {action.label}
+                      </span>
+                      <span className="block truncate text-[11px] leading-tight text-[var(--pos-text-muted)]">
+                        {variant.service_nom}
+                      </span>
+                    </span>
+                    {/* Prix */}
+                    <span className="shrink-0 rounded-md bg-[var(--pos-danger)] px-2.5 py-1 text-sm font-bold text-white pos-mono">
+                      {formatFcfa(variant.prix)}
+                    </span>
+                    {/* Chevron */}
+                    <ChevronRight
+                      className="h-4 w-4 shrink-0 text-[var(--pos-text-muted)]"
+                      aria-hidden
+                    />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         </div>
 
         {/* Pied : aide contextuelle */}
@@ -203,6 +210,29 @@ function ArticleActionsDialogImpl({
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * Conversion catégorie POS → type_service DB.
+ * Utilisé pour retrouver la variante correspondant à chaque action fixe.
+ */
+function categorieToTypeService(cat: PosArticle["categorie"]): string {
+  switch (cat) {
+    case "laver-repasser":
+      return "laver_repasser";
+    case "nettoyage_sec":
+      return "nettoyage_sec";
+    case "lavage":
+      return "lavage";
+    case "repassage":
+      return "repassage";
+    case "detachage":
+      return "detachage";
+    case "blanchisserie":
+      return "blanchisserie";
+    default:
+      return cat;
+  }
 }
 
 export const ArticleActionsDialog = memo(ArticleActionsDialogImpl);

@@ -2,11 +2,11 @@
  * OgPressing — Page "Tarifs par article" (LOT 16) — task 4
  * --------------------------------------------------------
  * Page /admin/tarifs : permet au manager de fixer un prix (FCFA) pour
- * chaque article du catalogue × chaque type de prestation (5 services).
+ * chaque article du catalogue × chaque type de prestation (6 services).
  *
  * Architecture :
  *   - TarifsPage (client, this file)  : orchestre fetch + state + handlers
- *   - <ArticleCard/> (inline)         : carte d'un article avec ses 5 inputs
+ *   - <ArticleCard/> (inline)         : carte d'un article avec ses 6 inputs
  *   - <CategorySection/> (inline)     : section regroupée par catégorie
  *   - <CategoryTab/> + <StatCard/>    : petits composants de présentation
  *
@@ -512,7 +512,7 @@ function CategoryTab({ active, onClick, icon: Icon, label, count }: CategoryTabP
 }
 
 // ============================================================
-// Sous-composant : ArticleCard (carte d'un article avec 5 inputs)
+// Sous-composant : ArticleCard (carte d'un article avec 6 inputs)
 // ============================================================
 
 interface ArticleCardProps {
@@ -561,7 +561,7 @@ function ArticleCard({
   onSave,
   onDelete,
 }: ArticleCardProps) {
-  // État local des 5 inputs (string pour permettre la saisie libre).
+  // État local des 6 inputs (string pour permettre la saisie libre).
   // Initialisé une seule fois à partir des tarifs existants ; ensuite
   // l'input est la source de vérité (le serveur confirme via props mais
   // on n'écrase pas la saisie en cours).
@@ -635,7 +635,7 @@ function ArticleCard({
         </div>
       </div>
 
-      {/* -------- Liste des 5 services avec inputs prix -------- */}
+      {/* -------- Liste des 6 services avec inputs prix -------- */}
       <div className="space-y-2 border-t pt-3">
         {TYPES_SERVICES.map((t) => {
           const tarif = tarifsByService[t.value];

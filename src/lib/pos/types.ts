@@ -17,19 +17,19 @@
  * Catégorie de service POS (détermine l'ordre d'affichage dans le dialogue
  * d'action lorsqu'on clique sur un article du catalogue).
  *
- * L'utilisateur final choisit l'action (Repassage, Laver-Repasser, Séchage,
- * Nettoyage à sec, Détachage) via une boîte de dialogue — cette enum sert
- * principalement à ordonner les actions dans le dialogue selon la préférence
- * métier (voir ACTION_PRIORITY dans article-actions-dialog.tsx).
+ * L'utilisateur final choisit l'action (Lavage, Repassage, Laver-Repasser,
+ * Nettoyage à sec, Détachage, Blanchisserie) via une boîte de dialogue —
+ * cette enum sert principalement à ordonner les actions dans le dialogue
+ * selon la préférence métier (voir ACTION_PRIORITY dans article-actions-dialog.tsx).
  */
 export type PosCategorieId =
   | "tous"
   | "lavage"
   | "repassage"
   | "laver-repasser"
-  | "sechage"
   | "nettoyage_sec"
-  | "detachage";
+  | "detachage"
+  | "blanchisserie";
 
 /** Article/prestation affiché dans la grille du catalogue. */
 export interface PosArticle {
@@ -56,10 +56,14 @@ export interface PosArticle {
   catalogue_categorie: string;
   /** URL de l'illustration : /images/articles/{slug}.png. */
   icone_url: string;
-  /** Prix unitaire en FCFA (entier). */
+  /** Prix unitaire en FCFA (entier). 0 si aucun tarif configuré. */
   prix: number;
   /** Délai estimé en heures (pour calculer la date de retrait). */
   duree_estimee_h?: number;
+  /** True si un tarif spécifique existe pour cet article × ce service.
+   *  False → l'action s'affiche « Non configuré » dans le dialogue et
+   *  n'est pas cliquable (synergie avec Tarifs par article). */
+  tarifConfigure: boolean;
 }
 
 /** Définition d'une catégorie POS (icône + libellé). */
@@ -67,7 +71,7 @@ export interface PosCategorie {
   id: Exclude<PosCategorieId, "tous">;
   label: string;
   /** Slug lucide-react → résolu côté composant (évite d'importer lucide ici). */
-  icon: "washing" | "iron" | "shirt" | "sun" | "sparkles" | "spray";
+  icon: "washing" | "iron" | "shirt" | "sparkles" | "spray" | "washing-machine";
 }
 
 /**

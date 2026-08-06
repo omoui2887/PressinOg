@@ -21,6 +21,7 @@ import {
   Sparkles,
   SprayCan,
   Shirt,
+  WashingMachine,
   type LucideIcon,
 } from "lucide-react";
 
@@ -29,22 +30,27 @@ import {
 // ============================================================
 
 /**
- * Les 5 types de prestation du pressing. L'ordre du tableau définit l'ordre
+ * Les 6 types de prestation du pressing. L'ordre du tableau définit l'ordre
  * d'affichage dans la liste des prix par service (sur chaque carte article).
  *
  * `icon` : icône Lucide illustrant visuellement la catégorie de service.
- *   - lavage         → Droplets (eau)
- *   - repassage      → Wind (vapeur / flux d'air du fer)
- *   - nettoyage_sec  → Sparkles (éclat du nettoyage à sec)
- *   - detachage      → SprayCan (spray détachant)
- *   - blanchisserie  → Shirt (vêtement blanchi)
+ *   - lavage          → Droplets (eau)
+ *   - repassage       → Wind (vapeur / flux d'air du fer)
+ *   - laver_repasser  → Shirt (lavage + repassage combinés)
+ *   - nettoyage_sec   → Sparkles (éclat du nettoyage à sec)
+ *   - detachage       → SprayCan (spray détachant)
+ *   - blanchisserie   → WashingMachine (blanchisserie industrielle)
+ *
+ * ⚠️  Nécessite la migration DB 021 (ALTER TYPE type_service ADD VALUE
+ *     'laver_repasser') pour que la valeur soit acceptée par PostgreSQL.
  */
 export const TYPES_SERVICES = [
   { value: "lavage", label: "Lavage", icon: Droplets },
   { value: "repassage", label: "Repassage", icon: Wind },
+  { value: "laver_repasser", label: "Laver-Repasser", icon: Shirt },
   { value: "nettoyage_sec", label: "Nettoyage à sec", icon: Sparkles },
   { value: "detachage", label: "Détachage", icon: SprayCan },
-  { value: "blanchisserie", label: "Blanchisserie", icon: Shirt },
+  { value: "blanchisserie", label: "Blanchisserie", icon: WashingMachine },
 ] as const;
 
 export type TypeService = (typeof TYPES_SERVICES)[number]["value"];

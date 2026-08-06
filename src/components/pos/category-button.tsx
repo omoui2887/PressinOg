@@ -7,7 +7,6 @@ import { memo } from "react";
 import {
   WashingMachine,
   Shirt,
-  Sun,
   Sparkles,
   Wind,
   SprayCan,
@@ -19,9 +18,9 @@ const ICONS: Record<PosCategorie["icon"], LucideIcon> = {
   washing: WashingMachine,
   iron: Wind,
   shirt: Shirt,
-  sun: Sun,
   sparkles: Sparkles,
   spray: SprayCan,
+  "washing-machine": WashingMachine,
 };
 
 interface CategoryButtonProps {

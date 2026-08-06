@@ -2,19 +2,32 @@
  * OgPressing — POS / Caisse : couche d'accès aux données
  * ======================================================
  * Fonctions d'accès aux données derrière une interface stable :
- *   - getArticles()             → catalogue de prestations (services × articles)
+ *   - getArticles()             → catalogue de prestations (articles × tarifs)
  *   - getCatalogueCategories()  → 9 catégories du catalogue global
  *   - getCategories()           → catégories POS (barre service-type)
  *   - searchClients()           → recherche client (nom + téléphone)
  *   - createCommande()          → POST /api/admin/commandes
  *
- * STRATÉGIE : on tente d'abord les API Supabase réelles (déjà configurées).
- * Si elles échouent ou renvoient un catalogue vide (pressing fraîchement
- * configuré sans services), on bascule sur les données fictives de
- * `mock-data.ts` afin que l'écran ne soit jamais vide.
+ * STRATÉGIE — SYNERGIE AVEC « TARIFS PAR ARTICLE » :
+ *   Le catalogue POS est construit à partir des TARIFS configurés par
+ *   l'administrateur dans /admin/tarifs. Seuls les articles qui ont au moins
+ *   un tarif spécifique apparaissent dans « Nouvelle Commande ».
  *
- * Brancher/débrancher Supabase = ne modifier que ce fichier ; les composants
- * n'ont pas besoin d'être touchés.
+ *   Pour chaque article configuré, on crée une variante par type_service
+ *   qui possède un tarif. Les 6 types possibles sont :
+ *     1. Lavage
+ *     2. Repassage
+ *     3. Laver-Repasser  (nécessite la migration DB 021)
+ *     4. Nettoyage à sec
+ *     5. Détachage
+ *     6. Blanchisserie
+ *
+ *   Les prix affichés dans le dialogue d'action proviennent exclusivement
+ *   des tarifs — il n'y a plus de fallback sur le prix générique du service.
+ *   Si une action n'a pas de tarif, elle s'affiche « Non configuré ».
+ *
+ * Si les API Supabase échouent ou renvoient un catalogue/tarifs vide,
+ * on bascule sur les données fictives de `mock-data.ts`.
  */
 import type {
   PosArticle,
@@ -31,38 +44,43 @@ import {
 } from "@/lib/catalogue/catalogue-articles";
 
 /**
- * Mapping type de service DB → catégorie POS.
+ * Les 6 types de service possibles (alignés sur l'enum DB `type_service` +
+ * la valeur `laver_repasser` ajoutée par la migration 021).
  *
- * Détecte d'abord les cas ambigus via le nom du service (ex : "Laver-Repasser"
- * contient à la fois "laver" et "repasser" → catégorie "laver-repasser",
- * même si le type DB est "lavage"). Sinon, mappe directement le type DB.
- *
- * Le type "detachage" est maintenant mappé à sa propre catégorie (et non
- * fusionné avec "lavage") afin que le dialogue d'action puisse l'afficher
- * distinctement avec son prix spécifique.
+ * L'ordre définit la priorité d'affichage dans le dialogue d'action au clic
+ * sur un article du catalogue POS.
  */
-function typeToCategorie(
-  type: string,
-  nom: string
-): PosArticle["categorie"] {
-  const n = (nom || "").toLowerCase();
-  if (n.includes("repasser") || n.includes("repassage")) {
-    if (n.includes("laver")) return "laver-repasser";
-    return "repassage";
-  }
-  if (n.includes("séchage") || n.includes("sechage")) return "sechage";
-  if (n.includes("detachage") || n.includes("détachage")) return "detachage";
+const ACTION_TYPES = [
+  "lavage",
+  "repassage",
+  "laver_repasser",
+  "nettoyage_sec",
+  "detachage",
+  "blanchisserie",
+] as const;
+
+/**
+ * Mapping type_service DB → catégorie POS.
+ *
+ * `laver_repasser` (DB) → `laver-repasser` (POS) : la valeur DB utilise un
+ * underscore, la catégorie POS utilise un tiret (convention historique).
+ *
+ * `blanchisserie` → `blanchisserie` : identique des deux côtés.
+ */
+function typeToCategorie(type: string): PosArticle["categorie"] {
   switch (type) {
     case "lavage":
       return "lavage";
     case "repassage":
       return "repassage";
+    case "laver_repasser":
+      return "laver-repasser";
     case "nettoyage_sec":
       return "nettoyage_sec";
-    case "blanchisserie":
-      return "lavage";
     case "detachage":
       return "detachage";
+    case "blanchisserie":
+      return "blanchisserie";
     default:
       return "lavage";
   }
@@ -108,46 +126,33 @@ interface TarifRow {
 }
 
 /**
- * Charge le catalogue de prestations — VERSION ARTICLE-CENTRIC.
+ * Charge le catalogue de prestations — VERSION SYNERGIE TARIFS.
  *
- * 1. GET /api/admin/services            → services actifs du pressing connecté.
- * 2. GET /api/public/catalogue-articles → 33 articles du catalogue global.
- * 3. GET /api/admin/tarifs-articles     → tarifs spécifiques (actifs) par
+ * 1. GET /api/public/catalogue-articles → 33 articles du catalogue global.
+ * 2. GET /api/admin/tarifs-articles     → tarifs spécifiques (actifs) par
  *    couple (article × type_service) pour le pressing connecté.
+ * 3. GET /api/admin/services            → services actifs (pour récupérer
+ *    le service_id à utiliser lors de la création de commande).
  *
- * Construit une `PosArticle[]` cartésienne : 1 entrée par (service × article
- * du catalogue). Avec N services et 33 articles, on obtient N×33 cartes au
- * maximum. Chaque carte hérite :
- *   - du service  → `service_id`, `service_nom`, `categorie` (type POS)
- *   - de l'article→ `catalogue_article_id`, `catalogue_slug`, `catalogue_nom`,
- *                   `catalogue_categorie`, `icone_url`
- *   - du tarif    → `prix` + `duree_estimee_h` si un tarif spécifique existe
- *                   pour (article, type_service) ; sinon fallback sur le
- *                   prix/durée générique du service.
+ * Construit une `PosArticle[]` basée sur les TARIFS :
+ *   - Seuls les articles avec au moins un tarif apparaissent.
+ *   - Pour chaque article, une variante par type_service qui a un tarif.
+ *   - Le service_id est résolu en cherchant un service du même type.
  *
- * Si l'une des requêtes critiques (services OU catalogue) échoue ou renvoie
- * vide, on bascule sur les données fictives.
- *
- * Le fetch des tarifs est non bloquant : s'il échoue (401, réseau), on
- * utilise simplement le prix du service pour toutes les cartes.
+ * Si le catalogue ou les tarifs sont vides, on bascule sur les données
+ * fictives (mock) afin que l'écran ne soit jamais vide en démo.
  */
 export async function getArticles(): Promise<{
   articles: PosArticle[];
   source: "api" | "mock" | "mixed";
 }> {
   try {
-    const [servicesRes, catalogueRes, tarifsRes] = await Promise.allSettled([
-      fetch("/api/admin/services", { cache: "no-store" }),
+    const [catalogueRes, tarifsRes, servicesRes] = await Promise.allSettled([
       fetch("/api/public/catalogue-articles", { cache: "no-store" }),
       fetch("/api/admin/tarifs-articles", { cache: "no-store" }),
+      fetch("/api/admin/services", { cache: "no-store" }),
     ]);
 
-    const services: ServiceRow[] =
-      servicesRes.status === "fulfilled" && servicesRes.value.ok
-        ? ((await servicesRes.value.json())?.data as
-            | ServiceRow[]
-            | undefined) ?? []
-        : [];
     const catalogue: CatalogueRow[] =
       catalogueRes.status === "fulfilled" && catalogueRes.value.ok
         ? ((await catalogueRes.value.json())?.data as
@@ -160,43 +165,68 @@ export async function getArticles(): Promise<{
             | TarifRow[]
             | undefined) ?? []
         : [];
+    const services: ServiceRow[] =
+      servicesRes.status === "fulfilled" && servicesRes.value.ok
+        ? ((await servicesRes.value.json())?.data as
+            | ServiceRow[]
+            | undefined) ?? []
+        : [];
 
-    // Bascule mock si l'une des deux sources critiques est vide.
-    if (!services.length || !catalogue.length) {
+    // Bascule mock si le catalogue OU les tarifs sont vides.
+    if (!catalogue.length || !tarifs.length) {
       return { articles: MOCK_ARTICLES, source: "mock" };
     }
 
-    // Index des tarifs : Map<catalogue_article_id, Map<type_service, {prix, duree_h}>>
-    // Permet une résolution O(1) lors de la construction des cartes.
+    // Index du catalogue : Map<catalogue_article_id, CatalogueRow>
+    const catalogueById = new Map<string, CatalogueRow>();
+    for (const art of catalogue) {
+      catalogueById.set(art.id, art);
+    }
+
+    // Index des services par type : Map<type_service, ServiceRow>
+    // (pour résoudre le service_id lors de la création de commande)
+    const serviceByType = new Map<string, ServiceRow>();
+    for (const svc of services) {
+      if (svc.actif === false) continue;
+      // Ne pas écraser si déjà présent (on garde le 1er service de chaque type)
+      if (!serviceByType.has(svc.type)) {
+        serviceByType.set(svc.type, svc);
+      }
+    }
+
+    // Index des tarifs : Map<catalogue_article_id, Map<type_service, TarifRow>>
     const tarifsByArticle = new Map<
       string,
-      Map<string, { prix: number; duree_h?: number }>
+      Map<string, TarifRow>
     >();
     for (const t of tarifs) {
       if (!t.catalogue_article_id) continue;
+      if (t.actif === false) continue;
       let inner = tarifsByArticle.get(t.catalogue_article_id);
       if (!inner) {
         inner = new Map();
         tarifsByArticle.set(t.catalogue_article_id, inner);
       }
-      inner.set(t.type_service, {
-        prix: Math.trunc(t.prix ?? 0),
-        duree_h: dureeToHours(t.duree_estimee),
-      });
+      inner.set(t.type_service, t);
     }
 
-    // Construction du produit cartésien service × article.
+    // Construction des PosArticle : 1 par (article × type_service tarifé).
+    // Seuls les articles avec au moins un tarif sont inclus.
     const articles: PosArticle[] = [];
-    for (const svc of services) {
-      const cat = typeToCategorie(svc.type, svc.nom);
-      const svcDureeH = dureeToHours(svc.duree_estimee);
-      const svcPrix = Math.trunc(svc.prix ?? 0);
-      for (const art of catalogue) {
-        const tarif = tarifsByArticle.get(art.id)?.get(svc.type);
+    for (const [articleId, tarifsForArticle] of tarifsByArticle) {
+      const art = catalogueById.get(articleId);
+      if (!art) continue; // tarif orphelin (article supprimé du catalogue)
+
+      for (const typeService of ACTION_TYPES) {
+        const tarif = tarifsForArticle.get(typeService);
+        if (!tarif) continue; // pas de tarif pour ce type → action non proposée
+
+        const svc = serviceByType.get(typeService);
+        const cat = typeToCategorie(typeService);
         articles.push({
-          id: `${svc.id}::${art.slug}`,
-          service_id: svc.id,
-          service_nom: svc.nom,
+          id: `${svc?.id ?? "no-svc"}::${art.slug}::${typeService}`,
+          service_id: svc?.id ?? "",
+          service_nom: svc?.nom ?? typeService,
           categorie: cat,
           catalogue_article_id: art.id,
           catalogue_slug: art.slug,
@@ -206,16 +236,19 @@ export async function getArticles(): Promise<{
               ? art.categorie
               : "Articles spéciaux",
           icone_url: art.icone_url ?? iconeUrlForSlug(art.slug),
-          prix: tarif?.prix ?? svcPrix,
-          duree_estimee_h: tarif?.duree_h ?? svcDureeH,
+          prix: Math.trunc(tarif.prix ?? 0),
+          duree_estimee_h: dureeToHours(tarif.duree_estimee),
+          tarifConfigure: true,
         });
       }
     }
 
-    // `mixed` signale qu'on a chargé l'API mais sans tarifs spécifiques
-    // (permet à l'UI d'afficher un indicateur éventuel — non requis ici).
-    const source: "api" | "mixed" = tarifs.length > 0 ? "api" : "mixed";
-    return { articles, source };
+    // Si aucun article n'a de tarif configuré, bascule mock.
+    if (!articles.length) {
+      return { articles: MOCK_ARTICLES, source: "mock" };
+    }
+
+    return { articles, source: "api" };
   } catch {
     return { articles: MOCK_ARTICLES, source: "mock" };
   }

@@ -488,3 +488,64 @@ Stage Summary:
 - ⚠️ Le serveur local crash à la compilation de pages lourdes (contrainte mémoire container)
   → N'affecte PAS Vercel (suffisamment de mémoire en production)
 - ✅ GitHub push réussi (6 commits) → Vercel déploie automatiquement
+
+---
+Task ID: 9
+Agent: main
+Task: 6 actions dans le dialogue + synergie Tarifs/Nouvelle Commande
+
+Work Log:
+- Créé la migration DB 021 (`supabase/migrations/021_add_laver_repasser_enum.sql`) :
+  - `ALTER TYPE type_service ADD VALUE IF NOT EXISTS 'laver_repasser'`
+  - Passe l'enum de 5 à 6 valeurs (lavage, repassage, laver_repasser, nettoyage_sec, detachage, blanchisserie)
+  - ⚠️ Non appliquée sur Supabase (pas d'accès DB direct depuis le container)
+    → L'utilisateur doit l'exécuter dans le SQL Editor Supabase
+- Mis à jour `tarifs-helpers.ts` : TYPES_SERVICES passe de 5 à 6 services
+  - Ajout de `laver_repasser` (label "Laver-Repasser", icône Shirt)
+  - Blanchisserie → icône WashingMachine (au lieu de Shirt pour éviter les doublons)
+- Mis à jour `types.ts` :
+  - `PosCategorieId` : remplacé `sechage` par `blanchisserie`
+  - `PosCategorie.icon` : remplacé `"sun"` par `"washing-machine"`
+  - Ajout du champ `tarifConfigure: boolean` à `PosArticle`
+- Mis à jour `mock-data.ts` :
+  - `POS_CATEGORIES` : remplacé `sechage` par `blanchisserie` (icône washing-machine)
+  - Tous les mock articles : ajout de `tarifConfigure: true`
+  - Mock "Séchage Drap" → "Blanchisserie Drap" (categorie: blanchisserie)
+- Refonte complète de `data.ts` — SYNERGIE TARIFS :
+  - `getArticles()` ne construit PLUS le produit cartésien services × articles
+  - Construit maintenant les variantes à partir des TARIFS :
+    1. Seuls les articles avec au moins un tarif apparaissent dans le POS
+    2. Pour chaque article, une variante par type_service qui a un tarif
+    3. Le service_id est résolu en cherchant un service du même type
+  - `typeToCategorie()` simplifié : mapping direct type DB → categorie POS
+    (plus de détection par nom — `laver_repasser` est maintenant un vrai type DB)
+  - `ACTION_TYPES` : les 6 types fixes dans l'ordre d'affichage du dialogue
+- Refonte de `article-actions-dialog.tsx` :
+  - Les 6 actions sont TOUJOURS affichées (fixes, pas dépendantes des variants)
+  - Actions AVEC tarif : cliquables, prix en badge rouge
+  - Actions SANS tarif : grisées, "Non configuré", non cliquables (icône Lock)
+  - `ACTIONS` : tableau des 6 actions avec id, label, icon, typeService
+  - `variantByType` : Map pour retrouver la variante de chaque action en O(1)
+  - `categorieToTypeService()` : conversion inverse categorie POS → type DB
+- Mis à jour `category-button.tsx` : remplacé `Sun` par `WashingMachine` (icône blanchisserie)
+- Mis à jour `services-helpers.tsx` : TYPES_SERVICES passe à 6 (ajout laver_repasser, badge chart-4)
+- Mis à jour `rapports-helpers.tsx` :
+  - TYPE_SERVICE_LABELS : ajout laver_repasser
+  - TYPES_SERVICE_ORDONNES : ajout laver_repasser
+  - COULEURS_TYPE_SERVICE : ajout laver_repasser (chart4)
+  - CHART_COLORS : ajout chart4
+- Mis à jour les routes API :
+  - `tarifs-articles/route.ts` : TYPES_VALID passe à 6
+  - `services/route.ts` : TYPES_VALID passe à 6
+  - `rapports/mensuel/route.ts` : ORDRE_TYPES passe à 6
+- Mis à jour les commentaires dans pos-caisse.tsx, product-card.tsx, product-grid.tsx, tarifs-page.tsx
+- `bun run lint` : ✅ 0 erreur, 0 warning
+
+Stage Summary:
+- ✅ 6 actions dans le dialogue : Lavage, Repassage, Laver-Repasser, Nettoyage à sec, Détachage, Blanchisserie
+- ✅ Synergie : le POS n'affiche QUE les articles avec au moins un tarif configuré
+- ✅ Le dialogue affiche les 6 actions (configurées = cliquables avec prix, non configurées = grisées)
+- ✅ Tarifs par article : 6 inputs par article (au lieu de 5)
+- ⚠️ Migration DB 021 à exécuter manuellement dans le SQL Editor Supabase
+- ✅ Lint OK, dev server OK (page home 200, .env.local chargé)
+- ⚠️ Page POS crash par OOM en local (contrainte mémoire container) — OK sur Vercel
