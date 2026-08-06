@@ -583,3 +583,25 @@ Stage Summary:
 - Icône Lavage différenciée de Blanchisserie (Droplets vs WashingMachine)
 - Commit local prêt (29b43c3) — nécessite un push manuel vers GitHub pour déclencher le déploiement Vercel
 - Fichiers modifiés : src/lib/pos/store.ts, src/lib/pos/mock-data.ts, src/lib/pos/types.ts, src/components/pos/pos-caisse.tsx, src/components/pos/category-button.tsx
+
+---
+Task ID: fix-service-id-requis
+Agent: main (Z.ai Code)
+Task: Corriger l'erreur « Article 1 : service_id est requis » dans le POS
+
+Work Log:
+- Analyse de la capture d'erreur via VLM : erreur 400 « Article 1 : service_id est requis » lors du clic sur Valider/IMPAYÉ dans /admin/commandes/nouvelle
+- Cause racine identifiée dans src/lib/pos/data.ts getArticles() : quand un tarif existe (table tarifs_articles) mais qu'aucun service correspondant n'existe (table services) pour ce type_service, la variante était poussée avec service_id='' et tarifConfigure=true. L'utilisateur voyait l'action comme cliquable, mais l'API rejetait la commande car commande_lignes.service_id est une FK vers services.id.
+- 4 niveaux de correction appliqués :
+  1. PRÉVENTION (data.ts) : skip des variantes sans service + console.warn
+  2. AUTO-PROVISIONNEMENT (tarifs-articles/route.ts POST) : ensureServiceExists() crée le service manquant automatiquement quand un tarif est créé
+  3. RÉTRO-COMPATIBILITÉ (sync-services/route.ts POST) : nouvel endpoint qui répare les tarifs existants. Appelé en best-effort au chargement du POS et de la page Tarifs.
+  4. GARDE-FOU (pos-caisse.tsx) : canValidate bloque la soumission si une ligne a service_id vide, avec message explicite
+- Vérification : lint OK, landing HTTP 200, POS HTTP 307 (compile OK), sync endpoint HTTP 401 (auth protégée)
+- Commit : f0bc300
+
+Stage Summary:
+- Bug critique service_id corrigé avec 4 niveaux de défense
+- L'admin n'a plus besoin de créer manuellement les services dans /admin/services — ils sont auto-provisionnés quand un tarif est configuré
+- Les tarifs existants (créés avant le fix) sont automatiquement réparés au prochain chargement du POS ou de la page Tarifs (si l'utilisateur est manager)
+- Fichiers modifiés : src/lib/pos/data.ts, src/app/api/admin/tarifs-articles/route.ts, src/app/api/admin/tarifs-articles/sync-services/route.ts (nouveau), src/components/ogpressing/admin/tarifs/tarifs-page.tsx, src/components/pos/pos-caisse.tsx
