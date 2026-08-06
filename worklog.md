@@ -392,3 +392,44 @@ Stage Summary:
 - **Synchronisation auto** : quand l'admin modifie un tarif dans /admin/tarifs, le POS se recharge automatiquement au prochain focus de l'onglet
 - **Détachage ajouté** : nouvelle catégorie distincte (au lieu d'être fusionnée avec Lavage)
 - 8 fichiers modifiés : types.ts, mock-data.ts, category-button.tsx, data.ts, product-card.tsx, product-grid.tsx, article-actions-dialog.tsx (nouveau), pos-caisse.tsx
+
+---
+Task ID: 6
+Agent: main
+Task: Diagnostiquer pourquoi GitHub/Vercel n'ont pas les dernières modifications
+
+Work Log:
+- Vérifié l'état git local : 5 commits en avance sur origin/main
+  - 3bc8f99 (feat: tarifs par article + POS article-centrique avec catégories)
+  - 3e4f0c9 (ajout fichiers vides tarifs/pos)
+  - 05c079d (POS article-centric + product-grid refactor)
+  - 13cf300 (article-actions-dialog + product-card sans prix + pos-caisse dialog)
+  - 4d03608 (next.config + worklog)
+- Tenté `git push origin main` → échec `could not read Username for 'https://github.com'`
+- Recherché credentials GitHub partout : aucun trouvé
+  - Pas de `gh` CLI installé
+  - Pas de `~/.git-credentials`, pas de `~/.netrc`
+  - Pas de `~/.ssh/` (et pas de commande `ssh` non plus)
+  - Pas de variable d'env `GITHUB_TOKEN`, `GH_TOKEN`, etc.
+  - Pas de credential.helper configuré dans git
+- Vérifié les fichiers locaux : tout est bien en place
+  - `article-actions-dialog.tsx` (208 lignes, contenu correct)
+  - `product-card.tsx` (sans prix, onOpenActions)
+  - `pos-caisse.tsx` (imports + handlers dialogue)
+  - Dev server running sur port 3000, page / répond 200
+- Découvert un 2e problème : `.env.local` a ENCORE disparu
+  - Dev log affiche "Supabase env vars manquantes"
+  - `curl /admin/commandes/nouvelle` → 307 redirect vers `/login?error=config_incomplete`
+  - Le ref Supabase est `yqaitafigfxlrprrouhr` (trouvé dans next.config.ts + worklog)
+  - Mais les clés anon + service_role ne sont stockées nulle part en local
+    (elles ont été purgées de l'historique git par git-filter-repo au LOT 14.2)
+
+Stage Summary:
+- Code local : OK, tous les fichiers modifiés sont bien présents et commités
+- 5 commits prêts à pousser, mais auth GitHub manquante dans le container
+- .env.local disparu — clés Supabase (anon + service_role) nécessaires pour le restaurer
+- Pour débloquer :
+  1. Pousser vers GitHub nécessite un PAT (Personal Access Token) avec scope `repo`
+  2. Restaurer .env.local nécessite les clés Supabase (anon + service_role)
+  3. Vercel déploiera automatiquement dès que le push GitHub sera effectué
+     (les variables d'env Vercel sont déjà configurées dans le dashboard Vercel)
