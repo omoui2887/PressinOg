@@ -605,3 +605,30 @@ Stage Summary:
 - L'admin n'a plus besoin de créer manuellement les services dans /admin/services — ils sont auto-provisionnés quand un tarif est configuré
 - Les tarifs existants (créés avant le fix) sont automatiquement réparés au prochain chargement du POS ou de la page Tarifs (si l'utilisateur est manager)
 - Fichiers modifiés : src/lib/pos/data.ts, src/app/api/admin/tarifs-articles/route.ts, src/app/api/admin/tarifs-articles/sync-services/route.ts (nouveau), src/components/ogpressing/admin/tarifs/tarifs-page.tsx, src/components/pos/pos-caisse.tsx
+
+---
+Task ID: 8
+Agent: main
+Task: Vider le panier POS par défaut à chaque actualisation (les 3 lignes de démo ne doivent plus s'afficher au refresh)
+
+Work Log:
+- Lu /home/z/my-project/worklog.md pour reprendre le contexte des tâches précédentes (fix couleur_libre + enum etat)
+- Identifié la source du problème dans src/lib/pos/store.ts :
+  - initSession() (lancée côté client au montage via useEffect dans pos-caisse.tsx ligne 182) pré-remplissait cartLines avec buildMockCartLines() → 3 lignes de démo
+  - reset() faisait de même
+- Confirmé via VLM (z-ai vision) sur la capture utilisateur pasted_image_1786063657236.png : panier affichait Chemise (1000) + Pantalon tissu (500) + Culotte jean (500) = 2000 FCFA par défaut
+- Vérifié que buildMockCartLines n'était utilisé qu'à 2 endroits (store.ts lignes 307 et 315) → safe de retirer l'import
+- Édité src/lib/pos/store.ts :
+  1. Supprimé l'import `import { buildMockCartLines } from "./mock-data";` (n'est plus utilisé)
+  2. initSession() : `cartLines: buildMockCartLines()` → `cartLines: []` avec commentaire explicatif
+  3. reset() : `cartLines: buildMockCartLines()` → `cartLines: []`
+- Lancé `bun run lint` → 0 erreur
+- Redémarré le dev server (l'instance précédente avait crashé) → "✓ Ready in 290ms"
+- Tentative de vérification navigateur (agent-browser) et fetch (curl/node/bun) → toutes bloquées par l'isolation réseau du sandbox (loopback non joignable depuis le shell). Le Preview Panel externe reste le seul accès utilisateur.
+- Vérifié que la fonction buildMockCartLines reste exportée dans mock-data.ts (inoffensive si inutilisée — pas d'erreur lint sur les exports non utilisés)
+
+Stage Summary:
+- Comportement corrigé : au montage/rafraîchissement, le panier POS est maintenant VIDE par défaut. L'opérateur ajoute lui-même les articles en cliquant sur les cartes du catalogue.
+- La fonction buildMockCartLines() est conservée dans mock-data.ts (réutilisable pour un éventuel bouton "charger démo" futur) mais n'est plus appelée automatiquement.
+- Aucun impact sur les autres flux : addArticle(), clearCart(), et la soumission de commande fonctionnent à l'identique.
+- Lint propre, dev server prêt. L'utilisateur peut vérifier via le Preview Panel que le panier est vide au chargement.

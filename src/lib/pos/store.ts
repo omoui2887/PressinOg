@@ -24,7 +24,6 @@ import {
   computeDateRetrait,
   hasExpress,
 } from "./calc";
-import { buildMockCartLines } from "./mock-data";
 
 export type PosSearchMode = "article" | "code";
 
@@ -304,7 +303,9 @@ export const usePosStore = create<PosState>((set, get) => ({
         reference: generateReference(n),
         dateDepot: n.toISOString(),
         dateRetrait: computeDateRetrait(n, false).toISOString(),
-        cartLines: buildMockCartLines(), // démo : 3 lignes (cf. référence)
+        // Panier VIDE par défaut au montage/rafraîchissement.
+        // L'opérateur ajoute lui-même les articles en cliquant sur les cartes.
+        cartLines: [],
       };
     }),
 
@@ -312,7 +313,7 @@ export const usePosStore = create<PosState>((set, get) => ({
     set(() => {
       const n = new Date();
       return {
-        cartLines: buildMockCartLines(),
+        cartLines: [],
         client: null,
         clientPassage: false,
         dateDepot: n.toISOString(),
