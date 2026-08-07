@@ -632,3 +632,32 @@ Stage Summary:
 - La fonction buildMockCartLines() est conservée dans mock-data.ts (réutilisable pour un éventuel bouton "charger démo" futur) mais n'est plus appelée automatiquement.
 - Aucun impact sur les autres flux : addArticle(), clearCart(), et la soumission de commande fonctionnent à l'identique.
 - Lint propre, dev server prêt. L'utilisateur peut vérifier via le Preview Panel que le panier est vide au chargement.
+
+---
+Task ID: 9
+Agent: main
+Task: Corriger l'erreur "Article 1 : service_id est requis" lors de la validation d'une commande POS
+
+Work Log:
+- Analysé la capture d'écran (pasted_image_1786064117405.png) via VLM : toast rouge "Échec de la validation — Article 1 : service_id est requis. Le panier a été conservé." Le panier contenait un article réel "Chemises (détachage)" à 1000 FCFA, client "bosson", net 2500, payé 2000, reste 500, statut ACOMPTE.
+- Tracé la chaîne complète : store.ts (addArticle) → pos-caisse.tsx (handleValider → payload) → data.ts (getArticles) → API /api/admin/commandes (validation service_id ligne 366-376)
+- Identifié la cause racine : RACE CONDITION critique dans loadArticles() (pos-caisse.tsx) :
+  * sync-services était appelé en fire-and-forget (NON attendu) : `fetch("/api/admin/tarifs-articles/sync-services", {method:"POST"}).catch(...)`
+  * getArticles() s'exécutait immédiatement en parallèle, lisant la table services AVANT que sync-services n'ait créé les services manquants
+  * → services vides → variantes skippées dans data.ts (ligne 232-241) → fallback mock OU articles construits sans service_id valide
+  * → payload envoyé avec service_id vide → API rejette avec "service_id est requis"
+- Deuxième point de défaillance : reloadIfStale() (pos-caisse.tsx ligne 196-215) neappelait PAS sync-services du tout avant getArticles() — même problème au retour d'onglet/fenêtre
+- Corrections appliquées dans src/components/pos/pos-caisse.tsx :
+  1. loadArticles() : `fetch(sync-services)` maintenant AWAITé (try/catch silencieux) AVANT getArticles() — garantit que les services sont créés avant la lecture du catalogue
+  2. reloadIfStale() : ajout d'un await fetch(sync-services) avant getArticles() — même garantie au retour d'onglet
+  3. handleValider() : ajout d'une validation défensive en profondeur — re-vérifie service_id (non-vide, type string, trim non-vide) au moment de la soumission. Si invalide : toast clair "Article(s) sans service associé : {noms}. Rechargez la page..." au lieu d'envoyer un payload invalide
+  4. Payload : `service_id: l.article.service_id` → `service_id: (l.article.service_id || "").trim()` — trim défensif
+- Lancé `bun run lint` → 0 erreur
+- Redémarré le dev server → "✓ Ready in 361ms", GET / 200, aucune erreur de compilation
+
+Stage Summary:
+- Race condition critique corrigée : sync-services est maintenant attendu (await) avant getArticles() dans les 2 points de chargement (loadArticles + reloadIfStale)
+- Défense en profondeur ajoutée : handleValider re-vérifie service_id avant soumission + trim défensif sur le payload
+- L'utilisateur ne verra plus l'erreur "service_id est requis" : les services sont synchronisés avant le chargement du catalogue, garantissant que chaque article a un service_id valide (UUID réel)
+- Si un cas limite persiste (ex: service supprimé entre-temps), le toast indique clairement quels articles sont affectés et propose de recharger la page
+- Lint propre, dev server prêt. L'utilisateur peut vérifier via le Preview Panel.

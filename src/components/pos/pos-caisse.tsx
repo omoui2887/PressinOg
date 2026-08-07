@@ -125,16 +125,21 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
     const store = usePosStore.getState();
     store.setLoadingArticles(true);
 
-    // Best-effort : synchronise les services avec les tarifs existants.
-    // Auto-crée les services manquants pour les tarifs configurés avant
-    // l'auto-provisionnement. Non-bloquant, silencieux (403 si non-manager).
-    // Sans cela, les articles tarifés sans service ne pourraient pas être
-    // commandés (erreur API « service_id est requis »).
-    fetch("/api/admin/tarifs-articles/sync-services", {
-      method: "POST",
-    }).catch(() => {
+    // ⚠️ CRITIQUE : synchronise les services AVANT de charger le catalogue.
+    // sync-services crée les services manquants pour les tarifs configurés.
+    // On DOIT attendre la fin de cette synchro avant getArticles(), sinon
+    // getArticles() lit la table services avant que les nouveaux services
+    // n'y soient → les variantes sont skippées → fallback mock ou articles
+    // sans service_id → erreur API « service_id est requis » à la validation.
+    // Non-bloquant en cas d'échec (403 si non-manager : le manager a dû
+    // synchroniser au préalable via la page Tarifs).
+    try {
+      await fetch("/api/admin/tarifs-articles/sync-services", {
+        method: "POST",
+      });
+    } catch {
       /* silencieux : best-effort, non-bloquant */
-    });
+    }
 
     const [{ articles, source }, catalogueCats] = await Promise.all([
       getArticles(),
@@ -199,8 +204,17 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
       lastReload = now;
       // Recharge silencieusement (sans toast « mode démonstration » même si mock).
       // On appelle getArticles() directement pour éviter le toast du loadArticles().
+      // ⚠️ On await aussi sync-services (cf. loadArticles) pour garantir que les
+      //    services manquants sont créés avant la lecture du catalogue.
       void (async () => {
         try {
+          try {
+            await fetch("/api/admin/tarifs-articles/sync-services", {
+              method: "POST",
+            });
+          } catch {
+            /* silencieux */
+          }
           const [{ articles, source }, catalogueCats] = await Promise.all([
             getArticles(),
             getCatalogueCategories(),
@@ -314,6 +328,33 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
       return;
     }
 
+    // ⚠️ Défense en profondeur : re-vérifie service_id au moment de la soumission.
+    // La closure `canValidate` pourrait être obsolète si le catalogue a été
+    // rechargé entre le rendu et le clic. On rejette ici avec un message clair
+    // plutôt que d'envoyer un payload invalide à l'API (erreur 400 cryptique).
+    const invalidLines = s.cartLines
+      .map((l) => ({ line: l }))
+      .filter(
+        ({ line }) =>
+          !line.article.service_id ||
+          typeof line.article.service_id !== "string" ||
+          !line.article.service_id.trim()
+      );
+    if (invalidLines.length > 0) {
+      const names = invalidLines
+        .map(({ line }) => line.article.catalogue_nom)
+        .join(", ");
+      toast({
+        title: "Validation impossible",
+        description:
+          `Article(s) sans service associé : ${names}. ` +
+          "Rechargez la page (les services sont synchronisés au chargement), " +
+          "ou créez le service manquant dans la page Services.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     s.setSubmitting(true);
     s.setSubmitError(null);
 
@@ -331,7 +372,8 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
         date_pret_prevue: s.dateRetrait,
         notes: s.notes.trim() || undefined,
         articles: s.cartLines.map((l) => ({
-          service_id: l.article.service_id,
+          // Trim défensif : garantit un service_id non-vide côté API.
+          service_id: (l.article.service_id || "").trim(),
           // UUID réel du catalogue_articles (résolu côté data.ts depuis
           // /api/public/catalogue-articles). La source de vérité DB reste
           // service_id — l'UUID catalogue sert de FK pour les articles_vetements.
