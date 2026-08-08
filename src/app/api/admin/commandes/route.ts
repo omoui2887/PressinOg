@@ -915,7 +915,11 @@ export async function POST(request: NextRequest) {
         frais_livraison: 0,
         notes: notes,
         priorite: priorite,
-        idempotence_key: idempotenceKey,
+        // #15 — idempotence_key : incluse uniquement si non-null pour éviter
+        // PGRST204 si la colonne n'existe pas encore en base (migration 024
+        // non appliquée). Si la clé est null, l'omet du payload → la DB
+        // applique DEFAULT NULL (colonne nullable). Résilience défense-en-profondeur.
+        ...(idempotenceKey ? { idempotence_key: idempotenceKey } : {}),
         cree_par: personnelId,
       })
       .select(
