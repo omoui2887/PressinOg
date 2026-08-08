@@ -1910,3 +1910,41 @@ Stage Summary:
 - Les variables d'environnement Supabase sont déjà configurées côté Vercel (déploiements précédents réussis)
 - Note: URL preview protégée par Vercel Authentication (login requis) — l'utilisateur peut désactiver cela dans Settings > Deployment Protection s'il veut un accès public
 - Note runtime: erreur enum "annule" détectée dans dev.log (PATCH /api/admin/commandes → 500) — à corriger dans une tâche ultérieure (valeur enum DB vs code app mismatch)
+
+---
+Task ID: FIX-PGRST-SCHEMA-CACHE
+Agent: main
+Task: Corriger le bug runtime "invalid input value for enum statut_commande: annule" (500/501 intermittents)
+
+Work Log:
+- Investigué l'erreur dans dev.log : PATCH /api/admin/commandes/[id] → 500 (22P02) puis 501
+- Vérifié l'enum en DB : test live (UPDATE statut='annule') → SUCCESS → 'annule' EST dans l'enum (migration 024 appliquée)
+- Identifié la cause racine : cache PostgREST STALE après migration 024 (ajout enum 'annule' + colonne idempotence_key)
+- PostgREST met en cache le schéma DB et ne rafraîchit que toutes les ~5 min ou sur NOTIFY pgrst 'reload schema'
+- Durant la fenêtre stale : UPDATE statut='annule' → 22P02, INSERT avec idempotence_key → PGRST204
+- Erreurs TRANSITOIRES (auto-résolution au refresh) mais causaient des 500/501 intermittents
+
+Fixes appliqués (défense-en-profondeur) :
+1. Migration 033_reload_pgrst_schema.sql :
+   - CREATE FUNCTION reload_pgrst_schema() SECURITY DEFINER → NOTIFY pgrst 'reload schema'
+   - GRANT EXECUTE TO anon, authenticated, service_role
+   - NOTIFY direct à la fin pour forcer le reload immédiat
+2. src/lib/supabase/reload-schema.ts :
+   - isPostgrestSchemaCacheError(err) : détecte PGRST204 + 22P02 + messages "schema cache"/"Could not find"
+   - reloadPostgrestSchema() : appelle reload_pgrst_schema() via RPC admin + attend 400ms
+3. PATCH /api/admin/commandes/[id] :
+   - Refactorisé l'UPDATE en boucle retry (max 2 tentatives)
+   - Sur 22P02/PGRST204 → reloadPostgrestSchema() + retry unique
+   - Si retry échoue aussi → 501 ENUM_VALUE_MISSING avec hint "reload n'a pas résolu"
+4. POST /api/admin/commandes :
+   - Ajouté détection PGRST204/22P02 dans la boucle de retry INSERT existante
+   - Sur PGRST204 → reloadPostgrestSchema() + retry (flag schemaReloaded évite les loops)
+   - Compose avec le retry existant pour collision numero_commande (23505)
+
+Stage Summary:
+- Lint : 0 erreur ✓
+- Dev server : tourne, hot reload OK, pas d'erreur de compilation
+- Root cause : cache PostgREST stale (pas un bug de code, mais un gap de résilience)
+- Solution : auto-healing — l'app détecte les erreurs de cache, force le reload, et retry automatiquement
+- L'utilisateur doit appliquer la migration 033_reload_pgrst_schema.sql sur Supabase (SQL Editor)
+- Après application de 033, la fonction reload_pgrst_schema() sera disponible pour l'auto-retry
