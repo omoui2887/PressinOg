@@ -54,6 +54,10 @@ import {
   isPersonnelActive,
 } from "@/lib/auth/roles";
 import { logAudit } from "@/lib/audit";
+import {
+  isPostgrestSchemaCacheError,
+  reloadPostgrestSchema,
+} from "@/lib/supabase/reload-schema";
 
 export const dynamic = "force-dynamic";
 
@@ -884,6 +888,9 @@ export async function POST(request: NextRequest) {
   const MAX_NUMERO_RETRIES = 5;
   let newCommande: NewCommandeRow | null = null;
   let lastInsertCmdErr: unknown = null;
+  // Track si on a déjà tenté un reload du cache PostgREST (pour éviter les
+  // loops infinies : on reload au max une fois sur l'ensemble des retries).
+  let schemaReloaded = false;
 
   for (let attempt = 1; attempt <= MAX_NUMERO_RETRIES; attempt++) {
     const numeroCommande = generateNumeroCommande();
@@ -933,6 +940,7 @@ export async function POST(request: NextRequest) {
     }
 
     lastInsertCmdErr = insertErr;
+
     // Si c'est une collision sur numero_commande, on retry avec un nouveau n°.
     if (isUniqueViolation(insertErr) && attempt < MAX_NUMERO_RETRIES) {
       console.warn(
@@ -941,6 +949,25 @@ export async function POST(request: NextRequest) {
       );
       continue;
     }
+
+    // PGRST204 / 22P02 = cache PostgREST stale (ex: colonne idempotence_key
+    // ou enum 'annule' pas encore dans le cache après une migration).
+    // On tente un reload du cache + retry unique. Voir migration 033 +
+    // src/lib/supabase/reload-schema.ts.
+    if (
+      !schemaReloaded &&
+      isPostgrestSchemaCacheError(insertErr) &&
+      attempt < MAX_NUMERO_RETRIES
+    ) {
+      console.warn(
+        `[api/admin/commandes] Erreur cache PostgREST détectée (tentative ${attempt}/${MAX_NUMERO_RETRIES}), reload + retry...`,
+        insertErr
+      );
+      await reloadPostgrestSchema();
+      schemaReloaded = true;
+      continue; // retry avec le même numero_commande (pas de collision)
+    }
+
     // Erreur non récupérable ou nombre de tentatives épuisé : on sort.
     break;
   }

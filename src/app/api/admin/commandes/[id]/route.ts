@@ -52,6 +52,10 @@ import {
 } from "@/lib/auth/roles";
 import { canTransitionCommande } from "@/lib/workflow/commande-statut";
 import { logAudit } from "@/lib/audit";
+import {
+  isPostgrestSchemaCacheError,
+  reloadPostgrestSchema,
+} from "@/lib/supabase/reload-schema";
 
 export const dynamic = "force-dynamic";
 
@@ -509,13 +513,50 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     updatePayload.notes = notesValue;
   }
 
-  // ---------- 7. UPDATE ----------
-  const { data: updated, error: updateErr } = await supabase
-    .from("commandes")
-    .update(updatePayload)
-    .eq("id", commandeId)
-    .select("id, statut, priorite, notes, updated_at")
-    .single();
+  // ---------- 7. UPDATE (avec auto-retry sur cache PostgREST stale) ----------
+  // PostgREST met en cache le schéma DB. Après une migration qui ajoute une
+  // valeur d'enum (ex: 024 → 'annule') ou une colonne, le cache reste stale
+  // pendant la fenêtre de refresh (~5 min). Durant cette fenêtre, l'UPDATE
+  // échoue avec 22P02 ("invalid input value for enum"). On tente alors un
+  // reload du cache (NOTIFY pgrst) + un retry unique avant de renvoyer une
+  // erreur au client. Voir migration 033 + src/lib/supabase/reload-schema.ts.
+  let updated: Record<string, unknown> | null = null;
+  let updateErr: unknown = null;
+  let retried = false;
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await supabase
+      .from("commandes")
+      .update(updatePayload)
+      .eq("id", commandeId)
+      .select("id, statut, priorite, notes, updated_at")
+      .single();
+    updated = res.data;
+    updateErr = res.error;
+
+    // Succès → on sort.
+    if (!res.error && res.data) break;
+
+    // Si l'erreur est due à un cache PostgREST stale (22P02 sur un enum
+    // connu, ou PGRST204 sur une colonne connue), on tente un reload +
+    // retry unique.
+    if (
+      attempt === 0 &&
+      isPostgrestSchemaCacheError(res.error)
+    ) {
+      console.warn(
+        "[api/admin/commandes/[id]] Erreur cache PostgREST détectée, " +
+          "reload + retry...",
+        res.error
+      );
+      await reloadPostgrestSchema();
+      retried = true;
+      continue; // retry
+    }
+
+    // Erreur non récupérable ou retry déjà fait → on sort.
+    break;
+  }
 
   if (updateErr || !updated) {
     // 23514 = check_violation (ex: trigger workflow migration 029).
@@ -541,22 +582,26 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         { status: 409 }
       );
     }
-    // 22P02 = invalid_input_value_for_enum (ex: statut 'annule' non encore
-    // ajouté à l'enum statut_commande si la migration 024/024b n'est pas
-    // appliquée). On renvoie un 501 clair invitant à appliquer la migration,
-    // plutôt qu'un 500 générique.
+    // 22P02 = invalid_input_value_for_enum. Si on arrive ici, c'est que le
+    // retry après reload du cache a aussi échoué → la valeur d'enum est
+    // VRAIMENT absente de la DB (migration 024 non appliquée). On renvoie
+    // un 501 clair invitant à appliquer la migration.
     if (
       updateErr &&
       typeof updateErr === "object" &&
       "code" in updateErr &&
       (updateErr as { code?: string }).code === "22P02"
     ) {
+      const hint = retried
+        ? "Le reload du cache PostgREST n'a pas résolu le problème. "
+        : "";
       return NextResponse.json(
         {
           success: false,
           code: "ENUM_VALUE_MISSING",
           error:
-            "Valeur de statut non supportée par la base de données. Vérifiez que la migration 024b (ajout de la valeur 'annule' à l'enum statut_commande) a été appliquée.",
+            hint +
+            "Valeur de statut non supportée par la base de données. Vérifiez que la migration 024 (ajout de la valeur 'annule' à l'enum statut_commande) a été appliquée.",
         },
         { status: 501 }
       );
