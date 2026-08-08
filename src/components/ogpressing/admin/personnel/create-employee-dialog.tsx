@@ -300,6 +300,7 @@ export function CreateEmployeeDialog({
                   className="size-7"
                   onClick={() => setStep("method")}
                   disabled={submitting}
+                  aria-label="Retour à la sélection de la méthode"
                 >
                   <ArrowLeft className="size-4" />
                 </Button>

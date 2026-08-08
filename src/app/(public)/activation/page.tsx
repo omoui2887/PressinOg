@@ -124,7 +124,7 @@ const compteSchema = z
       .optional(),
     email: z
       .string()
-      .min(1, "L'email est requis.")
+      .min(1, "L'email est obligatoire.")
       .email("L'email n'est pas valide."),
     password: z
       .string()
@@ -142,7 +142,7 @@ const compteSchema = z
       .max(50, "Le prénom ne doit pas dépasser 50 caractères."),
     telephone: z
       .string()
-      .min(1, "Le téléphone est requis.")
+      .min(1, "Le téléphone est obligatoire.")
       .refine((v) => /^\+?[\d\s\-().]{8,20}$/.test(v) && v.replace(/[\s\-().]/g, "").replace(/^\+/, "").length >= 8, {
         message: "Le téléphone doit contenir entre 8 et 20 chiffres.",
       }),
@@ -347,9 +347,13 @@ export default function ActivationPage() {
         try {
           data = JSON.parse(text);
         } catch {
+          // 🔒 Audit #16 (Phase 4 security hardening) : on ne logue PAS le
+          // body de la réponse (potentiellement du HTML d'erreur Next.js
+          // contenant des chemins internes du serveur). On logue uniquement
+          // le code HTTP + longueur du body pour le diagnostic.
           console.error("[activation] Réponse non-JSON du serveur:", {
             status: res.status,
-            body: text.substring(0, 300),
+            bodyLength: text.length,
           });
           const err = new Error(
             res.status >= 500
@@ -369,7 +373,13 @@ export default function ActivationPage() {
         }
 
         if (!data.data || !data.data.code_id) {
-          console.error("[activation] Réponse succès sans data.code_id:", data);
+          // 🔒 Audit #16 : on ne logue pas l'objet data complet (peut contenir
+          // des infos Supabase internes si la réponse est malformée). On logue
+          // uniquement la structure de la réponse pour le diagnostic.
+          console.error("[activation] Réponse succès sans data.code_id:", {
+            hasData: !!data.data,
+            hasSuccess: !!data.success,
+          });
           throw new Error(
             "Réponse invalide du serveur. Réessayez dans quelques instants."
           );
@@ -402,9 +412,10 @@ export default function ActivationPage() {
 
         if (!isTransient) throw err;
 
+        // 🔒 Audit #16 : on ne logue pas l'objet err complet (stack trace).
         console.warn(
           "[activation] Erreur transitoire, nouvelle tentative dans 1,5 s…",
-          err
+          err instanceof Error ? err.message : "erreur"
         );
         await new Promise((r) => setTimeout(r, 1500));
         result = await callVerifyApi(codeValue);
@@ -479,9 +490,11 @@ export default function ActivationPage() {
       try {
         data = JSON.parse(text);
       } catch {
+        // 🔒 Audit #16 : on ne logue PAS le body de la réponse (HTML
+        // d'erreur potentiellement contaminé par des chemins internes).
         console.error("[activation] Réponse non-JSON du serveur (étape 2):", {
           status: res.status,
-          body: text.substring(0, 300),
+          bodyLength: text.length,
         });
         setSubmitError(
           res.status >= 500

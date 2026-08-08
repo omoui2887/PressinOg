@@ -67,6 +67,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { EmptyState } from "@/components/shared/empty-state";
 import { ArticleCatalogPicker } from "@/components/shared/article-catalog-picker";
 import { formatFCFA } from "@/lib/utils/format";
 import type {
@@ -742,17 +743,11 @@ export function StepArticles({ state, dispatch }: StepProps) {
       {/* LISTE DES ARTICLES AJOUTÉS                             */}
       {/* ====================================================== */}
       {state.articles.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-12 text-center">
-          <span className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <Package className="size-6" />
-          </span>
-          <p className="mt-3 text-sm font-medium text-foreground">
-            Aucun article enregistré
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Ajoutez au moins un article pour passer à l&apos;étape suivante.
-          </p>
-        </div>
+        <EmptyState
+          icon={Package}
+          title="Aucun article enregistré"
+          description="Ajoutez au moins un article pour passer à l'étape suivante."
+        />
       ) : (
         <div className="space-y-3">
           <div className="flex items-center justify-between">

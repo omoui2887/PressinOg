@@ -50,6 +50,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NewClientDialog } from "@/components/ogpressing/admin/clients/new-client-dialog";
+import { EmptyState } from "@/components/shared/empty-state";
 import { formatFCFA } from "@/lib/utils/format";
 
 import {
@@ -346,17 +347,12 @@ export function StepClient({ state, dispatch }: StepProps) {
                 Recherche en cours…
               </div>
             ) : results.length === 0 ? (
-              <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-10 text-center">
-                <span className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                  <UserX className="size-6" />
-                </span>
-                <p className="mt-3 text-sm font-medium text-foreground">
-                  Aucun client trouvé
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Essayez un autre nom ou créez un nouveau client.
-                </p>
-              </div>
+              <EmptyState
+                icon={UserX}
+                compact
+                title="Aucun client trouvé"
+                description="Essayez un autre nom ou créez un nouveau client."
+              />
             ) : (
               <ul className="space-y-2" role="listbox" aria-label="Résultats de recherche clients">
                 {results.map((c) => (
