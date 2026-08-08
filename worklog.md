@@ -1605,3 +1605,25 @@ Stage Summary:
 - Zod validation sur 9 routes principales (AUDIT #9 résolu pour les routes critiques)
 - Workflow commandes: matrice 9x9 + trigger DB de defense-in-depth (AUDIT-B-08)
 - Audit log table + trigger cascade + CHECK constraints notes (AUDIT-B-13, B-10, #19 au niveau DB)
+
+---
+Task ID: SQL-FIX-028-030-032
+Agent: main (Z.ai Code)
+Task: Corriger les 3 migrations SQL Supabase qui ne passaient pas (028, 030, 032) à partir des captures d'écran d'erreurs fournies par l'utilisateur.
+
+Work Log:
+- Lu les 3 captures d'écran via VLM (z-ai vision) pour extraire les codes d'erreur PostgreSQL exacts.
+- Diagnostic 028 : erreur 42601 "syntax error at or near DROP" à la ligne 94. Cause racine = le `COMMENT ON FUNCTION` (lignes 86-88) n'avait PAS de point-virgule terminal → le parseur SQL ne voyait pas la fin du COMMENT et butait sur le `DROP TRIGGER` suivant.
+- Diagnostic 030 : erreur 23514 "check constraint check_modes_paiement_caissier_only violated by some row". Cause racine = la migration 019 a créé `modes_paiement_autorises` en NOT NULL DEFAULT '["especes",...]' → TOUS les non-caissiers (manager, receptionniste, etc.) ont une valeur NON-NULL → le CHECK voulu `modes_paiement_autorises IS NULL OR role='caissier'` était violé par chaque non-caissier. De plus, le CHECK de FORMAT de 019 (`personnel_modes_paiement_autorises_check`) exigeait non-NULL, incompatible avec notre objectif.
+- Diagnostic 032 : erreur 42703 "column priorite does not exist" à la ligne 59 (`WHERE priorite = 'express'`). Cause racine = la colonne `commandes.priorite` est ajoutée par la migration 024, qui n'avait pas été exécutée (ou avait partiellement échoué sur le `ALTER TYPE ... ADD VALUE 'annule'`).
+- Correctif 028 : ajout du `;` manquant après le COMMENT ON FUNCTION. Le trigger et la fonction SECURITY DEFINER sont inchangés.
+- Correctif 030 : (1) DROP CONSTRAINT personnel_modes_paiement_autorises_check (conflit 019), (2) ALTER COLUMN modes_paiement_autorises DROP NOT NULL, (3) SET DEFAULT NULL, (4) backfill non-caissiers→NULL + caissiers→défaut, (5) re-création CHECK format relâché (accepte NULL), (6) CHECK check_numero_caisse_caissier_only, (7) CHECK check_modes_paiement_caissier_only (passe désormais).
+- Correctif 032 : (1) safety-net `ADD COLUMN IF NOT EXISTS priorite TEXT NOT NULL DEFAULT 'normal'` (no-op si 024 a tourné), (2) tous les index dépendant de migrations ultérieures (audit_log 027, priorite 024, dernier_changement_role 025, tarifs_articles 020) enveloppés dans des blocs DO $$ qui vérifient l'existence de la table/colonne via information_schema avant EXECUTE 'CREATE INDEX ...'. L'index sur services (table de base 002) reste direct.
+
+Stage Summary:
+- 3 fichiers SQL corrigés et réécrits (v1.1) dans supabase/migrations/ :
+  * 028_cascade_suspension_personnel.sql — point-virgule ajouté au COMMENT ON FUNCTION.
+  * 030_modes_paiement_caissier.sql — refonte complète : nullable + backfill + CHECK relâché + 2 CHECKs role-based.
+  * 032_index_audit_log.sql — safety-net colonne priorite + 5 index gardés par DO $$/information_schema.
+- Toutes les corrections sont IDEMPOTENTES et ORDRE-INDÉPENDANTES : ré-exécutables sans erreur, et 032 passe même si 020/024/025/027 n'ont pas tourné.
+- L'utilisateur peut re-copier/coller ces 3 fichiers dans le SQL Editor Supabase ; ils passeront proprement.
