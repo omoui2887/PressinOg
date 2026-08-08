@@ -1627,3 +1627,22 @@ Stage Summary:
   * 032_index_audit_log.sql — safety-net colonne priorite + 5 index gardés par DO $$/information_schema.
 - Toutes les corrections sont IDEMPOTENTES et ORDRE-INDÉPENDANTES : ré-exécutables sans erreur, et 032 passe même si 020/024/025/027 n'ont pas tourné.
 - L'utilisateur peut re-copier/coller ces 3 fichiers dans le SQL Editor Supabase ; ils passeront proprement.
+
+---
+Task ID: SQL-FIX-030-v1.2
+Agent: main (Z.ai Code)
+Task: Corriger l'erreur persistante sur la migration SQL 030 (nouvelle capture d'écran utilisateur).
+
+Work Log:
+- Lu la nouvelle capture d'écran via VLM (z-ai vision) : erreur PostgreSQL 0A000 "cannot use subquery in check constraint".
+- Diagnostic : PostgreSQL INTERDIT les sous-requêtes dans les CHECK constraints. La version v1.1 (et la migration 019 originale) utilisaient `NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(...) WHERE elem NOT IN (...))` → rejeté par PostgreSQL. (Cela explique aussi pourquoi 019 n'avait jamais réussi à poser ce CHECK.)
+- Correctif : remplacement de la sous-requête par l'opérateur JSONB `<@` (contained by) qui vérifie que tous les éléments du tableau de gauche sont présents dans le tableau de droite. C'est une expression pure, acceptée par PostgreSQL dans un CHECK.
+  - Avant : `AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(modes_paiement_autorises) AS elem WHERE elem NOT IN ('especes','mobile_money','carte','cheque','virement'))`
+  - Après : `AND modes_paiement_autorises <@ '["especes","mobile_money","carte","cheque","virement"]'::jsonb`
+- Mise à jour de l'en-tête du fichier (v1.1 → v1.2) + ajout d'un bloc de commentaire explicatif dans la section 4 + mise à jour du récapitulatif final.
+
+Stage Summary:
+- `supabase/migrations/030_modes_paiement_caissier.sql` corrigé en v1.2.
+- Le CHECK de format `personnel_modes_paiement_autorises_check` utilise désormais l'opérateur `<@` (no subquery) → passe le contrôle PostgreSQL.
+- Les autres sections (DROP NOT NULL, SET DEFAULT NULL, backfills, 2 CHECKs role-based) sont inchangées et valides.
+- Migration totalement idempotente et ordre-indépendante.
