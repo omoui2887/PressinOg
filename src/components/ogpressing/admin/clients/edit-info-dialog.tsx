@@ -85,10 +85,10 @@ export function EditInfoDialog({
   function validate(): boolean {
     const next: Partial<Record<keyof FormState, string>> = {};
     if (!form.nom_complet.trim()) {
-      next.nom_complet = "Le nom complet est requis";
+      next.nom_complet = "Le nom complet est obligatoire";
     }
     if (!form.telephone.trim()) {
-      next.telephone = "Le téléphone est requis";
+      next.telephone = "Le téléphone est obligatoire";
     }
     if (
       form.email.trim() &&

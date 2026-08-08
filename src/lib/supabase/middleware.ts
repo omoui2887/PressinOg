@@ -32,10 +32,96 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 
 /* ========================================================================== */
-/*  CONSTANTES                                                                */
+/*  CONSTANTES — POLITIQUE DE ROUTING (DENY-BY-DEFAULT)                       */
 /* ========================================================================== */
+/*
+ * 🛡️ PRINCIPE DENY-BY-DEFAULT — Issue #18 (Phase 4 security hardening)
+ * ----------------------------------------------------------------------
+ * Le middleware suit un modèle explicite à 3 catégories de routes :
+ *
+ *   1. PUBLIC_ROUTES      — accès sans auth (landing, login, activation,
+ *                           pages d'information statiques). Un utilisateur
+ *                           déjà connecté peut y accéder (sauf si la route
+ *                           est aussi dans AUTH_ROUTES, auquel cas il est
+ *                           redirigé vers son dashboard).
+ *
+ *   2. PROTECTED_PREFIXES — préfixes de routes nécessitant une auth et un
+ *                           rôle spécifique (super_admin, manager, personnel).
+ *                           Toute route commençant par l'un de ces préfixes
+ *                           déclenche les checks d'auth + cross-space +
+ *                           restriction par rôle (sections 7+ du middleware).
+ *
+ *   3. AUTRES ROUTES      — routes non couvertes par (1) ou (2). Cela
+ *                           inclut : /api/* (exclue par le matcher racine),
+ *                           /_next/* (assets, exclue par le matcher),
+ *                           et toute nouvelle route racine comme
+ *                           /pos-diagnostic, /deploy-guide.
+ *                           → Comportement : pas de check d'auth au niveau
+ *                           middleware (les API routes gèrent leur propre
+ *                           auth via getSupabaseServer()).
+ *
+ * ⚠️ RÈGLE CRITIQUE — Tout nouveau route group protégé DOIT être ajouté à
+ *    `PROTECTED_PREFIXES`. Sinon, il sera traité comme catégorie 3 (aucun
+ *    check d'auth côté middleware) et sera donc accessible sans auth au
+ *    niveau middleware — les API routes appellées par cette page restent
+ *    protégées par RLS/getSupabaseServer, mais les Server Components
+ *    pourraient fuiter des données si la page n'est pas explicitement
+ *    protégée.
+ *
+ * ⚠️ RÈGLE CRITIQUE — Toute nouvelle route publique racine (en dehors des
+ *    PROTECTED_PREFIXES) DOIT être ajoutée à `PUBLIC_ROUTES` pour
+ *    documentation, même si techniquement elle fonctionnerait sans
+ *    (catégorie 3). Cela permet de garder une liste exhaustive des routes
+ *    publiques à des fins d'audit.
+ *
+ * 🔒 FAIL-OPEN vs FAIL-CLOSED : si les vars d'env Supabase manquent au
+ *    runtime, le middleware applique une politique nuancée :
+ *      - PUBLIC_ROUTES          → fail-open (NextResponse.next()) pour
+ *                                 permettre à l'utilisateur de voir la
+ *                                 landing / login (sinon le site serait
+ *                                 totalement inaccessible en dev).
+ *      - PROTECTED_PREFIXES     → fail-closed (redirect /login?error=
+ *                                 config_incomplete) pour bloquer tout
+ *                                 accès non authentifié aux données.
+ *      - AUTRES ROUTES          → fail-open (la route n'a de toute façon
+ *                                 pas de check d'auth middleware).
+ *    Cf. garde-fou au début de `updateSession`.
+ */
 
-/** Préfixes de routes protégées par rôle. */
+/**
+ * Whitelist STATIQUE des routes PUBLIQUES (aucune auth requise).
+ * Liste exhaustive des routes racine accessibles sans connexion.
+ *
+ * ⚠️ Une route dans PUBLIC_ROUTES peut AUSSI être dans AUTH_ROUTES
+ *    (ex : /, /login) si l'on souhaite rediriger un utilisateur déjà
+ *    connecté vers son dashboard.
+ *
+ * ⚠️ Cette liste utilise des préfixes : `/login` couvre aussi
+ *    `/login?next=...`. Les routes sont matchées par `pathname === route`
+ *    OU `pathname.startsWith(route + "/")` pour les sous-chemins.
+ */
+const PUBLIC_ROUTES = [
+  "/",
+  "/login",
+  "/activation",
+  "/auth/callback",
+  "/activation-expiree",
+  "/compte-suspendu",
+  "/pos-diagnostic",
+  "/deploy-guide",
+] as const;
+
+/**
+ * Préfixes de routes PROTÉGÉES par rôle.
+ *
+ * ⚠️ RÈGLE CRITIQUE : tout nouveau route group protégé DOIT être ajouté
+ *    ici. Sinon, il sera traité comme "autre route" (catégorie 3) et
+ *    bénéficiera d'AUCUN check d'auth au niveau middleware.
+ *
+ * ⚠️ Ces préfixes sont également les "espaces" vérifiés par la section
+ *    7 (cross-space prevention) et 5.6 (essai expiré / abonnement suspendu)
+ *    du middleware.
+ */
 const PROTECTED_PREFIXES = ["/super-admin", "/admin", "/personnel"] as const;
 
 /** Routes d'authentification : si l'utilisateur est déjà connecté et y
@@ -47,13 +133,43 @@ const PROTECTED_PREFIXES = ["/super-admin", "/admin", "/personnel"] as const;
  *   - Si un utilisateur DÉJÀ authentifié clique sur un lien d'invitation
  *     (ex : session précédente encore valide), il est redirigé vers son
  *     dashboard courant plutôt que de tenter un échange de code qui
- *     échouerait. */
+ *     échouerait.
+ *
+ * ℹ️ AUTH_ROUTES est un SOUS-ENSEMBLE de PUBLIC_ROUTES. Les routes
+ *    publiques qui ne sont PAS dans AUTH_ROUTES (ex : /activation-expiree,
+ *    /compte-suspendu) sont intentionnellement laissées accessibles aux
+ *    utilisateurs connectés — ces pages d'information doivent rester
+ *    visibles même après connexion (pour permettre la déconnexion ou le
+ *    contact support depuis n'importe où). */
 const AUTH_ROUTES = [
   "/",
   "/login",
   "/activation",
   "/auth/callback",
 ] as const;
+
+/**
+ * Vérifie si un pathname est public (liste PUBLIC_ROUTES).
+ * Match soit exact, soit par préfixe (pathname.startsWith(route + "/")).
+ *
+ * Utilisé par le garde-fou fail-open/fail-closed en début de `updateSession`
+ * pour décider si une route peut rester accessible même sans env vars.
+ */
+function isPublicRoute(pathname: string): boolean {
+  return (PUBLIC_ROUTES as readonly string[]).some(
+    (route) => pathname === route || pathname.startsWith(route + "/")
+  );
+}
+
+/**
+ * Vérifie si un pathname est protégé (liste PROTECTED_PREFIXES).
+ * Match soit exact, soit par préfixe (pathname.startsWith(prefix + "/")).
+ */
+function isProtectedRoute(pathname: string): boolean {
+  return (PROTECTED_PREFIXES as readonly string[]).some(
+    (p) => pathname === p || pathname.startsWith(p + "/")
+  );
+}
 
 /** Rôles du personnel (miroir de l'enum PostgreSQL `role_personnel`).
  * Utilisé pour (a) valider le segment de rôle dans l'URL /personnel/{role}/*
@@ -651,10 +767,15 @@ export async function updateSession(
     supabaseAnonKey === "REPLACE_WITH_ANON_KEY"
   ) {
     const pathname = request.nextUrl.pathname;
-    const isProtected = PROTECTED_PREFIXES.some(
-      (p) => pathname === p || pathname.startsWith(p + "/")
-    );
-    if (isProtected) {
+    // Politique deny-by-default (Issue #18) :
+    //   - Route protégée (PROTECTED_PREFIXES) → fail-closed : redirect
+    //     /login?error=config_incomplete. Aucune donnée accessible.
+    //   - Route publique (PUBLIC_ROUTES) OU "autre route" (catégorie 3) →
+    //     fail-open : NextResponse.next(). La landing et /login restent
+    //     visibles (sinon le site serait totalement cassé en dev). Les
+    //     routes "autres" (api/*, _next/*) n'ont de toute façon pas de
+    //     check d'auth middleware — elles gèrent leur propre auth côté API.
+    if (isProtectedRoute(pathname)) {
       console.error(
         "[updateSession][FATAL] Supabase env vars manquantes — " +
           "redirection vers /login (route protégée bloquée)."
@@ -664,18 +785,20 @@ export async function updateSession(
       loginUrl.searchParams.set("error", "config_incomplete");
       return NextResponse.redirect(loginUrl);
     }
-    // Route publique : on laisse passer (pas d'auth requise de toute façon)
-    console.warn(
-      "[updateSession] Supabase env vars manquantes — route publique " +
-        "autorisée sans auth. Configurez .env.local pour activer l'auth."
-    );
+    // Route publique OU autre route : on laisse passer. Pour les routes
+    // publiques, on log un warning (informationnel). Pour les autres
+    // routes (api/*, _next/*), c'est le comportement normal — pas de log.
+    if (isPublicRoute(pathname)) {
+      console.warn(
+        "[updateSession] Supabase env vars manquantes — route publique " +
+          "autorisée sans auth. Configurez .env.local pour activer l'auth."
+      );
+    }
     return NextResponse.next({ request });
   }
 
   const { pathname } = request.nextUrl;
-  const isProtected = PROTECTED_PREFIXES.some(
-    (p) => pathname === p || pathname.startsWith(p + "/")
-  );
+  const isProtected = isProtectedRoute(pathname);
   const isAuthRoute = (AUTH_ROUTES as readonly string[]).includes(pathname);
 
   // 🚀 FAST-PATH PERF : si la route n'est PAS protégée ET qu'il n'y a AUCUN

@@ -45,6 +45,7 @@ import {
   type RemiseAppliquee,
   type ClientImpaye,
 } from "@/components/ogpressing/admin/rapports/rapports-helpers";
+import { asArray } from "@/lib/types/supabase-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -374,12 +375,14 @@ export async function GET(request: NextRequest) {
       );
       // Non bloquant : on renvoie un tableau vide
     } else {
-      // Cast via `unknown` : supabase-js infère `service` comme un tableau
+      // AUDIT-C-02 — supabase-js infère `service` comme un tableau
       // `{ type: any }[]` pour les relations, mais PostgREST renvoie un
       // objet unique (la relation est 1-1). Notre `LigneRow` local attend
-      // `service: { type: string | null } | null`.
+      // `service: { type: string | null } | null`. On utilise le helper
+      // `asArray` (qui accepte indifféremment un tableau, un objet unique
+      // ou null) pour normaliser le type sans cast `as unknown as` brut.
       ca_par_type_service = buildCaParTypeService(
-        (lignes || []) as unknown as LigneRow[]
+        asArray<LigneRow>(lignes)
       );
     }
   }
@@ -485,10 +488,12 @@ export async function GET(request: NextRequest) {
         cmdClientErr
       );
     } else {
-      // Cast via `unknown` : supabase-js infère `client` comme un tableau
+      // AUDIT-C-02 — supabase-js infère `client` comme un tableau
       // `{ nom_complet: any }[]` pour la relation, mais PostgREST renvoie
-      // un objet unique (relation 1-1 commande → client).
-      remises_appliquees = ((cmdAvecClient || []) as unknown as CommandeAvecClientRow[]).map(
+      // un objet unique (relation 1-1 commande → client). On utilise le
+      // helper `asArray` pour normaliser le type sans cast `as unknown as`
+      // brut.
+      remises_appliquees = asArray<CommandeAvecClientRow>(cmdAvecClient).map(
         (c) => ({
           id: c.id,
           numero_commande: c.numero_commande,

@@ -119,6 +119,19 @@ function normaliserModesAutorises(raw: unknown): string[] {
  *    SELECT (data=null, error peuplé mais non vérifié) et l'API renvoie
  *    "Compte inactif ou désactivé" à tort, bloquant tout encaissement.
  */
+type CaissierRow = {
+  id: string;
+  pressing_id: string;
+  role: string;
+  actif: boolean | null;
+  statut_compte: string;
+  // AUDIT-B #14: validation modes_paiement_autorises
+  // Champ optionnel car la colonne peut ne pas exister (base non migrée —
+  // fallback géré par normaliserModesAutorises). Quand la migration 019 est
+  // appliquée, le SELECT le renvoie en tant que `string[]` (JSONB parsé).
+  modes_paiement_autorises?: string[] | string | null;
+};
+
 async function getConnectedCaissier() {
   const supabase = await getSupabaseServer();
   const { data: userData, error: userErr } = await supabase.auth.getUser();
@@ -131,13 +144,17 @@ async function getConnectedCaissier() {
     };
   }
   // Tentative 1 : SELECT complet incluant modes_paiement_autorises (migration 019).
-  let { data: me, error: meErr } = await supabase
+  let me: CaissierRow | null = null;
+  let meErr: { code?: string; message?: string } | null = null;
+  const primary = await supabase
     .from("personnel")
     .select(
       "id, pressing_id, role, actif, statut_compte, modes_paiement_autorises"
     )
     .eq("user_id", userData.user.id)
     .maybeSingle();
+  me = (primary.data as CaissierRow | null) ?? null;
+  meErr = (primary.error as { code?: string; message?: string } | null) ?? null;
 
   // Tentative 2 (fallback) : si la colonne modes_paiement_autorises n'existe pas
   // (base non migrée — erreur PGRST116 / code 42703), on retente sans cette
@@ -151,12 +168,12 @@ async function getConnectedCaissier() {
       .select("id, pressing_id, role, actif, statut_compte")
       .eq("user_id", userData.user.id)
       .maybeSingle();
-    me = fallback.data;
-    meErr = fallback.error;
+    me = (fallback.data as CaissierRow | null) ?? null;
+    meErr = (fallback.error as { code?: string; message?: string } | null) ?? null;
     // On injecte la valeur par défaut pour que la suite du code fonctionne.
     if (me) {
-      (me as { modes_paiement_autorises?: unknown }).modes_paiement_autorises =
-        null; // null => normaliserModesAutorises retournera MODES_AUTORISES_DEFAUT
+      // null => normaliserModesAutorises retournera MODES_AUTORISES_DEFAUT
+      me.modes_paiement_autorises = null;
     }
   }
 
@@ -238,20 +255,21 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 2e validation (FIX AUDIT 9.11) : autorisation par caissier.
+  // 2e validation (FIX AUDIT 9.11 / AUDIT-B #14: validation modes_paiement_autorises) :
   // Le caissier ne peut encaisser qu'avec un mode listé dans son champ
   // `modes_paiement_autorises` (JSONB, migration 019). Si la colonne
-  // est absente/null (pré-migration), on retombe sur MODES_AUTORISES_DEFAUT.
-  const modesAutorises = normaliserModesAutorises(
-    (me as { modes_paiement_autorises?: unknown } | null)?.modes_paiement_autorises
-  );
+  // est absente/null/vide (pré-migration ou manager n'a pas encore configuré),
+  // on retombe sur MODES_AUTORISES_DEFAUT (tous modes autorisés — backward
+  // compatible, le manager peut restreindre plus tard).
+  const modesAutorises = normaliserModesAutorises(me.modes_paiement_autorises);
   if (!modesAutorises.includes(methode)) {
     return NextResponse.json(
       {
         success: false,
-        error: `Mode de paiement "${methode}" non autorisé pour ce caissier.`,
+        error: "Vous n'êtes pas autorisé à encaisser ce mode de paiement.",
         code: "MODE_PAIEMENT_NON_AUTORISE",
         details: {
+          methode_demandee: methode,
           modes_autorises: modesAutorises,
         },
       },

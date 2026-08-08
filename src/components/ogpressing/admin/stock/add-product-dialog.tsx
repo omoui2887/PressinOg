@@ -8,16 +8,23 @@
  * fournisseur (optionnel), FDS PDF (upload vers Supabase Storage, optionnel).
  *
  * Au submit :
- *   1. Upload FDS vers bucket Storage `fds` (échec non bloquant)
- *   2. POST /api/admin/stock avec fds_url
+ *   1. POST /api/admin/stock SANS fds_url (crée le produit, renvoie son id).
+ *   2. Si une FDS a été sélectionnée : POST /api/admin/stock/[id]/fds-upload
+ *      (multipart/form-data). Le serveur valide MIME + taille + magic number
+ *      %PDF-, uploade via admin client (service_role) et met à jour
+ *      `produits_stock.fds_url` côté serveur. L'échec FDS n'est PAS bloquant
+ *      (le produit est déjà créé) — toast.warning.
  *
- * 🔒 SÉCURITÉ (REMEDIATE-STORAGE — AUDIT Conclusion #2) :
- *   Le bucket `fds` est désormais PRIVÉ (migration 016). Le path d'upload
- *   est préfixé par le pressing_id : `fds/{pressing_id}/{timestamp}-{random}.pdf`
- *   pour que la policy RLS `fds_select_isolation` puisse isoler les FDS par
- *   pressing. La colonne `fds_url` stocke désormais le PATH (plus l'URL
- *   publique). La lecture se fait via /api/admin/stock/[id]/fds-url qui
- *   génère une signed URL valide 1 heure (cf. fetchFdsSignedUrl).
+ * 🔒 SÉCURITÉ (AUDIT Conclusion #2 + #4 — REMEDIATE-STORAGE) :
+ *   - Bucket `fds` PRIVÉ (migration 016). Path préfixé par pressing_id :
+ *     `fds/{pressing_id}/{timestamp}-{random}.pdf` → RLS `fds_select_isolation`.
+ *   - L'upload FDS ne se fait PLUS côté client (clé anon) : un attaquant
+ *     pouvait forger un Content-Type `application/pdf` et uploader un
+ *     binaire arbitraire. Désormais, l'upload passe par la route serveur
+ *     dédiée qui valide MIME + magic number %PDF- avant d'écrire.
+ *   - Pré-check client MIME `application/pdf` strict pour UX (feedback
+ *     instantané) — le serveur reste la source de vérité.
+ *   - Lecture FDS : /api/admin/stock/[id]/fds-url (signed URL 1 heure).
  */
 "use client";
 
@@ -53,7 +60,6 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { CATEGORIES, UNITES } from "./stock-helpers";
 
 const schema = z.object({
@@ -108,100 +114,61 @@ export function AddProductDialog({
   const { control, handleSubmit, reset, formState: { errors } } = form;
 
   /**
-   * Récupère le pressing_id de l'utilisateur connecté (côté client, via la
-   * table `personnel` soumise à RLS). Utilisé pour préfixer le path d'upload
-   * des FDS afin que la policy RLS `fds_select_isolation` puisse isoler les
-   * fichiers par pressing.
-   */
-  async function getMyPressingId(): Promise<string | null> {
-    const supabase = getSupabaseBrowser();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return null;
-    const { data: personnel } = await supabase
-      .from("personnel")
-      .select("pressing_id")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    return personnel?.pressing_id ?? null;
-  }
-
-  /**
-   * Upload la FDS vers le bucket Storage PRIVÉ `fds`.
-   * Retourne le PATH Storage (pas une URL publique) ou null si échec.
+   * Upload la FDS vers le bucket Storage PRIVÉ `fds` VIA LA ROUTE SERVEUR
+   * /api/admin/stock/[id]/fds-upload. Le serveur valide MIME + taille + magic
+   * number %PDF-, puis uploade via admin client (service_role) et met à jour
+   * `produits_stock.fds_url`. Retourne `true` en cas de succès, `false` sinon.
    *
-   * Le path est préfixé par le pressing_id (`fds/{pressing_id}/{filename}`)
-   * pour que la policy RLS `fds_select_isolation` autorise l'upload et la
-   * lecture au seul pressing propriétaire.
+   * 🔒 L'upload ne se fait PLUS côté client (clé anon) — la route serveur est
+   *    la source de vérité. Le pré-check MIME côté client (handleFileChange)
+   *    n'est qu'une aide ergonomique.
    */
-  async function uploadFds(): Promise<string | null> {
-    if (!fdsFile) return null;
+  async function uploadFdsServerSide(
+    produitId: string
+  ): Promise<boolean> {
+    if (!fdsFile) return false;
     setUploading(true);
     try {
-      const supabase = getSupabaseBrowser();
-      const pressingId = await getMyPressingId();
-      if (!pressingId) {
-        throw new Error("Impossible de déterminer votre pressing");
+      const formData = new FormData();
+      formData.append("file", fdsFile);
+      const res = await fetch(
+        `/api/admin/stock/${produitId}/fds-upload`,
+        {
+          method: "POST",
+          body: formData,
+          // Ne PAS set Content-Type : le navigateur le fait avec le boundary.
+        }
+      );
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(
+          data.error || "Erreur lors de l'upload de la FDS côté serveur"
+        );
       }
-      const ext = fdsFile.name.split(".").pop() || "pdf";
-      const path = `fds/${pressingId}/${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2, 8)}.${ext}`;
-      const { error: upErr } = await supabase.storage
-        .from("fds")
-        .upload(path, fdsFile, {
-          cacheControl: "3600",
-          upsert: false,
-          contentType: "application/pdf",
-        });
-      if (upErr) throw upErr;
-      // On retourne le PATH (pas l'URL publique — le bucket est privé).
-      // La lecture se fera via /api/admin/stock/[id]/fds-url (signed URL).
-      return path;
+      return true;
     } catch (err) {
-      console.warn("[stock] Échec upload FDS (continuons sans) :", err);
+      // 🔒 Audit #16 (Phase 4) : on ne logue pas l'objet err complet.
+      console.warn(
+        "[stock] Échec upload FDS serveur :",
+        err instanceof Error ? err.message : "erreur"
+      );
       toast.warning("FDS non uploadée", {
         description:
-          "Le stockage des FDS est indisponible. Le produit sera créé sans FDS.",
+          err instanceof Error
+            ? err.message
+            : "Le produit a été créé, mais l'upload de la FDS a échoué.",
       });
-      return null;
+      return false;
     } finally {
       setUploading(false);
-    }
-  }
-
-  /**
-   * Récupère une signed URL (1 heure) pour la FDS d'un produit via la route
-   * serveur /api/admin/stock/[id]/fds-url. La route vérifie l'authentification,
-   * le rattachement au pressing, et applique la RLS Storage.
-   *
-   * Retourne l'URL signée ou null en cas d'erreur.
-   */
-  async function fetchFdsSignedUrl(produitId: string): Promise<string | null> {
-    try {
-      const res = await fetch(`/api/admin/stock/${produitId}/fds-url`, {
-        method: "GET",
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success || !data.data?.url) {
-        throw new Error(data.error || "Signed URL FDS indisponible");
-      }
-      return data.data.url as string;
-    } catch (err) {
-      console.warn("[stock] Échec fetchFdsSignedUrl :", err);
-      toast.error("FDS inaccessible", {
-        description:
-          err instanceof Error ? err.message : "Erreur inconnue",
-      });
-      return null;
     }
   }
 
   async function onSubmit(values: FormValues) {
     setSubmitting(true);
     try {
-      const fdsUrl = await uploadFds();
+      // 1. Crée le produit SANS fds_url (la route FDS-upload mettra à jour
+      //    produits_stock.fds_url côté serveur après validation).
       const res = await fetch("/api/admin/stock", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -217,13 +184,21 @@ export function AddProductDialog({
               ? parseInt(values.prix_achat_unitaire, 10)
               : null,
           fournisseur: values.fournisseur?.trim() || null,
-          fds_url: fdsUrl,
+          fds_url: null,
         }),
       });
       const data = await res.json();
-      if (!res.ok || !data.success) {
+      if (!res.ok || !data.success || !data.data?.id) {
         throw new Error(data.error || "Erreur lors de la création du produit");
       }
+      const produitId: string = data.data.id;
+
+      // 2. Upload FDS si un fichier a été sélectionné (non bloquant — le
+      //    produit est déjà créé ; en cas d'échec FDS, toast.warning).
+      if (fdsFile) {
+        await uploadFdsServerSide(produitId);
+      }
+
       toast.success("Produit ajouté", {
         description: `${values.nom} a été ajouté au stock.`,
       });

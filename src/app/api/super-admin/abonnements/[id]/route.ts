@@ -9,10 +9,22 @@
  *                        (cf. PLAN_PRICING ci-dessous, valeurs réelles de la
  *                        landing page pricing.tsx).
  *   - "suspendre"    : → met à jour abonnements.statut = 'suspendu'
+ *                      + AUDIT-B-09 (symétrie) : pressing.statut = 'suspendu'
+ *                        (pour que le middleware P1-A redirige vers
+ *                        /compte-suspendu).
+ *                      + AUDIT-B-10 (cascade) : tous les employés actifs du
+ *                        pressing sont désactivés (statut_compte='desactive',
+ *                        actif=false, date_desactivation=NOW(),
+ *                        notes_changement_role documente la raison).
  *   - "reactiver"    : → met à jour abonnements.statut = 'actif'
  *                      + AUDIT-B-09 : réactive aussi pressing.statut='actif'
  *                        si le pressing était suspendu/essai (sans toucher au
  *                        personnel — voir renouveler/route.ts pour le détail).
+ *                      + AUDIT-B-10 : le personnel désactivé en cascade lors
+ *                        de la suspension n'est PAS réactivé ici ; le manager
+ *                        doit le faire manuellement (plus sûr — évite de
+ *                        réactiver un employé que le manager avait désactivé
+ *                        pour une autre raison juste avant la suspension).
  *
  * 🔒 SÉCURITÉ : getSupabaseServer() + RLS super_admin_full_access sur
  *    abonnements. Aucune transaction bancaire.
@@ -224,7 +236,14 @@ export async function PATCH(
 
     // AUDIT-B-09 — Réactivation du pressing (même logique que renouveler/route.ts).
     // On ne réactive QUE si pressing.statut est 'suspendu' ou 'essai' (pas 'actif').
-    // Le personnel désactivé n'est PAS réactivé automatiquement.
+    //
+    // AUDIT-B-10 — Le personnel désactivé en cascade lors de la suspension
+    // (cf. action 'suspendre' plus bas dans ce fichier) n'est PAS réactivé
+    // automatiquement. C'est volontaire : le manager doit explicitement
+    // réactiver chaque employé via PATCH /api/admin/personnel/[id]
+    // {action:'reactiver'}. Cela évite de réactiver un employé qui avait été
+    // désactivé par le manager pour une autre raison (ex: congé, faute) juste
+    // avant la suspension.
     const pressingIdReact = abonnement.pressing_id;
     const { data: pressingRow, error: pressingSelErr } = await supabase
       .from("pressing")
@@ -298,9 +317,104 @@ export async function PATCH(
     );
   }
 
+  // AUDIT-B-09 (symétrie) — On suspend aussi `pressing.statut='suspendu'`
+  // pour que le middleware (P1-A section 5.6) redirige immédiatement les
+  // utilisateurs du pressing vers /compte-suspendu. Sans ce UPDATE, le
+  // middleware n'aurait aucun moyen de savoir que le pressing est suspendu
+  // (il vérifie à la fois abonnements.statut ET pressing.statut).
+  const pressingIdSuspend = abonnement.pressing_id;
+  const { data: pressingRow, error: pressingSelErr } = await supabase
+    .from("pressing")
+    .select("id, statut")
+    .eq("id", pressingIdSuspend)
+    .maybeSingle();
+
+  if (pressingSelErr) {
+    console.error(
+      "[api/super-admin/abonnements/[id]] Erreur SELECT pressing (suspension):",
+      pressingSelErr
+    );
+    // Non bloquant : l'abonnement est suspendu, on log l'erreur et continue.
+  } else if (pressingRow && pressingRow.statut !== "suspendu") {
+    const oldStatut = pressingRow.statut;
+    const { error: pressingUpdErr } = await supabase
+      .from("pressing")
+      .update({ statut: "suspendu" as const })
+      .eq("id", pressingIdSuspend)
+      .neq("statut", "suspendu"); // garde défensive contre race
+    if (pressingUpdErr) {
+      console.error(
+        "[api/super-admin/abonnements/[id]] Erreur UPDATE pressing (suspension):",
+        pressingUpdErr
+      );
+    } else {
+      console.log(
+        `[suspendre] Pressing ${pressingIdSuspend} suspended from ${oldStatut} to suspendu`
+      );
+    }
+  }
+
+  // AUDIT-B-10: cascade désactivation personnel sur suspension pressing
+  // ---------------------------------------------------------------------------
+  // Quand un pressing est suspendu, tous ses employés actifs doivent être
+  // désactivés en cascade (statut_compte='desactive', actif=false) pour
+  // éviter qu'un employé ne puisse continuer à créer/modifier des commandes,
+  // encaisser des paiements, etc. alors que le pressing est censé être
+  // inactif. Sans ce cascade, le middleware vérifie bien pressing.statut mais
+  // les API routes qui ne vérifient QUE personnel.statut_compte (sans check
+  // pressing.statut) resteraient accessibles — faille de sécurité.
+  //
+  // NB : on ne réactive PAS automatiquement le personnel sur l'action
+  // 'reactiver' (cf. commentaire plus haut dans ce fichier). C'est plus sûr :
+  // si un manager avait désactivé manuellement un employé juste avant la
+  // suspension, la réactivation automatique le réactiverait à tort. Le
+  // manager doit explicitement réactiver chaque employé après la levée de
+  // suspension.
+  //
+  // L'UPDATE est non-bloquant : même si le cascade échoue (erreur RLS, etc.),
+  // la suspension du pressing reste effective. On log l'erreur pour audit.
+  let cascadedPersonnel = false;
+  try {
+    const nowIso = new Date().toISOString();
+    const { error: cascadeErr } = await supabase
+      .from("personnel")
+      .update({
+        statut_compte: "desactive",
+        actif: false,
+        date_desactivation: nowIso,
+        notes_changement_role: `Désactivé automatiquement suite à la suspension du pressing (${nowIso})`,
+      })
+      .eq("pressing_id", pressingIdSuspend)
+      .eq("statut_compte", "actif"); // seulement les employés actifs
+    if (cascadeErr) {
+      console.error(
+        "[api/super-admin/abonnements/[id]] [suspendre] cascade personnel error:",
+        cascadeErr
+      );
+    } else {
+      cascadedPersonnel = true;
+      console.log(
+        `[suspendre] Cascade désactivation personnel appliquée pour le pressing ${pressingIdSuspend}`
+      );
+    }
+  } catch (cascadeException) {
+    // Défensif : ne jamais faire échouer la suspension à cause du cascade.
+    console.error(
+      "[api/super-admin/abonnements/[id]] [suspendre] cascade personnel exception:",
+      cascadeException
+    );
+  }
+
   return NextResponse.json({
     success: true,
     data: updated,
     action,
+    // AUDIT-B-10 — Indique au client que le personnel a été désactivé en
+    // cascade. Permet à l'UI Super Admin d'afficher un message explicite
+    // ("X employés ont été désactivés automatiquement").
+    cascaded_personnel: cascadedPersonnel,
+    message: cascadedPersonnel
+      ? "Pressing suspendu. Le personnel a été désactivé en cascade."
+      : "Pressing suspendu. Le personnel n'a pas pu être désactivé en cascade (voir logs serveur).",
   });
 }

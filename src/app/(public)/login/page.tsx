@@ -70,7 +70,7 @@ import { toast } from "sonner";
 
 const loginSchema = z.object({
   email: z.email({ message: "Veuillez saisir un email valide." }),
-  password: z.string().min(1, { message: "Le mot de passe est requis." }),
+  password: z.string().min(1, { message: "Le mot de passe est obligatoire." }),
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;

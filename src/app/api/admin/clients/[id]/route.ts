@@ -24,6 +24,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { isValidCIPhone, normalizeCIPhone } from "@/lib/validations/phone";
+import { patchClientSchema } from "@/lib/validations/client";
 
 export const dynamic = "force-dynamic";
 
@@ -233,6 +234,23 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   } catch {
     return NextResponse.json(
       { success: false, error: "Corps de requête invalide (JSON attendu)" },
+      { status: 400 }
+    );
+  }
+
+  // AUDIT #9 — Zod validation gate (defense-in-depth). Vérifie les champs
+  // fournis (nom_complet, telephone, email, adresse, notes) avant la logique
+  // métier existante (update conditionnel par champ, preferences_lavage).
+  // #19 — notes slice : le schéma limite `notes` à 2000 chars (accepte aussi
+  // null pour effacer).
+  const zodParsed = patchClientSchema.safeParse(body);
+  if (!zodParsed.success) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Données invalides",
+        details: zodParsed.error.flatten(),
+      },
       { status: 400 }
     );
   }

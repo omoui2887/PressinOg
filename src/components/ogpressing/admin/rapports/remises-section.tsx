@@ -18,6 +18,7 @@ import { Tag } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
 import {
   Table,
   TableBody,
@@ -75,18 +76,12 @@ export function RemisesSection({ remises, loading }: RemisesSectionProps) {
             ))}
           </div>
         ) : remises.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-            <span className="flex size-12 items-center justify-center rounded-full bg-muted">
-              <Tag className="size-6 text-muted-foreground" />
-            </span>
-            <p className="text-sm font-medium text-foreground">
-              Aucune remise appliquée sur cette période
-            </p>
-            <p className="max-w-sm text-xs text-muted-foreground">
-              Les commandes bénéficiant d&apos;une remise (pourcentage, montant
-              fixe, article gratuit ou fidélité) apparaîtront ici.
-            </p>
-          </div>
+          <EmptyState
+            icon={Tag}
+            compact
+            title="Aucune remise appliquée sur cette période"
+            description="Les commandes bénéficiant d'une remise (pourcentage, montant fixe, article gratuit ou fidélité) apparaîtront ici."
+          />
         ) : (
           <>
             {/* Vue desktop : tableau */}

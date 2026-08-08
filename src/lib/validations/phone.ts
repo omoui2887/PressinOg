@@ -17,6 +17,7 @@
  * On accepte tout numéro de 8 à 15 chiffres après nettoyage, mais on normalise
  * vers le format +225XXXXXXXXXX pour le stockage.
  */
+import { z } from "zod";
 
 /** Nettoie un numéro de téléphone (supprime espaces, tirets, parenthèses, points). */
 export function cleanPhone(input: string): string {
@@ -61,3 +62,20 @@ export function normalizeCIPhone(input: string): string {
   // Autre : retourner nettoyé
   return cleaned;
 }
+
+/**
+ * Schéma Zod réutilisable pour valider un numéro de téléphone ivoirien.
+ * Utilisé par `validations/client.ts` et `validations/personnel.ts` (AUDIT #9).
+ *
+ * Accepte n'importe quelle chaîne non-vide qui passe `isValidCIPhone`. La
+ * normalisation vers +225XXXXXXXXXX est faite côté route via `normalizeCIPhone`
+ * (le schéma ne normalise pas — il valide seulement — pour préserver la
+ * symétrie avec les routes existantes qui utilisent les helpers directly).
+ */
+export const phoneSchema = z
+  .string()
+  .min(1, "Le téléphone est obligatoire")
+  .refine((v) => isValidCIPhone(v), {
+    message:
+      "Le téléphone doit être un numéro ivoirien valide (ex : 07 00 00 00 00 ou +225 07 00 00 00 00)",
+  });

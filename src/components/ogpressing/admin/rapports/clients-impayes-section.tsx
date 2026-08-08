@@ -19,6 +19,7 @@ import { AlertTriangle, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
 import {
   Table,
   TableBody,
@@ -69,18 +70,12 @@ export function ClientsImpayesSection({
             ))}
           </div>
         ) : clients.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-            <span className="flex size-12 items-center justify-center rounded-full bg-secondary/10">
-              <Users className="size-6 text-secondary" />
-            </span>
-            <p className="text-sm font-medium text-foreground">
-              Aucun client avec impayé sur cette période
-            </p>
-            <p className="max-w-sm text-xs text-muted-foreground">
-              Tous les clients ont soldé leurs commandes. Les impayés
-              apparaîtront ici dès qu&apos;une commande sera laissée non payée.
-            </p>
-          </div>
+          <EmptyState
+            icon={Users}
+            compact
+            title="Aucun client avec impayé sur cette période"
+            description="Tous les clients ont soldé leurs commandes. Les impayés apparaîtront ici dès qu'une commande sera laissée non payée."
+          />
         ) : (
           <>
             {/* Vue desktop : tableau */}

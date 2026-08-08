@@ -518,6 +518,7 @@ export function DemandeDetailsSheet({
                 placeholder="Ajoutez vos notes (contexte, suivi commercial, etc.)"
                 className="min-h-24 resize-y"
                 disabled={notesSaving}
+                aria-label="Notes internes"
               />
               <div className="flex items-center justify-end gap-1 text-xs text-muted-foreground">
                 {notesSaving ? (

@@ -21,7 +21,7 @@ import { useCallback, useEffect, useState } from "react";
 import { UserCog, AlertTriangle, Users, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ViewToggle } from "@/components/shared";
+import { ViewToggle, EmptyState } from "@/components/shared";
 import { useViewMode } from "@/hooks/use-view-mode";
 import {
   PersonnelFilters,
@@ -249,17 +249,11 @@ export function PersonnelPage() {
           ))}
         </div>
       ) : employes.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
-          <span className="flex size-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <Sparkles className="size-7" />
-          </span>
-          <p className="mt-3 font-medium text-foreground">
-            Aucun employé trouvé
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Modifiez vos filtres ou ajoutez un nouvel employé.
-          </p>
-        </div>
+        <EmptyState
+          icon={Sparkles}
+          title="Aucun employé trouvé"
+          description="Modifiez vos filtres ou ajoutez un nouvel employé."
+        />
       ) : (
         <PersonnelList
           employes={employes}
