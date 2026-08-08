@@ -50,6 +50,7 @@ import {
   hasRole,
   isPersonnelActive,
 } from "@/lib/auth/roles";
+import { canTransitionCommande } from "@/lib/workflow/commande-statut";
 
 export const dynamic = "force-dynamic";
 
@@ -413,13 +414,48 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   }
 
   // ---------- 5. Vérifications métier ----------
+
+  // AUDIT-B-08: workflow status transition guard
+  // Vérifie que la transition de statut demandée est autorisée par la matrice
+  // canonique du workflow (`canTransitionCommande` dans
+  // `@/lib/workflow/commande-statut`). Ce guard s'applique à TOUT changement
+  // de statut via PATCH (actuellement seul 'annule' est supporté en Phase-1,
+  // mais le guard reste future-proof si d'autres transitions sont ajoutées).
+  //
+  // Rationale : avant ce fix, le PATCH ne validait que l'annulation (via
+  // STATUTS_NON_ANNULABLE). Si on avait ajouté un PATCH "statut='pret'" sans
+  // contrôle, on aurait pu faire reculer une commande "livre" → "pret" par
+  // erreur de saisie, perdant l'historique métier (la commande a déjà quitté
+  // la pressing). La matrice `TRANSITIONS_COMMANDE_AUTORISEES` garantit que
+  // seules les transitions "vers l'avant" + l'annulation des statuts
+  // pré-livraison sont autorisées.
+  //
+  // Cas spécial : 'annule' depuis 'livre', 'retire' ou 'annule' est interdit
+  // (post-livraison / terminal) — géré par la matrice (livre/retire/annule
+  // ont une liste vide de cibles autorisées).
+  if (statutRaw && !canTransitionCommande(cmd.statut, statutRaw)) {
+    return NextResponse.json(
+      {
+        success: false,
+        code: "INVALID_TRANSITION",
+        error: `Transition de statut non autorisée: ${cmd.statut} → ${statutRaw}`,
+      },
+      { status: 409 }
+    );
+  }
+
   if (wantCancel) {
-    // Annulation possible seulement si statut ∈ {recu, en_traitement}.
+    // Annulation possible seulement si statut ∈ {recu, en_traitement, lave,
+    // repasse} (i.e. la commande n'est pas encore livrée/retirée). Ce check
+    // est désormais redondant avec canTransitionCommande ci-dessus, mais on
+    // le conserve comme seconde couche défensive + pour le message plus
+    // spécifique (l'utilisateur comprend mieux "Annulation impossible" que
+    // "Transition non autorisée").
     if (STATUTS_NON_ANNULABLE.has(cmd.statut)) {
       return NextResponse.json(
         {
           success: false,
-          error: `Annulation impossible : la commande est déjà au statut '${cmd.statut}'. Seules les commandes 'recu' ou 'en_traitement' peuvent être annulées.`,
+          error: `Annulation impossible : la commande est déjà au statut '${cmd.statut}'. Seules les commandes 'recu', 'en_traitement', 'lave' ou 'repasse' peuvent être annulées.`,
         },
         { status: 409 }
       );

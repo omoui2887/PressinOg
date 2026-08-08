@@ -81,6 +81,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { EmptyState } from "@/components/shared/empty-state";
 import { formatFCFA } from "@/lib/utils/format";
 import type {
   CouleurVetement,
@@ -618,17 +619,16 @@ function CatalogueSection({ services, servicesLoading, onAddArticle }: Catalogue
             ))}
           </div>
         ) : filteredCatalogue.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 text-center">
-            <span className="flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <Package className="size-5" />
-            </span>
-            <p className="mt-2 text-sm font-medium text-foreground">
-              {searchQuery ? "Aucun article trouvé" : "Catalogue vide"}
-            </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {searchQuery ? "Essayez un autre mot-clé." : "Le catalogue global sera disponible ici."}
-            </p>
-          </div>
+          <EmptyState
+            icon={Package}
+            compact
+            title={searchQuery ? "Aucun article trouvé" : "Catalogue vide"}
+            description={
+              searchQuery
+                ? "Essayez un autre mot-clé."
+                : "Le catalogue global sera disponible ici."
+            }
+          />
         ) : (
           <div className="space-y-3">
             {groupedCatalogue.map((group) => {
@@ -767,15 +767,13 @@ function CartTable({ state, dispatch, onEdit }: CartTableProps) {
       </div>
 
       {state.articles.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-8 text-center">
-          <span className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <Package className="size-5" />
-          </span>
-          <p className="mt-2 text-sm font-medium text-foreground">Aucun article</p>
-          <p className="mt-0.5 max-w-[16rem] text-xs text-muted-foreground">
-            Cliquez sur un article du catalogue à gauche pour l&apos;ajouter.
-          </p>
-        </div>
+        <EmptyState
+          icon={Package}
+          compact
+          title="Aucun article"
+          description="Cliquez sur un article du catalogue à gauche pour l'ajouter."
+          className="mx-3 my-3"
+        />
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">

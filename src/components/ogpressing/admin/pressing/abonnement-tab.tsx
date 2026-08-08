@@ -26,6 +26,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
 import { formatFCFA, formatDateOnly } from "@/lib/utils/format";
 import {
   AbonnementInfo,
@@ -65,17 +66,11 @@ export function AbonnementTab({ abonnement, loading }: AbonnementTabProps) {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-10 text-center">
-            <span className="flex size-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <Info className="size-7" />
-            </span>
-            <p className="mt-3 font-medium text-foreground">
-              Aucun abonnement actif
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Contactez le Super Admin pour activer votre pressing.
-            </p>
-          </div>
+          <EmptyState
+            icon={Info}
+            title="Aucun abonnement actif"
+            description="Contactez le Super Admin pour activer votre pressing."
+          />
           <ContactCard />
         </CardContent>
       </Card>

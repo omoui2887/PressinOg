@@ -22,6 +22,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { isValidCIPhone, normalizeCIPhone } from "@/lib/validations/phone";
+import { createClientSchema } from "@/lib/validations/client";
 
 export const dynamic = "force-dynamic";
 
@@ -240,6 +241,25 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json(
       { success: false, error: "Corps de requête invalide (JSON attendu)" },
+      { status: 400 }
+    );
+  }
+
+  // AUDIT #9 — Zod validation gate (defense-in-depth). Si le body ne passe
+  // pas le schéma (UUID invalide, téléphone non ivoirien, nom trop court,
+  // email mal formé, notes > 2000 chars, etc.), on renvoie 400 avec les
+  // erreurs Zod formatées via `.flatten()`. La validation métier existante
+  // (rôle, unicité téléphone, normalisation) continue de s'exécuter ensuite
+  // sur le body original — le schéma ne fait qu'ajouter une couche.
+  // #19 — notes slice : le schéma limite `notes` à 2000 chars max.
+  const zodParsed = createClientSchema.safeParse(body);
+  if (!zodParsed.success) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Données invalides",
+        details: zodParsed.error.flatten(),
+      },
       { status: 400 }
     );
   }

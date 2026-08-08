@@ -17,6 +17,7 @@ import { ArrowDownCircle, ArrowUpCircle, History } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
 import type { ViewMode } from "@/hooks/use-view-mode";
 import {
   Table,
@@ -53,16 +54,13 @@ export function MouvementsList({
 
   if (mouvements.length === 0) {
     return (
-      <Card className="flex flex-col items-center justify-center gap-3 p-12 text-center">
-        <span className="flex size-14 items-center justify-center rounded-full bg-muted">
-          <History className="size-7 text-muted-foreground" />
-        </span>
-        <div>
-          <p className="font-semibold text-foreground">Aucun mouvement</p>
-          <p className="text-sm text-muted-foreground">
-            Les entrées et sorties de stock apparaîtront ici.
-          </p>
-        </div>
+      <Card className="p-0">
+        <EmptyState
+          icon={History}
+          title="Aucun mouvement"
+          description="Les entrées et sorties de stock apparaîtront ici."
+          className="m-0 border-0"
+        />
       </Card>
     );
   }

@@ -987,3 +987,621 @@ Stage Summary:
   * `src/app/api/admin/personnel/route.ts` (#12 commentaires)
   * `src/app/api/personnel/caissier/encaisser/route.ts` (#12 commentaire)
 - Lint 0/0, dev server OK, aucun build cassé. Prêt pour la suite.
+
+---
+Task ID: P4-A
+Agent: P4-A security-hardening
+Task: Phase 4 #17 env validation + #18 middleware deny-by-default + #16 console reduction + AUDIT-C-05 error boundaries
+
+Work Log:
+- Lu le worklog précédent (~200 dernières lignes) pour reprendre le contexte : P1-A (middleware + activation), P1-B (commandes), P1-C (rapports), P2-D (phone validation, temp password, last manager, role change), P3-E (réactivation abonnement, verrou optimiste, computeDateRetrait, timestamps serveur).
+- Lu intégralement les fichiers cibles avant édition :
+  * `src/lib/supabase/middleware.ts` (1049 lignes — updateSession avec cache HMAC + sections 1-7, garde-fou fail-closed déjà présent ligne 646-673)
+  * `src/app/error.tsx` (79 lignes — error boundary globale existante, modèle pour les 4 nouvelles)
+  * `src/middleware.ts` (37 lignes — matcher racine excluant api/.* et _next/*)
+  * `src/lib/supabase/client.ts` (33 lignes — createBrowserClient)
+  * `src/app/(public)/login/page.tsx` (551 lignes — login avec Supabase browser client)
+  * `src/app/(public)/activation/page.tsx` (1028 lignes — flux activation 2 étapes)
+  * `src/app/(personnel)/personnel/changer-mot-de-passe/page.tsx` (556 lignes — changement mot de passe)
+  * `src/components/ogpressing/admin/stock/add-product-dialog.tsx` (540 lignes)
+  * `src/components/ogpressing/admin/stock/edit-product-dialog.tsx` (526 lignes)
+  * `src/components/ogpressing/admin/pressing/infos-generales-tab.tsx` (502 lignes)
+  * `src/components/ogpressing/super-admin/catalogue/catalogue-form.tsx` (vérifié : aucun console statement, rien à faire)
+  * `src/app/(admin)/layout.tsx`, `src/app/(personnel)/layout.tsx`, `src/app/(super-admin)/layout.tsx`, `src/app/(public)/layout.tsx` (pour comprendre le contexte de chaque route group)
+  * `next.config.ts` (vérifié : `typescript.ignoreBuildErrors=true` avec commentaire "75 erreurs constatées" — les erreurs RHF pré-existantes ne sont PAS bloquantes)
+  * `package.json` (scripts lint = `eslint .`)
+
+Task 1 — #17 Environment validation at boot :
+- CRÉÉ `src/lib/env.ts` (194 lignes) :
+  * `REQUIRED_ENV_VARS = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"]` (as const).
+  * `OPTIONAL_ENV_VARS = ["SUPABASE_PAT", "NEXT_PUBLIC_SITE_URL"]` (as const).
+  * `env` object avec 6 accesseurs typés (supabaseUrl, supabaseAnonKey, supabaseServiceRoleKey, supabasePat, siteUrl, roleCacheSecret bonus pour OGP_ROLE_CACHE_SECRET du middleware). Chaque accesseur retourne `string | null` (jamais undefined).
+  * `isEnvConfigured()` : itère sur REQUIRED_ENV_VARS, retourne false si l'une est manquante/vide/placeholder (détection de "REPLACE_WITH_ANON_KEY", "REPLACE_WITH_SERVICE_ROLE_KEY", "your-supabase-url", "https://your-project.supabase.co" — placeholders courants des fichiers .env.example).
+  * `validateEnv()` : logge une erreur claire (sans révéler les valeurs des vars présentes) si des vars requises manquent, un warning si des vars optionnelles manquent, un message informatif en dev si tout est OK. Niveau de log : `console.error` pour required, `console.warn` pour optional, `console.info` pour le success dev-only.
+  * Sécurité : aucun log ne contient la valeur d'une var (uniquement sa présence/absence).
+  * Idempotent, sans effet de bord (en dehors des logs).
+- CRÉÉ `src/instrumentation.ts` (53 lignes) :
+  * Signature Next.js 16 : `export async function register(): Promise<void>`.
+  * Import dynamique de `validateEnv` (pour éviter de tirer env.ts dans le bundle client — env.ts référence SUPABASE_SERVICE_ROLE_KEY qui ne doit jamais être exposée côté client).
+  * Wrappe `validateEnv()` dans un try/catch : ne JAMAIS crasher le boot — si validateEnv lève (ce qu'il ne devrait pas), on log l'erreur et on continue. Le middleware effectuera son propre garde-fou au runtime.
+  * Logge un warning si la validation prend > 50 ms (diagnostic boot lent — en pratique < 1 ms).
+
+Task 2 — #18 Middleware deny-by-default refactor :
+- MODIFIÉ `src/lib/supabase/middleware.ts` :
+  * Ajouté un bloc de commentaire "🛡️ PRINCIPE DENY-BY-DEFAULT — Issue #18" en haut de la section CONSTANTES (lignes 37-89) expliquant :
+    - Les 3 catégories de routes : PUBLIC_ROUTES, PROTECTED_PREFIXES, AUTRES ROUTES.
+    - RÈGLE CRITIQUE : tout nouveau route group protégé DOIT être ajouté à PROTECTED_PREFIXES.
+    - RÈGLE CRITIQUE : toute nouvelle route publique racine DOIT être ajoutée à PUBLIC_ROUTES (pour documentation, même si elle fonctionnerait sans).
+    - Politique FAIL-OPEN vs FAIL-CLOSED : PUBLIC_ROUTES → fail-open, PROTECTED_PREFIXES → fail-closed (/login?error=config_incomplete), AUTRES → fail-open (pas de check d'auth middleware de toute façon).
+  * Ajouté `PUBLIC_ROUTES = ["/", "/login", "/activation", "/auth/callback", "/activation-expiree", "/compte-suspendu", "/pos-diagnostic", "/deploy-guide"]` (as const) — whitelist statique exhaustive des routes publiques.
+  * Complété la docstring de `PROTECTED_PREFIXES` avec un warning explicite "RÈGLE CRITIQUE".
+  * Complété la docstring de `AUTH_ROUTES` avec une note précisant que c'est un sous-ensemble de PUBLIC_ROUTES.
+  * Ajouté 2 helpers : `isPublicRoute(pathname)` et `isProtectedRoute(pathname)` qui font le match exact OU par préfixe (`pathname.startsWith(route + "/")`). Centralisent la logique de matching pour éviter la duplication.
+  * Refactorisé le garde-fou env-vars au début de `updateSession` (lignes 764-797) :
+    - Remplacé `PROTECTED_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))` par `isProtectedRoute(pathname)` (lisibilité).
+    - Comportement préservé : si env manquant + route protégée → redirect `/login?error=config_incomplete` (fail-closed). Si env manquant + route publique → `NextResponse.next()` + warning (fail-open, landing/login accessibles en dev). Si env manquant + autre route (api/*, _next/*) → `NextResponse.next()` sans warning (comportement normal, ces routes n'ont pas de check d'auth middleware).
+    - Le warning n'est loggé QUE pour les routes publiques (avant il était loggé pour toutes les routes non protégées, y compris api/* — bruit inutile).
+  * Refactorisé la 2e occurrence de `PROTECTED_PREFIXES.some(...)` par `isProtectedRoute(pathname)` (ligne 801).
+  * Aucun changement comportemental — ce refactor est principalement de la documentation + lisibilité + centralisation de la logique de matching.
+
+Task 3 — #16 Console.log/error reduction (client components only) :
+- Comptage initial : `rg "console\.(log|error|warn)" src/ 2>/dev/null | wc -l` = 218 occurrences totales (mix server + client).
+- MODIFIÉ `src/app/(public)/activation/page.tsx` (4 corrections) :
+  * Ligne 354 (avant 350) `console.error("[activation] Réponse non-JSON du serveur:", { status, body: text.substring(0, 300) })` → remplacé `body` par `bodyLength: text.length`. Le body pourrait contenir du HTML d'erreur Next.js avec des chemins internes du serveur (fuite d'information). On logge uniquement la longueur pour le diagnostic.
+  * Ligne 379 (avant 372) `console.error("[activation] Réponse succès sans data.code_id:", data)` → remplacé par `{ hasData: !!data.data, hasSuccess: !!data.success }`. L'objet data complet pourrait contenir des infos Supabase internes si la réponse est malformée.
+  * Ligne 416 (avant 405) `console.warn("[activation] Erreur transitoire...", err)` → remplacé `err` par `err instanceof Error ? err.message : "erreur"`. L'objet err complet contient une stack trace avec chemins internes.
+  * Ligne 495 (avant 482) `console.error("[activation] Réponse non-JSON du serveur (étape 2):", { status, body: text.substring(0, 300) })` → même correction que ligne 354 (body → bodyLength).
+  * Les 2 autres console.error (lignes 432, 553) utilisaient déjà le pattern `err instanceof Error ? err.message : "erreur"` — pas de correction nécessaire.
+- MODIFIÉ `src/components/ogpressing/admin/stock/add-product-dialog.tsx` (2 corrections) :
+  * Ligne 165 `console.warn("[stock] Échec upload FDS (continuons sans) :", err)` → `err instanceof Error ? err.message : "erreur"`.
+  * Ligne 198 `console.warn("[stock] Échec fetchFdsSignedUrl :", err)` → même pattern.
+- MODIFIÉ `src/components/ogpressing/admin/stock/edit-product-dialog.tsx` (2 corrections) :
+  * Ligne 168 `console.warn("[stock] Échec upload FDS :", err)` → pattern.
+  * Ligne 200 `console.warn("[stock] Échec fetchFdsSignedUrl :", err)` → pattern.
+- MODIFIÉ `src/components/ogpressing/admin/pressing/infos-generales-tab.tsx` (1 correction) :
+  * Ligne 172 `console.warn("[pressing] Échec upload logo (continuons sans) :", err)` → pattern.
+- `src/app/(public)/login/page.tsx` : 1 seul console.error (ligne 268) qui utilisait déjà le pattern `err instanceof Error ? err.message : "erreur"` — pas de correction nécessaire.
+- `src/app/(personnel)/personnel/changer-mot-de-passe/page.tsx` : 3 console.error (lignes 179, 298, 327) qui utilisaient déjà le pattern message-only — pas de correction nécessaire.
+- `src/components/ogpressing/super-admin/catalogue/catalogue-form.tsx` : aucun console statement — rien à faire.
+- Total : 9 corrections effectives sur 4 fichiers (activation, add-product-dialog, edit-product-dialog, infos-generales-tab).
+- Note : `console.log` dans client components hors `NODE_ENV !== 'production'` : aucun trouvé dans les fichiers cibles (déjà absent ou déjà wrappé).
+
+Task 4 — AUDIT-C-05 Error boundaries per route group :
+- CRÉÉ `src/app/(admin)/error.tsx` (89 lignes) : Client Component ('use client'). Card shadcn avec icône AlertTriangle, titre "Une erreur est survenue", description spécifique à l'espace admin (" Une erreur inattendue s'est produite dans l'espace d'administration. Veuillez réessayer. Si le problème persiste, contactez le support OgPressing."). Boutons "Réessayer" (reset()) + "Retour à l'accueil" (Link href="/"). useEffect logge `error?.message` + `digest` (jamais le stack) avec contexte `[admin-error]`.
+- CRÉÉ `src/app/(personnel)/error.tsx` (80 lignes) : même structure, description spécifique personnel (" Une erreur inattendue s'est produite dans votre espace personnel. Veuillez réessayer. Si le problème persiste, contactez votre manager ou le support OgPressing."). Contexte `[personnel-error]`.
+- CRÉÉ `src/app/(super-admin)/error.tsx` (77 lignes) : même structure, description spécifique super-admin (" Une erreur inattendue s'est produite dans l'espace super-administrateur. Veuillez réessayer. Si le problème persiste, consultez les logs serveur ou contactez l'équipe technique."). Contexte `[super-admin-error]`.
+- CRÉÉ `src/app/(public)/error.tsx` (80 lignes) : même structure, description générique (" Veuillez réessayer. Si le problème persiste, contactez le support OgPressing."). Contexte `[public-error]`. Commentaire ajouté : pour les pages publiques, l'utilisateur n'est pas nécessairement authentifié, le bouton "Retour à l'accueil" pointe vers "/" qui est la landing publique (toujours accessible).
+- Styling consistant : `bg-background text-foreground`, `min-h-dvh`, `Card max-w-md text-center`, `bg-destructive/10 text-destructive` pour l'icône, `Button` + `Button variant="outline" asChild` pour les 2 actions.
+- Aucune régression sur l'error boundary globale `src/app/error.tsx` (non touchée) — Next.js résout les error.tsx du segment le plus proche d'abord, puis remonte vers la racine.
+
+Vérifications :
+- `bun run lint` : ✅ exit 0, 0 erreur, 0 warning (sur TOUT le projet).
+- `bunx eslint` ciblé sur mes 13 fichiers (env.ts, instrumentation.ts, middleware.ts, 4 error.tsx, login/page.tsx, activation/page.tsx, changer-mot-de-passe/page.tsx, add-product-dialog.tsx, edit-product-dialog.tsx, infos-generales-tab.tsx) : ✅ exit 0, 0 erreur, 0 warning.
+- `bunx tsc --noEmit` : 69 erreurs totales (vs 75 documentées dans next.config.ts — la variance est liée à des évolutions RHF, pas à mes changements). Vérification ciblée par grep :
+  * `src/lib/env.ts` : 0 erreur ✓
+  * `src/instrumentation.ts` : 0 erreur ✓
+  * `src/lib/supabase/middleware.ts` : 0 erreur ✓
+  * `src/app/(admin)/error.tsx` : 0 erreur ✓
+  * `src/app/(personnel)/error.tsx` : 0 erreur ✓
+  * `src/app/(super-admin)/error.tsx` : 0 erreur ✓
+  * `src/app/(public)/error.tsx` : 0 erreur ✓
+  * `src/app/(public)/login/page.tsx` : 0 erreur ✓
+  * `src/app/(public)/activation/page.tsx` : 0 erreur ✓
+  * `src/app/(personnel)/personnel/changer-mot-de-passe/page.tsx` : 0 erreur ✓
+  * Les erreurs dans `add-product-dialog.tsx`, `edit-product-dialog.tsx`, `infos-generales-tab.tsx` sont toutes PRE-EXISTANTES (lignes 97-101, 262-430 pour RHF generics Resolver/Control — documentées dans next.config.ts "75 erreurs constatées"). Mes changements (console.warn pattern) sont sur des lignes différentes (162-168, 196-200 pour add-product-dialog ; 166-171, 198-202 pour edit-product-dialog ; 169-175 pour infos-generales-tab).
+- Audit #8 (error masking) préservé : aucune erreur Supabase brute exposée au client (les console.error/warn client ne loggent que des messages génériques + status HTTP + bodyLength, jamais le body brut ou l'objet err complet).
+- Audit #16 (console reduction) appliqué : 9 corrections effectives, toutes dans des client components. Les API routes et le middleware n'ont PAS été touchés (logs serveur OK).
+
+Stage Summary:
+- ✅ #17 (env validation at boot) : `src/lib/env.ts` (194 lignes) + `src/instrumentation.ts` (53 lignes) créés. validateEnv() appelé au boot via instrumentation hook Next.js 16 (signature `register()`), try/catch pour ne jamais crasher le boot. isEnvConfigured() et env object exportés pour usage applicatif. Détection des placeholders courants (.env.example non substitué).
+- ✅ #18 (middleware deny-by-default) : `src/lib/supabase/middleware.ts` enrichi d'un bloc de documentation "PRINCIPE DENY-BY-DEFAULT" (lignes 37-89), whitelist PUBLIC_ROUTES (8 routes), helpers isPublicRoute/isProtectedRoute, refactorisation des 2 occurrences de PROTECTED_PREFIXES.some(...) par isProtectedRoute(pathname). Comportement fail-open/fail-closed préservé (et clarifié) : public → NextResponse.next(), protected → /login?error=config_incomplete. Warning loggé uniquement pour routes publiques (avant : bruit sur api/*, _next/*).
+- ✅ #16 (console reduction) : 9 corrections dans 4 client components (activation/page.tsx × 4, add-product-dialog.tsx × 2, edit-product-dialog.tsx × 2, infos-generales-tab.tsx × 1). Pattern appliqué : `console.error("[Context]", err instanceof Error ? err.message : "erreur")` et ne jamais logger le body de réponse (remplacé par bodyLength) ni l'objet data complet (remplacé par hasData/hasSuccess). API routes et middleware non touchés (logs serveur OK).
+- ✅ AUDIT-C-05 (error boundaries per route group) : 4 error.tsx créés ((admin), (personnel), (super-admin), (public)) — chacun client component, Card shadcn + Button, description FR friendly spécifique au route group, boutons Réessayer (reset) + Retour à l'accueil (Link /). Consistent styling. L'error boundary globale src/app/error.tsx reste en fallback ultime.
+- 🔒 Sécurité préservée : RLS, audit #8 (error masking), role helper (P1-B), cache HMAC middleware (P1-A) — aucune régression.
+- 📁 Fichiers créés (6) :
+  * `src/lib/env.ts` (194 lignes)
+  * `src/instrumentation.ts` (53 lignes)
+  * `src/app/(admin)/error.tsx` (89 lignes)
+  * `src/app/(personnel)/error.tsx` (80 lignes)
+  * `src/app/(super-admin)/error.tsx` (77 lignes)
+  * `src/app/(public)/error.tsx` (80 lignes)
+- 📁 Fichiers modifiés (5) :
+  * `src/lib/supabase/middleware.ts` (1049 → 1166 lignes, +117 pour documentation + PUBLIC_ROUTES + helpers)
+  * `src/app/(public)/activation/page.tsx` (4 corrections console)
+  * `src/components/ogpressing/admin/stock/add-product-dialog.tsx` (2 corrections console)
+  * `src/components/ogpressing/admin/stock/edit-product-dialog.tsx` (2 corrections console)
+  * `src/components/ogpressing/admin/pressing/infos-generales-tab.tsx` (1 correction console)
+- Lint 0/0, tsc 0 erreur sur mes fichiers, dev server non touché (conforme aux consignes), aucun build cassé.
+
+---
+Task ID: P4-B
+Agent: P4-B storage-security
+Task: Phase 4 #3 signed URLs + #4 server-side upload validation (FDS magic number)
+
+Work Log:
+- Lu le worklog précédent (~250 dernières lignes) pour reprendre le contexte : P1-A (activation + middleware), P1-B (commandes), P1-C (rapports), P3-A (storage migration 016 + routes fds-url/justificatif-url), P3-D (personnel), P3-E (réactivation abonnement + verrou optimiste + computeDateRetrait + timestamps serveur), P3-F (audit #16 console masking).
+- Lu intégralement les 5 fichiers de périmètre :
+  * `src/app/api/admin/stock/[id]/fds-url/route.ts` (211 lignes — déjà en place par P3-A, retourne signed URL 1h via server client + RLS `fds_select_isolation`).
+  * `src/app/api/super-admin/abonnements/[id]/justificatif-url/route.ts` (221 lignes — déjà en place par P3-A, retourne signed URL 1h via server client + RLS `justificatifs_select_sa`).
+  * `src/components/ogpressing/admin/stock/add-product-dialog.tsx` — utilisait `getSupabaseBrowser().storage.from("fds").upload(...)` côté client (clé anon), MIME check strict déjà en place par P3-F.
+  * `src/components/ogpressing/admin/stock/edit-product-dialog.tsx` — même pattern que add.
+  * `src/components/ogpressing/super-admin/abonnements/renouvellement-dialog.tsx` — VÉRIFIÉ : aucun `createSignedUrl(path, 60*60*24*365*10)` restant. P3-A a déjà migré vers PATH-only + lecture via API dédiée. Rien à modifier.
+- Lu `supabase/migrations/016_storage_buckets.sql` : bucket `fds` privé, RLS `fds_select_isolation` / `fds_insert_isolation` basées sur `split_part(name, '/', 2)` = pressing_id. Bucket `justificatifs` privé, SA-only.
+- Lu `src/app/api/super-admin/catalogue/upload-icon/route.ts` comme pattern de référence pour upload serveur avec admin client + validation MIME + masquage d'erreur (#8).
+- Lu `src/lib/auth/roles.ts` et `src/lib/supabase/admin.ts` / `server.ts` pour les helpers existants.
+
+Task 1 — #3 (signed URLs) : VÉRIFICATION
+- `fds-url/route.ts` : ✅ retourne déjà une signed URL 1h (3600s) via `getSupabaseServer()` (JWT user, RLS s'applique). Vérifie getUser + personnel actif + RLS isole par pressing. Aucune modification nécessaire.
+- `justificatif-url/route.ts` : ✅ retourne déjà une signed URL 1h via `getSupabaseServer()`. Vérifie getUser + is_super_admin actif (table `super_admins` + `actif=true`). Aucune modification nécessaire.
+- `renouvellement-dialog.tsx` : ✅ déjà migré par P3-A — `uploadJustificatif()` retourne le PATH Storage (pas une signed URL 10 ans), la lecture se fait via la route serveur dédiée. Aucune modification nécessaire.
+
+Task 2 — #4 (server-side upload validation magic number) : CRÉATION + MIGRATION
+
+Étape 1 — CRÉÉ `src/app/api/admin/stock/[id]/fds-upload/route.ts` (281 lignes) :
+- POST handler (multipart/form-data, champ "file" requis).
+- Auth stricte : `getSupabaseServer().auth.getUser()` + `personnel` actif (`actif=true` AND `statut_compte='actif'`) + rôle `manager` (cohérent avec `src/app/api/admin/stock/route.ts` POST qui exige manager).
+- SELECT `produits_stock` via server client (RLS isole par pressing) → récupère `pressing_id`. 404 si produit introuvable (n'appartient pas au pressing ou n'existe pas).
+- Validation stricte côté serveur (AUDIT #4) :
+  * `file.size > 0` (sinon 400 "Le fichier est vide")
+  * `file.size ≤ 5_000_000` bytes — 5 MB strict (sinon 413 avec taille reçue)
+  * `file.type === 'application/pdf'` STRICT — pas de fallback sur l'extension (sinon 415 avec MIME reçu)
+  * MAGIC NUMBER : lit l'ArrayBuffer complet, vérifie que les 5 premiers bytes = `0x25 0x50 0x44 0x46 0x2D` (littéraux `%PDF-`). Sinon 415 "Le fichier n'est pas un PDF valide (magic number manquant)" + `console.warn` (sans fuite du contenu des bytes).
+- Upload via `getSupabaseAdmin()` (service_role, bypass RLS Storage) :
+  * Path : `fds/{pressing_id}/{Date.now()}-{random}.pdf`
+  * `contentType: 'application/pdf'`, `cacheControl: '3600'`, `upsert: false`
+- UPDATE `produits_stock.fds_url = objectPath` via server client (RLS s'applique — défense en profondeur même si le SELECT déjà isolé).
+- Génération d'une signed URL 1h via admin client (bypass RLS — légitime car on a déjà authentifié le manager + validé l'appartenance au pressing).
+- Retour 201 `{ success: true, path, url }` (url peut être `null` si createSignedUrl échoue — le client peut re-demander via `/fds-url`).
+- Audit #8 respecté : toutes les erreurs Supabase sont `console.error` serveur, le client reçoit "Erreur interne" générique. Les erreurs de VALIDATION (MIME/taille/magic) sont explicites car ne révèlent aucune info système.
+
+Étape 2 — MODIFIÉ `src/components/ogpressing/admin/stock/add-product-dialog.tsx` (515 → 498 lignes) :
+- Supprimé `import { getSupabaseBrowser }` (n'est plus utilisé côté client).
+- Supprimé `getMyPressingId()` (le serveur dérive `pressing_id` du JWT + RLS).
+- Supprimé `uploadFds()` (client-side `supabase.storage.from("fds").upload(...)`).
+- Supprimé `fetchFdsSignedUrl()` (était défini mais jamais appelé dans add — pas de bouton "Voir la FDS" sur un produit en cours de création).
+- Ajouté `uploadFdsServerSide(produitId)` : POST `/api/admin/stock/${produitId}/fds-upload` avec `FormData` (champ "file"). Retourne `boolean` (succès/échec). Gestion d'erreur avec toast.warning (non bloquant — le produit est déjà créé).
+- Nouveau flow `onSubmit` :
+  1. POST `/api/admin/stock` SANS `fds_url` (crée le produit, récupère son id).
+  2. Si FDS sélectionnée : `uploadFdsServerSide(produitId)` (non bloquant — toast.warning si échec).
+  3. Toast success, reset, close, `onProductCreated?.()`.
+- Conservation du pré-check MIME strict côté client (`file.type !== "application/pdf"`) dans `handleFileChange` pour UX (feedback instantané). Le serveur reste la source de vérité.
+- En-tête docstring mis à jour (description du nouveau flow + références AUDIT #2 + #4).
+
+Étape 3 — MODIFIÉ `src/components/ogpressing/admin/stock/edit-product-dialog.tsx` (526 → 510 lignes) :
+- Supprimé `import { getSupabaseBrowser }`.
+- Supprimé `getMyPressingId()`.
+- Supprimé `uploadFds()` (client-side).
+- Ajouté `uploadFdsServerSide(produitId)` : même pattern que add.
+- Conservation de `fetchFdsSignedUrl()` (utilisée par `handleViewFds` pour ouvrir la FDS existante dans un nouvel onglet via signed URL serveur).
+- Nouveau flow `onSubmit` :
+  1. Si FDS sélectionnée : `uploadFdsServerSide(produit!.id)` (la route met à jour `produits_stock.fds_url` directement).
+  2. PATCH `/api/admin/stock/${produit.id}` pour les autres champs (nom, categorie, unite, seuil, etc.).
+  3. Inclut `fds_url: null` UNIQUEMENT si `removeFds=true` ET qu'aucun nouveau fichier n'a été uploadé (sinon la route fds-upload a déjà mis à jour `fds_url`).
+- En-tête docstring mis à jour.
+
+Vérifications :
+- `bun run lint` : ✅ exit 0, 0 erreur, 0 warning.
+- `bunx tsc --noEmit` sur mes fichiers modifiés :
+  * `src/app/api/admin/stock/[id]/fds-upload/route.ts` : ✅ 0 erreur (nouveau fichier compile proprement).
+  * `src/app/api/admin/stock/[id]/fds-url/route.ts` : ✅ 0 erreur.
+  * `src/app/api/super-admin/abonnements/[id]/justificatif-url/route.ts` : ✅ 0 erreur.
+  * `src/components/ogpressing/super-admin/abonnements/renouvellement-dialog.tsx` : ✅ 0 erreur.
+  * `src/components/ogpressing/admin/stock/add-product-dialog.tsx` : ⚠️ 10 erreurs PRÉ-EXISTANTES (vérifié via `git stash` + `tsc` sur HEAD : mêmes erreurs `Resolver<...>` / `Control<...>` liées à `z.coerce.number()` incompatibles avec react-hook-form types). NON introduites par mes changements — elles concernent le schéma Zod (`useForm({ resolver: zodResolver(schema) })`) que je n'ai PAS touché.
+  * `src/components/ogpressing/admin/stock/edit-product-dialog.tsx` : ⚠️ 8 erreurs PRÉ-EXISTANTES (même classe que add).
+- Audit #8 (error masking) respecté : routes API renvoient "Erreur interne" générique pour toute erreur Supabase, `console.error` serveur uniquement.
+- Audit #4 (magic number) respecté : validation `%PDF-` côté serveur avant écriture Storage.
+- Audit #2 (signed URLs 1h) respecté : aucune `createSignedUrl` avec durée > 3600s dans le code ; aucune `getPublicUrl` sur buckets privés.
+- RLS préservée : la route `/fds-upload` utilise `getSupabaseServer()` pour l'auth + SELECT/UPDATE `produits_stock` (RLS isole par pressing) ET `getSupabaseAdmin()` uniquement pour l'upload Storage + signed URL (légitime car validation préalable de l'appartenance au pressing).
+
+Stage Summary:
+- ✅ Task 1 (#3 signed URLs) : vérification confirmée que `fds-url` et `justificatif-url` retournent déjà des signed URLs 1h (P3-A avait fait le travail). `renouvellement-dialog.tsx` déjà migré vers PATH-only + lecture via API dédiée (plus de `createSignedUrl(path, 60*60*24*365*10)`).
+- ✅ Task 2 (#4 server-side upload validation) :
+  * CRÉÉ `src/app/api/admin/stock/[id]/fds-upload/route.ts` (281 lignes) — POST multipart/form-data avec validation stricte MIME `application/pdf` + taille ≤ 5MB + magic number `%PDF-` (5 bytes). Upload via admin client (service_role) avec path `fds/{pressing_id}/{Date.now()}-{random}.pdf`. UPDATE `produits_stock.fds_url` via server client (RLS). Retour `{ success, path, url }` avec signed URL 1h.
+  * MIGRÉ `add-product-dialog.tsx` : suppression de l'upload client-side (clé anon) au profit de `fetch('/api/admin/stock/[id]/fds-upload', { method: 'POST', body: formData })`. Nouveau flow : POST produit SANS fds_url → POST fds-upload si fichier sélectionné (non bloquant).
+  * MIGRÉ `edit-product-dialog.tsx` : même migration. Flow : POST fds-upload si nouveau fichier → PATCH autres champs (fds_url=null seulement si removeFds ET pas d'upload).
+- 🔒 Sécurité préservée : RLS (`fds_select_isolation` / `fds_insert_isolation`), audit #8 (error masking), audit #16 (console masking préservé côté client). Aucune régression sur les routes existantes (fds-url, justificatif-url, catalogue/upload-icon).
+- 📁 Fichiers créés (1) + modifiés (2) :
+  * `src/app/api/admin/stock/[id]/fds-upload/route.ts` (CRÉÉ — 281 lignes)
+  * `src/components/ogpressing/admin/stock/add-product-dialog.tsx` (MODIFIÉ — suppression upload client, ajout uploadFdsServerSide)
+  * `src/components/ogpressing/admin/stock/edit-product-dialog.tsx` (MODIFIÉ — même pattern)
+- Lint 0/0, tsc 0 erreur sur mes fichiers (les erreurs pré-existantes dans add/edit-product-dialog sont des incompatibilités react-hook-form / zodResolver non introduites par cette tâche).
+
+---
+Task ID: P4-D
+Agent: P4-D business-logic
+Task: Phase 4 #13+#14 caissier modes_paiement + AUDIT-B-08 workflow transitions + AUDIT-B-10 cascade suspension
+
+Work Log:
+- Lu le worklog (dernières ~200 lignes) pour reprendre le contexte : P1-A (middleware + activation), P1-B (commandes), P1-C (rapports), P2-D (personnel security), P3-E (subscription + verrou optimiste + computeDateRetrait + #12 timestamps).
+- Lu `supabase/migrations/019_champs_caissier.sql` : 3 colonnes caissier déjà présentes dans `personnel` (modes_paiement_autorises JSONB NOT NULL DEFAULT '["especes","mobile_money","carte","cheque","virement"]', nom_affiche_recu TEXT, seuil_alerte_impaye INTEGER DEFAULT 5000). ⚠️ `numero_caisse` N'EXISTE PAS — non créé par migration 019 ni aucune autre migration. Documenté comme manquant (un autre agent gère les SQL migrations, hors scope).
+- Lu les 5 fichiers à modifier :
+  * `src/lib/workflow/commande-statut.ts` (533 lignes — matrice article + guards paiement + badges + macro-étapes ; PAS de matrice commande)
+  * `src/app/api/admin/commandes/[id]/route.ts` (482 lignes — GET detail + PATCH annulation/priorite/notes + verrou optimiste)
+  * `src/app/api/personnel/caissier/encaisser/route.ts` (436 lignes — POST encaissement avec fallback modes_paiement_autorises)
+  * `src/app/api/admin/personnel/route.ts` (POST create ne gérait PAS modes_paiement_autorises)
+  * `src/app/api/admin/personnel/[id]/route.ts` (850 lignes — PATCH desactiver/reactiver/modifier, le modifier gérait DÉJÀ modes_paiement_autorises via MODES_PAIEMENT_VALIDES, aucun changement nécessaire)
+  * `src/app/api/super-admin/abonnements/[id]/route.ts` (402 lignes — PATCH changer_plan/suspendre/reactiver)
+
+Task 1 — #13 + #14 Champs caissier (modes_paiement_autorises) :
+- `src/app/api/personnel/caissier/encaisser/route.ts` :
+  * Ajouté un type `CaissierRow` explicite (avec `modes_paiement_autorises?: string[] | string | null`) pour résoudre l'erreur tsc TS2322 ligne 154 (le fallback SELECT ne renvoyait pas la colonne → incompatibilité de type lors de la réassignation `me = fallback.data`).
+  * Refactorisé `getConnectedCaissier()` : déclaration explicite `let me: CaissierRow | null = null` + cast via `as CaissierRow | null` sur `primary.data` et `fallback.data`. Le fallback réassigne `me.modes_paiement_autorises = null` sans cast (le type l'accepte désormais).
+  * Ajouté le commentaire `// AUDIT-B #14: validation modes_paiement_autorises` sur le type + dans le bloc de 2e validation (encaissement). Le message d'erreur 403 a été ajusté pour correspondre au spec : `"Vous n'êtes pas autorisé à encaisser ce mode de paiement."` + code `MODE_PAIEMENT_NON_AUTORISE` + details `{ methode_demandee, modes_autorises }`.
+  * Comportement backward compatible préservé : si `modes_paiement_autorises` est null/undefined/vide (base non migrée OU manager n'a pas configuré) → `normaliserModesAutorises` retourne MODES_AUTORISES_DEFAUT (tous modes autorisés). Le manager peut restreindre plus tard via PATCH.
+- `src/app/api/admin/personnel/route.ts` (POST create) :
+  * Ajouté 2 constantes : `MODES_PAIEMENT_VALIDES_SET` (5 valeurs du CHECK constraint SQL : especes, mobile_money, carte, cheque, virement — cohérent avec le PATCH handler) + `MODES_PAIEMENT_DEFAUT_CAISSIER` (3 valeurs de l'enum methode_paiement : especes, mobile_money, carte_bancaire — les modes réellement encaissables).
+  * Étendu l'interface `CreateBody` avec `modes_paiement_autorises?: unknown`.
+  * Ajouté le bloc de validation `modes_paiement_autorises` après la validation du rôle :
+    - Si fourni ET role !== 'caissier' → 400 `CHAMPS_CAISSIER_SUR_NON_CAISSIER`.
+    - Si fourni ET role === 'caissier' → validé : doit être un array non-vide de strings, chaque string doit être dans MODES_PAIEMENT_VALIDES_SET, dédupliqué.
+    - Si absent ET role === 'caissier' → défaut MODES_PAIEMENT_DEFAUT_CAISSIER (3 valeurs enum) — backward compatible.
+    - Si absent ET role !== 'caissier' → null (la DB appliquera son DEFAULT JSONB, valeur ignorée à l'encaissement).
+  * Inclu `modes_paiement_autorises` dans les 2 INSERT (creation_directe + lien_invitation) via spread conditionnel : `...(modesPaiementAutorises !== null ? { modes_paiement_autorises: modesPaiementAutorises } : {})`.
+  * Ajouté `modes_paiement_autorises` aux 2 SELECT après INSERT (la réponse `data` l'inclut désormais).
+  * Mis à jour le header docstring du POST pour documenter le champ.
+- `src/app/api/admin/personnel/[id]/route.ts` (PATCH modifier) : aucun changement nécessaire — gérait déjà modes_paiement_autorises (validé contre MODES_PAIEMENT_VALIDES, accepté seulement si la cible est/become caissier). Vérifié que le PERSONNEL_SELECT_AFTER_UPDATE inclut déjà modes_paiement_autorises. ⚠️ Le PATCH ne gère pas numero_caisse (colonne inexistante en base).
+- UI : non fait (le spec dit "optional, only if time permits" — focus API d'abord). Les dialogs create-employee-dialog.tsx et edit-employee-dialog.tsx n'envoient pas encore modes_paiement_autorises, mais le POST route applique le défaut backward compatible → pas de blocage.
+
+Task 2 — AUDIT-B-08 Workflow status transitions sécurisées :
+- `src/lib/workflow/commande-statut.ts` :
+  * Ajouté la constante `TRANSITIONS_COMMANDE_AUTORISEES` (Record<string, readonly string[]>) couvrant les 9 statuts commande (recu, en_traitement, lave, repasse, pret, en_livraison, livre, retire, annule).
+  * Règles : no-op toujours autorisé ; forward-only (pas de recul) ; 'annule' autorisé depuis recu/en_traitement/lave/repasse (cohérent avec STATUTS_NON_ANNULABLE du PATCH handler — préserve le comportement existant) ; 'livre'/'retire'/'annule' sont terminaux (liste vide).
+  * Ajouté `canTransitionCommande(from, to)` : accepte no-op, refuse from=null/inconnu, retourne `allowed.includes(to)` sinon.
+  * Ajouté `getAllowedNextStatutsCommande(from)` pour filtrer un Select UI (future-proof).
+  * Docstring détaillée avec référence AUDIT-B-08 et rationale (bug "livre → en_traitement" évité).
+- `src/app/api/admin/commandes/[id]/route.ts` PATCH :
+  * Importé `canTransitionCommande` depuis `@/lib/workflow/commande-statut`.
+  * Ajouté un guard au début de la section "Vérifications métier" (avant le bloc `wantCancel` existant) :
+    ```
+    // AUDIT-B-08: workflow status transition guard
+    if (statutRaw && !canTransitionCommande(cmd.statut, statutRaw)) {
+      return 409 { code: "INVALID_TRANSITION", error: "Transition de statut non autorisée: ${cmd.statut} → ${statutRaw}" }
+    }
+    ```
+  * Conservation du check `STATUTS_NON_ANNULABLE.has(cmd.statut)` existant comme seconde couche défensive + pour le message plus spécifique ("Annulation impossible..."). Le check canTransitionCommande est désormais primaire (catch tous les cas), STATUTS_NON_ANNULABLE est secondaire (message métier plus clair pour le cas annule).
+  * Le guard s'applique à TOUT changement de statut via PATCH (future-proof) — actuellement seul 'annule' est supporté en Phase-1, mais si on ajoute plus tard "statut='pret'" etc., le guard empêchera les reculs (livre → pret, annule → recu, etc.).
+  * Mis à jour le message d'erreur du STATUTS_NON_ANNULABLE pour être précis sur les statuts annulables ("recu', 'en_traitement', 'lave' ou 'repasse'").
+
+Task 3 — AUDIT-B-10 Cascade désactivation personnel sur suspension pressing :
+- `src/app/api/super-admin/abonnements/[id]/route.ts` PATCH 'suspendre' :
+  * Avant : ne mettait à jour QUE `abonnements.statut='suspendu'`. Le middleware P1-A section 5.6 vérifie à la fois abonnements.statut ET pressing.statut → sans update de pressing.statut, la suspension n'était pas effective côté middleware.
+  * Ajouté (AUDIT-B-09 symétrie) : SELECT pressing.id+statut, puis UPDATE pressing SET statut='suspendu' WHERE id=? AND statut<>'suspendu' (garde défensive contre race). Log `[suspendre] Pressing X suspended from Y to suspendu`. Non-bloquant (erreurs loggées, suspension de l'abonnement reste effective).
+  * Ajouté (AUDIT-B-10 cascade) : UPDATE personnel SET statut_compte='desactive', actif=false, date_desactivation=NOW(), notes_changement_role="Désactivé automatiquement suite à la suspension du pressing (TIMESTAMP)" WHERE pressing_id=? AND statut_compte='actif'. Non-bloquant (try/catch + log si erreur). `cascadedPersonnel` boolean retourné au client.
+  * Réponse enrichie : `cascaded_personnel: boolean` + `message` adapté ("Pressing suspendu. Le personnel a été désactivé en cascade." vs "...n'a pas pu être désactivé en cascade (voir logs serveur).").
+  * Ajouté commentaire explicatif : on ne réactive PAS automatiquement le personnel sur 'reactiver' (plus sûr — évite de réactiver un employé que le manager avait désactivé pour une autre raison juste avant la suspension).
+- `src/app/api/super-admin/abonnements/[id]/route.ts` PATCH 'reactiver' :
+  * Mis à jour le commentaire AUDIT-B-09 existant pour ajouter la référence AUDIT-B-10 : "Le personnel désactivé en cascade lors de la suspension n'est PAS réactivé ici ; le manager doit explicitement réactiver chaque employé via PATCH /api/admin/personnel/[id] {action:'reactiver'}". Aucune logique réactivée — conforme au spec.
+- Header docstring du fichier mis à jour pour documenter les 2 comportements (suspendre = cascade, reactiver = pas de cascade).
+
+Vérifications :
+- `bun run lint` : ✅ exit 0, 0 erreur, 0 warning.
+- `bunx tsc --noEmit` sur mes fichiers modifiés : ✅ 0 erreur dans :
+  * `src/app/api/personnel/caissier/encaisser/route.ts` (l'erreur TS2322 ligne 154 est RÉSOLUE par le type CaissierRow explicite)
+  * `src/app/api/admin/commandes/[id]/route.ts`
+  * `src/app/api/admin/personnel/route.ts`
+  * `src/app/api/admin/personnel/[id]/route.ts` (non modifié mais vérifié)
+  * `src/app/api/super-admin/abonnements/[id]/route.ts`
+  * `src/lib/workflow/commande-statut.ts`
+- Erreurs pré-existantes hors scope (NON introduites par cette tâche) :
+  * `src/app/api/super-admin/abonnements/route.ts:116` (TS2769 overload — déjà notée par P1-C et P3-E)
+  * `src/lib/validations/personnel.ts:29` (TS2305 phoneSchema manquant — fichier untracked créé par un agent précédent, hors scope "Do NOT touch Zod schemas")
+  * ~60 erreurs react-hook-form dans catalogue-form/infos-generales/service-dialog/product-dialog/mouvement-dialog/inscription-form (pré-existantes)
+  * skills/ et examples/ (pré-existantes, hors app)
+- Audit #8 (error masking) préservé : toutes les erreurs Supabase sont loggées serveur (`console.error` / `console.warn`) et le client ne reçoit que des messages métier génériques ou codes d'erreur explicites (INVALID_TRANSITION, MODE_PAIEMENT_NON_AUTORISE, CHAMPS_CAISSIER_SUR_NON_CAISSIER, CONCURRENT_MODIFICATION).
+- Sécurité préservée : RLS gère l'isolation par pressing_id, pressing_id jamais trusté du client, expected_updated_at (#6) est juste une valeur de comparaison, modes_paiement_autorises est validé contre une whitelist stricte.
+
+Stage Summary:
+- ✅ #14 (validation modes_paiement_autorises côté caissier) : la route /api/personnel/caissier/encaisser valide désormais que `body.methode` est dans `me.modes_paiement_autorises` (JSONB, migration 019). Backward compatible : si null/empty → MODES_AUTORISES_DEFAUT (tous modes). Erreur tsc TS2322 résolue par typage explicite CaissierRow. Commentaire `// AUDIT-B #14: validation modes_paiement_autorises` ajouté.
+- ✅ #13 (champs caissier configuration) : le POST /api/admin/personnel accepte désormais `modes_paiement_autorises` dans le body (array de strings parmi especes/mobile_money/carte/cheque/virement). Si role='caissier' et absent → défaut [especes, mobile_money, carte_bancaire] (3 valeurs de l'enum methode_paiement, réellement encaissables). Si role !== 'caissier' et fourni → 400 CHAMPS_CAISSIER_SUR_NON_CAISSIER. La réponse `data` inclut `modes_paiement_autorises`. Le PATCH /api/admin/personnel/[id] (action='modifier') gérait déjà ce champ — aucun changement nécessaire.
+- ⚠️ numero_caisse : colonne INEXISTANTE en base (non créée par migration 019 ni aucune autre). Non implémenté côté API/UI. Documenté comme manquant — un agent migrations devra créer une migration pour l'ajouter si désiré.
+- ✅ AUDIT-B-08 (workflow transitions sécurisées) : matrice `TRANSITIONS_COMMANDE_AUTORISEES` ajoutée à `src/lib/workflow/commande-statut.ts` (couvre les 9 statuts commande). Fonction `canTransitionCommande(from, to)` + helper `getAllowedNextStatutsCommande(from)`. PATCH /api/admin/commandes/[id] valide désormais toute transition via cette matrice → 409 `INVALID_TRANSITION` si non autorisée. Comportement existant préservé (STATUTS_NON_ANNULABLE conservé comme seconde couche défensive avec message métier plus précis). Le guard empêchera les bugs "livre → en_traitement" si d'autres transitions sont ajoutées via PATCH à l'avenir.
+- ✅ AUDIT-B-10 (cascade désactivation personnel) : PATCH /api/super-admin/abonnements/[id] action='suspendre' désactive désormais en cascade tous les employés actifs du pressing (statut_compte='desactive', actif=false, date_desactivation=NOW(), notes_changement_role documenté). Ajout aussi de pressing.statut='suspendu' (AUDIT-B-09 symétrie) pour que le middleware P1-A section 5.6 redirige vers /compte-suspendu. Non-bloquant (try/catch + log). Réponse enrichie avec `cascaded_personnel: boolean` + `message`. L'action 'reactiver' ne réactive PAS le personnel automatiquement (plus sûr — commentaire explicatif ajouté).
+- 🔒 Sécurité préservée : RLS, audit #8 (error masking), role helpers (P1-B), verrou optimiste (#6, P3-E) — aucune régression.
+- ⚠️ Aucune nouvelle migration requise pour mes changements : `modes_paiement_autorises` (migration 019) et `notes_changement_role` + `date_desactivation` (déjà existantes) suffisent. `numero_caisse` serait à ajouter par un agent migrations si le besoin persiste.
+- 📁 Fichiers modifiés (5) :
+  * `src/app/api/personnel/caissier/encaisser/route.ts` (#14 + tsc fix)
+  * `src/app/api/admin/personnel/route.ts` (#13 modes_paiement_autorises au POST)
+  * `src/app/api/admin/commandes/[id]/route.ts` (AUDIT-B-08 transition guard)
+  * `src/lib/workflow/commande-statut.ts` (AUDIT-B-08 matrice commande)
+  * `src/app/api/super-admin/abonnements/[id]/route.ts` (AUDIT-B-10 cascade + AUDIT-B-09 symétrie suspendre)
+- Lint 0/0, tsc 0 erreur dans mes fichiers, dev server non testé (conforme aux instructions — .env.local absent).
+
+---
+Task ID: P4-C
+Agent: P4-C zod-validation
+Task: Phase 4 #9 Zod validation on API routes + #19 notes slice + AUDIT-C-02 supabase type helpers
+
+Work Log:
+- Lu le worklog précédent (~200 dernières lignes) pour reprendre le contexte : P1-A (middleware + activation), P1-B (commandes — numero retry, idempotence, priorite, PATCH cancellation, role helper), P1-C (rapports), P2-D (personnel security — phone validation, temp password, last manager, role change notification), P3-E (abonnements — réactivation, verrou optimiste #6, computeDateRetrait #8, timestamps serveur #12).
+- Lu intégralement les 10 fichiers cibles avant édition :
+  * `src/lib/validations/phone.ts` (63 lignes — helper phone existant)
+  * `src/app/api/admin/commandes/route.ts` (1095 lignes — GET list + POST create avec idempotence + retry + role helper)
+  * `src/app/api/admin/commandes/[id]/route.ts` (482 lignes — GET detail + PATCH annulation/priorite/notes + verrou optimiste #6)
+  * `src/app/api/admin/clients/route.ts` (359 lignes — GET list + POST create)
+  * `src/app/api/admin/clients/[id]/route.ts` (381 lignes — GET detail + PATCH partiel avec preferences_lavage)
+  * `src/app/api/admin/personnel/route.ts` (598 lignes — GET list + POST create avec creation_directe / lien_invitation)
+  * `src/app/api/admin/personnel/[id]/route.ts` (849 lignes — PATCH modifier/desactiver/reactiver + POST reset_password/resend_invitation)
+  * `src/app/api/super-admin/abonnements/route.ts` (193 lignes — GET list uniquement, pas de POST — skip)
+  * `src/app/api/super-admin/abonnements/[id]/renouveler/route.ts` (348 lignes — POST déclaratif paiement + AUDIT-B-09 réactivation pressing)
+  * `src/app/api/super-admin/abonnements/[id]/route.ts` (306 lignes — PATCH changer_plan/suspendre/reactiver)
+  * `src/app/api/admin/rapports/route.ts` (528 lignes — GET rapports avec 2 casts `as unknown as` aux lignes 382 et 491)
+
+Phase 1 — Vérification compatibilité Zod v4.3.5 :
+- Testé via un script Node temporaire les APIs Zod utilisées par le spec du task :
+  * `z.string().email()` — OK (chained).
+  * `z.record(z.string())` — ÉCHEC en Zod v4 (`Cannot read properties of undefined (reading '_zod')`). Remplacé par `z.record(z.string(), z.string())` (forme Zod v4 avec key + value types).
+  * `.passthrough()` — OK (préservé en Zod v4 pour backward compat). `.loose()` aussi OK (forme v4 native).
+  * `.flatten()` — OK.
+  * `z.enum([...])`, `.default(...)`, `.or(z.literal(""))`, nested `.passthrough()` — tous OK.
+
+Phase 2 — Création des 4 fichiers de schémas Zod :
+
+1. CRÉÉ `src/lib/validations/commande.ts` :
+   - Exporte `prioriteSchema` (z.enum normal|express avec default 'normal'), `createCommandeSchema`, `patchCommandeSchema`.
+   - `createCommandeSchema` : valide `client_id` (UUID), `service_id` (UUID optionnel — non envoyé au top-level dans le body réel, mais gardé pour le spec), `articles` (array non vide d'objets avec `catalogue_article_id` UUID + `quantite` int > 0 ≤ 999 + `prix_unitaire` optionnel + `preferences` record optionnel), `date_pret_prevue` (string ISO parsable via refine), `priorite`, `notes` (max 2000 — #19), `idempotence_key` (max 200 — #15), et les champs optionnels `montant_remise`, `raison_remise`, `montant_acompte`, `methode_acompte`, `reference_acompte`.
+   - `.passthrough()` sur le top-level et sur chaque objet article pour accepter les champs supplémentaires envoyés par le client (`remise`, `acompte`, `service_id` par article, `catalogue_article_nom`, `couleur`, `etat`, etc.) qui sont validés par la logique métier existante.
+   - `patchCommandeSchema` : valide `statut` (enum recu|en_traitement|pret|livre|paye|annule), `priorite`, `notes` (max 2000 — #19), `expected_updated_at` (string optionnel — #6 verrou optimiste). `.passthrough()`.
+
+2. CRÉÉ `src/lib/validations/client.ts` :
+   - `createClientSchema` : `nom_complet` (min 2 max 100), `telephone` (phoneSchema), `email` (email optionnel ou empty string), `adresse` (max 300), `notes` (max 2000 — #19), `preferences` (record string→string). `.passthrough()` pour accepter `points_fidelite` (géré par la route).
+   - `patchClientSchema` : mêmes champs optionnels + `notes` nullable (pour effacer) + `expected_updated_at`. `.passthrough()` pour accepter `preferences_lavage` (géré par la route via validatePreferencesLavage).
+
+3. CRÉÉ `src/lib/validations/personnel.ts` :
+   - `rolePersonnelSchema` : enum 7 valeurs (manager, receptionniste, caissier, laveur, repassage, livreur, comptable).
+   - `createPersonnelSchema` : `methode` (enum creation_directe|lien_invitation), `nom` + `prenom` (forme réelle du body) OU `nom_complet` (forme spec d'origine — les deux acceptés), `email` (optionnel), `telephone` (phoneSchema optionnel), `role` (required), `password` (min 8 max 200 optionnel), et les champs caissier/manager optionnels. `.passthrough()`.
+   - `patchPersonnelSchema` : `action` (enum modifier|desactiver|activer|reactiver — "activer" est gardé pour matcher le spec d'origine même si la route utilise "reactiver"), `nom` + `prenom` OU `nom_complet`, `telephone`, `email`, `role`, champs caissier, `raison_desactivation` (max 500), `expected_updated_at` (max 500). `.passthrough()` pour accepter `nom_affiche_recu`, `seuil_alerte_impaye` (validés par la route).
+
+4. CRÉÉ `src/lib/validations/abonnement.ts` :
+   - `planAbonnementSchema` : enum starter|pro|business.
+   - `renouvelerAbonnementSchema` : `plan` (optionnel — lu depuis l'abonnement existant côté serveur), `duree_mois` (int 1-12), `montant` (int ≥ 0 ≤ 10M), `methode` (enum especes|mobile_money|carte_bancaire|virement), `reference` (max 200), `date_paiement` (optionnel — NOW() si absent), `justificatif_path` ET `justificatif_url` (les deux acceptés pour le spec et le body réel). `.passthrough()`.
+   - `patchAbonnementSchema` : `action` (enum changer_plan|suspendre|reactiver), `plan` (optionnel), `raison` (max 500). `.passthrough()`.
+
+5. MODIFIÉ `src/lib/validations/phone.ts` :
+   - Ajouté `import { z } from "zod"` (le fichier ne l'importait pas — c'était un module pur fonctions).
+   - Ajouté l'export `phoneSchema` : `z.string().min(1).refine(isValidCIPhone)` avec message d'erreur français. Réutilisé par `client.ts` et `personnel.ts`. La normalisation reste côté route via `normalizeCIPhone` (le schéma valide seulement, ne normalise pas — pour préserver la symétrie avec les routes existantes).
+
+Phase 3 — Application des schémas dans les 7 routes API (defense-in-depth gate) :
+
+Pour chaque route, le pattern est identique :
+- Import du schéma.
+- Après `body = await request.json()` et le try/catch JSON, ajout de `const zodParsed = schema.safeParse(body); if (!zodParsed.success) return NextResponse.json({ success: false, error: "Données invalides", details: zodParsed.error.flatten() }, { status: 400 });`.
+- La logique métier existante continue de s'exécuter ensuite sur `body` (original). Le schéma ne fait qu'ajouter une couche defense-in-depth — il ne remplace pas la validation métier (qui inclut des règles que Zod ne peut pas exprimer statiquement : services actifs, catalogue_article_nom server-side, anti-doublon email/téléphone, condition caissier, etc.).
+
+Routes modifiées :
+- `src/app/api/admin/commandes/route.ts` POST — import `createCommandeSchema`, gate après parse JSON.
+- `src/app/api/admin/commandes/[id]/route.ts` PATCH — import `patchCommandeSchema`, gate après parse JSON. Préserve le verrou optimiste expected_updated_at + annulation/priorite/notes.
+- `src/app/api/admin/clients/route.ts` POST — import `createClientSchema`, gate après parse JSON. Préserve la validation téléphone + unicité + normalisation.
+- `src/app/api/admin/clients/[id]/route.ts` PATCH — import `patchClientSchema`, gate après parse JSON. #19 notes slice satisfait via `notes: z.string().max(2000).nullable().optional()` dans le schéma. Préserve le update conditionnel par champ + preferences_lavage.
+- `src/app/api/admin/personnel/route.ts` POST — import `createPersonnelSchema`, gate après parse JSON. Préserve la limite plan + anti-doublon + création Auth + rollback.
+- `src/app/api/admin/personnel/[id]/route.ts` PATCH — import `patchPersonnelSchema`, gate après parse JSON. Préserve AUDIT-B-07 last manager, AUDIT-B-11 role change, champs caissier conditionnel, verrou optimiste #6.
+- `src/app/api/super-admin/abonnements/[id]/renouveler/route.ts` POST — import `renouvelerAbonnementSchema`, gate après parse JSON. Préserve le calcul date_fin + AUDIT-B-09 réactivation pressing.
+- `src/app/api/super-admin/abonnements/[id]/route.ts` PATCH — import `patchAbonnementSchema`, gate après parse JSON. Préserve changer_plan/suspendre/reactiver + AUDIT-B-09.
+
+Route SKIPPÉE :
+- `src/app/api/super-admin/abonnements/route.ts` — pas de POST handler (GET list uniquement). Conformément à la consigne, skip.
+
+Phase 4 — AUDIT-C-02 supabase type helpers :
+
+1. CRÉÉ `src/lib/types/supabase-helpers.ts` :
+   - `asSingle<T>(value: unknown): T | null` — normalise une valeur Supabase (qui peut être un objet unique pour 1-1, un tableau d'1 élément, ou null) vers `T | null`. Test dynamique via `Array.isArray`.
+   - `asArray<T>(value: unknown): T[]` — normalise vers un tableau (vide si null, singleton si objet unique). Pour les relations 1-N.
+   - Documentation inline expliquant l'écart supabase-js (infère array, PostgREST renvoie single object pour !inner 1-1).
+
+2. MODIFIÉ `src/app/api/admin/rapports/route.ts` :
+   - Import `asArray` depuis `@/lib/types/supabase-helpers`.
+   - Ligne ~382 : remplacé `(lignes || []) as unknown as LigneRow[]` par `asArray<LigneRow>(lignes)`. Commentaire AUDIT-C-02 expliquant le helper.
+   - Ligne ~491 : remplacé `((cmdAvecClient || []) as unknown as CommandeAvecClientRow[])` par `asArray<CommandeAvecClientRow>(cmdAvecClient)`. Commentaire AUDIT-C-02.
+   - Les 2 casts `as unknown as` restants dans le fichier (lignes 152-155 : `commande.lignes as unknown as LigneRow[]`, `commande.articles as unknown as ArticleRow[]`, `commande.paiements as unknown as PaiementRow[]`) n'ont PAS été touchés — ils concernent la fonction `fetchCommandeDetail` qui retourne des types complexes, et la refactorisation serait hors-scope (consigne : "You don't need to refactor every existing cast — just provide the helpers and document them. Apply the helpers in rapports/route.ts if straightforward").
+
+Phase 5 — Vérifications :
+
+- Tests fonctionnels des schémas : écrit un script Bun temporaire exécutant 47 cas de test (valides + invalides) sur les 8 schémas. TOUS PASS :
+  * `createCommandeSchema` : valide body réaliste (articles avec service_id/couleur/etat, remise, acompte), rejette bad UUID / empty articles / quantite 0 / bad date / notes > 2000 / bad priorite.
+  * `patchCommandeSchema` : valide statut annule / priorite express / notes 2000 chars / expected_updated_at, rejette notes > 2000 / bad statut.
+  * `createClientSchema` : valide nom + téléphone CI / email / empty email / extra `points_fidelite` (via passthrough), rejette bad email / short nom / bad phone / notes > 2000.
+  * `patchClientSchema` : valide nom_complet / notes null, rejette notes > 2000.
+  * `createPersonnelSchema` : valide creation_directe + lien_invitation, rejette bad role / bad methode / bad email / password < 8.
+  * `patchPersonnelSchema` : valide modifier/desactiver/reactiver, rejette bad action / raison > 500.
+  * `renouvelerAbonnementSchema` : valide montant + methode + duree_mois + justificatif_url, rejette bad methode / montant négatif / duree_mois > 12.
+  * `patchAbonnementSchema` : valide changer_plan/suspendre/reactiver, rejette bad action / bad plan / raison > 500.
+  * Script nettoyé (supprimé) après exécution.
+
+- `bun run lint` : ✅ exit 0, 0 erreur, 0 warning.
+- `bunx tsc --noEmit` : ✅ 0 erreur dans TOUS les fichiers modifiés/créés (vérifié par grep ciblé sur `api/admin/commandes|api/admin/clients|api/admin/personnel|api/super-admin/abonnements/[id]|api/admin/rapports|lib/validations|lib/types/supabase-helpers`). Les 66 erreurs restantes sont pré-existantes et hors scope : 5 erreurs `dev-keeper.ts / examples/websocket / skills/*` (pre-existing), 1 erreur `src/app/api/super-admin/abonnements/route.ts:116` (overload supabase `.order({ nulls: ... })` — pré-existant, mentionné par P1-C et P3-E), ~60 erreurs react-hook-form dans `infos-generales-tab / add-service-dialog / edit-service-dialog / add-product-dialog / inscription-form` (pré-existantes).
+- `tail -10 dev.log` : serveur tourne, trafic GET / 200 normal, aucune erreur de compilation. Message "Supabase env vars manquantes" attendu (.env.local absent — consigne disait de ne pas utiliser agent-browser).
+- Audit #8 (error masking) respecté : les erreurs Zod renvoyées au client sont des erreurs de validation de schéma (pas des erreurs Supabase brutes), c'est conforme au pattern defense-in-depth. Aucune erreur Supabase brute n'est exposée.
+
+Stage Summary:
+- ✅ #9 (Zod validation on key API routes) : 4 schémas créés (`commande.ts`, `client.ts`, `personnel.ts`, `abonnement.ts`) + `phoneSchema` ajouté à `phone.ts`. 7 routes API modifiées pour appliquer `schema.safeParse(body)` comme gate defense-in-depth AVANT la validation métier existante (qui reste inchangée) : POST `/api/admin/commandes`, PATCH `/api/admin/commandes/[id]`, POST `/api/admin/clients`, PATCH `/api/admin/clients/[id]`, POST `/api/admin/personnel`, PATCH `/api/admin/personnel/[id]`, POST `/api/super-admin/abonnements/[id]/renouveler`, PATCH `/api/super-admin/abonnements/[id]`. POST `/api/super-admin/abonnements` skip (pas de POST handler). 47 tests fonctionnels sur les schémas — tous PASS.
+- ✅ #19 (notes clients slice) : `notes` contraint à `.max(2000)` dans `createCommandeSchema`, `patchCommandeSchema`, `createClientSchema`, `patchClientSchema`. Un client envoyant `notes > 2000` chars reçoit maintenant un 400 `Données invalides` avec `details: zodParsed.error.flatten()` au lieu de stocker silencieusement le blob illimité.
+- ✅ AUDIT-C-02 (supabase type helpers) : `src/lib/types/supabase-helpers.ts` créé avec `asSingle<T>` (1-1 joins) et `asArray<T>` (1-N joins). Appliqué dans `src/app/api/admin/rapports/route.ts` aux 2 casts `as unknown as` straightforward (lignes ~382 et ~491). Les 3 autres casts (`commande.lignes/articles/paiements as unknown as` dans le GET detail) sont laissés intacts (hors-scope, concerne `fetchCommandeDetail` qui retourne des types complexes — consigne : "You don't need to refactor every existing cast").
+- 🔒 Sécurité préservée : tous les checks existants (RLS, role helper P1-B, idempotence #15, verrou optimiste #6, AUDIT-B-07 last manager, AUDIT-B-11 role change, AUDIT-B-09 réactivation pressing, audit #8 error masking) restent intacts. Le schéma Zod est une couche defense-in-depth supplémentaire, pas un remplacement.
+- 📁 Fichiers créés (5) :
+  * `src/lib/validations/commande.ts`
+  * `src/lib/validations/client.ts`
+  * `src/lib/validations/personnel.ts`
+  * `src/lib/validations/abonnement.ts`
+  * `src/lib/types/supabase-helpers.ts`
+- 📁 Fichiers modifiés (8) :
+  * `src/lib/validations/phone.ts` (ajout `phoneSchema`)
+  * `src/app/api/admin/commandes/route.ts` (gate createCommandeSchema POST)
+  * `src/app/api/admin/commandes/[id]/route.ts` (gate patchCommandeSchema PATCH)
+  * `src/app/api/admin/clients/route.ts` (gate createClientSchema POST)
+  * `src/app/api/admin/clients/[id]/route.ts` (gate patchClientSchema PATCH)
+  * `src/app/api/admin/personnel/route.ts` (gate createPersonnelSchema POST)
+  * `src/app/api/admin/personnel/[id]/route.ts` (gate patchPersonnelSchema PATCH)
+  * `src/app/api/super-admin/abonnements/[id]/renouveler/route.ts` (gate renouvelerAbonnementSchema POST)
+  * `src/app/api/super-admin/abonnements/[id]/route.ts` (gate patchAbonnementSchema PATCH)
+  * `src/app/api/admin/rapports/route.ts` (asArray helper appliqué aux 2 casts straightforward)
+- Lint 0/0, tsc 0 erreur dans mes fichiers, dev server OK, 47 tests schémas PASS. Aucune régression.
+
+---
+Task ID: P4-E
+Agent: P4-E sql-migrations
+Task: Generate missing SQL migrations (022 + 026-032) for Phase 4 fixes
+
+Work Log:
+- Lu le worklog (dernières ~340 lignes — de P4-A à P4-D) pour reprendre le contexte : P4-A (env vars + error pages + console masking), P4-B (signed URLs + magic number FDS upload), P4-C (Zod validation + notes .max(2000) + supabase-helpers), P4-D (#13+#14 modes_paiement + AUDIT-B-08 workflow + AUDIT-B-10 cascade suspension).
+- Lu intégralement les migrations existantes pertinentes :
+  * 002_tables.sql (schéma des 17 tables — vérifié colonnes `services.type`/`nom`/`prix`/`duree_estimee` INTERVAL/`actif`, `personnel` sans `numero_caisse`, `notes` présent sur clients/commandes/paiements/machines).
+  * 001_enums.sql (statut_commande = 8 valeurs + 'annule' ajouté par 024 = 9 valeurs ; statut_compte_personnel = invite_en_attente/actif/desactive ; statut_pressing = actif/suspendu/essai).
+  * 018_fix_security_definer_leak.sql (3 fonctions déjà recréées en SECURITY INVOKER — base pour ma 026).
+  * 019_champs_caissier.sql (modes_paiement_autorises + nom_affiche_recu + seuil_alerte_impaye déjà présents sur personnel — base pour ma 030).
+  * 020_tarifs_articles.sql (current_pressing_id et is_pressing_manager SECURITY DEFINER — cibles pour REVOKE EXECUTE FROM anon dans ma 026).
+  * 021_add_laver_repasser_enum.sql (6e valeur ajoutée à type_service — non backfillée par ma 022 par design).
+  * 024_commande_annule_express.sql (ajout 'annule' à statut_commande + colonne priorite + idempotence_key).
+  * 025_notifications_role_change.sql (notes_changement_role + dernier_changement_role ajoutés à personnel — base pour ma 028 et 032).
+  * 004_indexes.sql (~45 index déjà créés — base pour éviter les doublons dans ma 032).
+  * 009_vue_clients_enrichis.sql (vue simple — pas SECURITY DEFINER).
+- Lu `src/lib/workflow/commande-statut.ts` (lignes 210-253) pour récupérer la matrice exacte `TRANSITIONS_COMMANDE_AUTORISEES` (P4-D) et aligner ma 029 dessus.
+
+Tâche 1 — Migration 022_fix_services_manquants.sql :
+- CRÉÉ `/home/z/my-project/supabase/migrations/022_fix_services_manquants.sql`.
+- DO $$ block itérant sur tous les pressings × 5 types standards.
+- Pour chaque (pressing, type) : INSERT ... WHERE NOT EXISTS (idempotent).
+- Adapté au schéma réel : colonne `type` (pas `type_service`), `nom` TEXT NOT NULL fourni (libellés humains : "Lavage", "Repassage", "Nettoyage à sec", "Détachage", "Blanchisserie"), `duree_estimee` INTERVAL `'24 hours'::interval` (pas INTEGER 24), `prix` 1000 FCFA.
+- Cast `::text` sur `s.type = t` pour éviter 22P02. Insert via `t::text::type_service`.
+- La 6e valeur 'laver_repasser' (migration 021) n'est PAS backfillée — par design, elle est créée à la demande par le manager via `tarifs_articles` (020).
+- COMMENT ON TABLE mis à jour.
+
+Tâche 2 — Migration 026_fix_security_definer_leak.sql :
+- CRÉÉ `/home/z/my-project/supabase/migrations/026_fix_security_definer_leak.sql`.
+- Complément défense-en-profondeur à 018 (qui a déjà recréé les 3 fonctions fuyardes en SECURITY INVOKER).
+- Re-déclaration des 3 fonctions en SECURITY INVOKER (idempotent — protège contre un éventuel rollback de 018).
+- Enrichissement de `calculer_statut_commande` et `calculer_statut_paiement_commande` : ajout d'un check `pressing_id` explicite en début de fonction. Si l'utilisateur est un personnel (v_user_pressing IS NOT NULL) et que la commande appartient à un autre pressing → RETURN NULL (pas de fuite). Si v_user_pressing IS NULL → service_role légitime (API routes), on délègue à deriver_statut_commande.
+- REVOKE EXECUTE FROM anon sur 4 helpers SECURITY DEFINER : `is_super_admin`, `get_pressing_id_utilisateur`, `current_pressing_id`, `is_pressing_manager` (defense-in-depth — RLS bloque déjà anon, mais on supprime la surface /rpc/).
+- GRANT EXECUTE TO authenticated + service_role (explicites).
+- Re-confirmation des REVOKE/GRANT de 018 sur les 3 fonctions de calcul (idempotent).
+
+Tâche 3 — Migration 027_audit_log.sql :
+- CRÉÉ `/home/z/my-project/supabase/migrations/027_audit_log.sql`.
+- Table `public.audit_log` (10 colonnes) : id BIGSERIAL, pressing_id UUID FK CASCADE, user_id UUID FK SET NULL, action TEXT NOT NULL, entity_type TEXT, entity_id TEXT (UUID as text — types variables), before_state JSONB, after_state JSONB, ip_address INET, user_agent TEXT, created_at TIMESTAMPTZ DEFAULT NOW().
+- 4 index : (pressing_id, created_at DESC), (user_id, created_at DESC), (action, created_at DESC), (entity_type, entity_id) WHERE entity_id IS NOT NULL.
+- RLS ENABLE + 2 policies :
+  * SELECT : `is_super_admin() OR pressing_id = get_pressing_id_utilisateur()` (TO authenticated).
+  * INSERT : `WITH CHECK (false)` (TO authenticated, anon) → bloque tout client. Seul service_role (bypass RLS) peut insérer.
+  * UPDATE/DELETE : pas de policy → deny by default (immutable).
+- GRANT SELECT TO authenticated. 5 COMMENT ON (table + 4 colonnes).
+
+Tâche 4 — Migration 028_cascade_suspension_personnel.sql :
+- CRÉÉ `/home/z/my-project/supabase/migrations/028_cascade_suspension_personnel.sql`.
+- Fonction SECURITY DEFINER `cascade_desactivation_personnel()` RETURNS TRIGGER.
+- Condition : `NEW.statut::text = 'suspendu' AND OLD.statut::text <> 'suspendu'` (cast ::text pour éviter 22P02).
+- Action : UPDATE personnel SET statut_compte='desactive', actif=false, date_desactivation=NOW(), notes_changement_role=COALESCE(..., '') || note automatique WHERE pressing_id=NEW.id AND statut_compte::text='actif'.
+- Trigger `trg_cascade_suspension_personnel` AFTER UPDATE OF statut ON pressing FOR EACH ROW.
+- SET search_path = public (durcissement anti-injection).
+- Complément DB à la cascade applicative P4-D (API route /api/super-admin/abonnements/[id] action='suspendre').
+
+Tâche 5 — Migration 029_workflow_transitions_guard.sql :
+- CRÉÉ `/home/z/my-project/supabase/migrations/029_workflow_transitions_guard.sql`.
+- Fonction SECURITY DEFINER `check_commande_statut_transition()` RETURNS TRIGGER.
+- Matrice 9×9 ALIGNÉE sur `src/lib/workflow/commande-statut.ts` (P4-D) :
+  * recu → 8 targets (en_traitement, lave, repasse, pret, en_livraison, livre, retire, annule)
+  * en_traitement → 7 targets
+  * lave → 6 targets
+  * repasse → 5 targets
+  * pret → 3 targets (en_livraison, livre, retire — pas d'annule)
+  * en_livraison → 2 targets (livre, retire)
+  * livre → [] (TERMINAL)
+  * retire → [] (TERMINAL)
+  * annule → [] (TERMINAL)
+- ⚠️ Corrigé le template du prompt : 'paye' n'est PAS un statut_commande (c'est un statut_paiement_commande) — retiré de la matrice.
+- Trigger BEFORE UPDATE OF statut ON commandes FOR EACH ROW (BEFORE pour pouvoir RAISE EXCEPTION).
+- Si transition invalide : RAISE EXCEPTION avec ERRCODE='check_violation'.
+- No-op (NEW.statut = OLD.statut) toujours autorisé (IS DISTINCT FROM gère NULL).
+
+Tâche 6 — Migration 030_modes_paiement_caissier.sql :
+- CRÉÉ `/home/z/my-project/supabase/migrations/030_modes_paiement_caissier.sql`.
+- ALTER TABLE personnel ADD COLUMN IF NOT EXISTS numero_caisse TEXT (manque documenté par P4-D worklog ligne ~1296).
+- 2 CHECK constraints via DO $$ + pg_constraint (idempotents) :
+  * check_numero_caisse_caissier_only : `numero_caisse IS NULL OR role::text = 'caissier'`
+  * check_modes_paiement_caissier_only : `modes_paiement_autorises IS NULL OR role::text = 'caissier'` (defense-in-depth si la colonne perd son NOT NULL DEFAULT à l'avenir).
+- Backfill UPDATE : NULL sur numero_caisse pour les non-caissiers (au cas où des lignes auraient été créées avant ce CHECK).
+- COMMENT ON COLUMN numero_caisse.
+
+Tâche 7 — Migration 031_notes_limit_enforcement.sql :
+- CRÉÉ `/home/z/my-project/supabase/migrations/031_notes_limit_enforcement.sql`.
+- DO $$ itère sur 4 tables : `commandes`, `clients`, `paiements`, `machines` (celles qui ont une colonne `notes` TEXT exact, vérifié via grep sur 002_tables.sql).
+- Pour chaque table : DROP CONSTRAINT IF EXISTS + ADD CONSTRAINT check_notes_max_length `CHECK (notes IS NULL OR length(notes) <= 2000)`.
+- Utilise `length()` (compte en caractères UTF-8) et non `octet_length()` — important pour les accents/emojis.
+- ⚠️ Corrigé le template du prompt : `personnel` et `produits_stock` n'ont PAS de colonne `notes` (personnel a `notes_changement_role`, produits_stock n'a pas de notes). Retirés de la liste.
+- 4 COMMENT ON COLUMN (documentation).
+- Complément DB aux schémas Zod `.max(2000)` P4-C.
+
+Tâche 8 — Migration 032_index_audit_log.sql :
+- CRÉÉ `/home/z/my-project/supabase/migrations/032_index_audit_log.sql`.
+- 5 index additionnels CREATE INDEX IF NOT EXISTS (tous idempotents) :
+  * idx_audit_log_created_at (audit_log global chronological pour vue SA)
+  * idx_audit_log_pressing_id_action_created_at (composite pour filtre "annulations du pressing ce mois")
+  * idx_commandes_pressing_id_priorite_express (partial WHERE priorite='express' pour file express)
+  * idx_personnel_pressing_id_dernier_changement_role (audit RH — partial WHERE NOT NULL)
+  * idx_tarifs_articles_pressing_article_actif (partial WHERE actif=TRUE pour POS lookup)
+  * idx_services_pressing_id_actif (partial WHERE actif=TRUE pour POS lookup)
+- Vérifié 004_indexes.sql pour éviter les doublons.
+
+Tâche 9 — README_PHASE4.md :
+- CRÉÉ `/home/z/my-project/supabase/migrations/README_PHASE4.md`.
+- Tableau récapitulatif des 8 nouvelles migrations (022, 026, 027, 028, 029, 030, 031, 032).
+- Ordre d'exécution recommandé.
+- Notes importantes pour chaque migration (adaptations au schéma réel, choix de design).
+- Section "Vérification post-application" avec 5 requêtes SQL de contrôle (services par pressing, SECURITY INVOKER, RLS audit_log, triggers en place, CHECK constraints).
+
+Stage Summary:
+- ✅ 8 nouvelles migrations SQL créées (022, 026, 027, 028, 029, 030, 031, 032) :
+  * 022 — Backfill des 5 services standards par pressing (DO $$ + INSERT WHERE NOT EXISTS, cast ::text sur enum).
+  * 026 — Hardening SECURITY DEFINER (re-déclaration SECURITY INVOKER des 3 fonctions + check pressing_id explicite dans 2 calcul_* + REVOKE EXECUTE FROM anon sur 4 helpers).
+  * 027 — Table audit_log (10 colonnes, 4 index, RLS avec INSERT bloqué aux clients via WITH CHECK false, immutable).
+  * 028 — Trigger DB cascade désactivation personnel sur suspension pressing (defense-in-depth côté DB).
+  * 029 — Trigger DB workflow transitions guard sur commandes (matrice 9×9 alignée sur P4-D TS-side, BEFORE UPDATE + RAISE EXCEPTION).
+  * 030 — Colonne numero_caisse + 2 CHECK constraints caissier-only (idempotents via DO $$ + pg_constraint).
+  * 031 — CHECK notes ≤ 2000 chars sur 4 tables (commandes, clients, paiements, machines) — defense-in-depth DB au Zod .max(2000) de P4-C.
+  * 032 — 5 index additionnels pour nouvelles tables/colonnes Phase 4 (audit_log, commandes.priorite, personnel.dernier_changement_role, tarifs_articles POS, services POS).
+- ✅ README_PHASE4.md créé (tableau récap, ordre d'exécution, notes par migration, 5 requêtes SQL de vérification).
+- 🔒 Toutes les migrations sont IDEMPOTENTES (CREATE IF NOT EXISTS, CREATE OR REPLACE, DO $$ + pg_constraint, DROP POLICY/TRIGGER IF EXISTS avant CREATE).
+- 🔒 Cast `::text` systématique sur les comparaisons d'enum (évite PostgreSQL 22P02 "invalid input syntax for type enum").
+- 🔒 Aucune modification des migrations existantes (001-021, 023-025) — uniquement création de nouveaux fichiers.
+- 🔒 Aucune exécution (conforme aux consignes — pas de PAT Supabase).
+- 📁 Fichiers créés (9) :
+  * supabase/migrations/022_fix_services_manquants.sql
+  * supabase/migrations/026_fix_security_definer_leak.sql
+  * supabase/migrations/027_audit_log.sql
+  * supabase/migrations/028_cascade_suspension_personnel.sql
+  * supabase/migrations/029_workflow_transitions_guard.sql
+  * supabase/migrations/030_modes_paiement_caissier.sql
+  * supabase/migrations/031_notes_limit_enforcement.sql
+  * supabase/migrations/032_index_audit_log.sql
+  * supabase/migrations/README_PHASE4.md
+- ⚠️ Action utilisateur requise : appliquer les 8 migrations dans l'ordre via le SQL Editor Supabase (https://supabase.com/dashboard/project/yqaitafigfxlrprrouhr/sql/new). Les migrations ne sont PAS exécutées automatiquement (pas de PAT configuré).
+
+---
+Task ID: P4-FINAL
+Agent: main (orchestrator)
+Task: Phase 4 consolidation — final verification + missing loading.tsx + summary
+
+Work Log:
+- Lancé 5 sous-agents en parallèle (P4-A sécurité, P4-B storage, P4-C Zod, P4-D business logic, P4-E SQL migrations) + P4-F (échoué par max turns, repris manuellement)
+- P4-A livré : src/lib/env.ts, src/instrumentation.ts, 4 error.tsx par route group, refactor middleware (PUBLIC_ROUTES whitelist + fail-closed pour routes protégées), réduction console dans 5 fichiers clients
+- P4-B livré : src/app/api/admin/stock/[id]/fds-upload/route.ts (validation MIME + magic number %PDF-), migration add-product/edit-product dialogs vers fetch serveur
+- P4-C livré : 4 schémas Zod (commande, client, personnel, abonnement) + application safeParse sur 9 routes API + supabase-helpers.ts (asSingle/asArray) + #19 notes .max(2000) sur clients
+- P4-D livré : workflow transitions sécurisées (canTransitionCommande + matrix 9x9) + cascade désactivation personnel sur suspension pressing + modes_paiement_autorises validation caissier
+- P4-E livré : 8 migrations SQL (022, 026-032) + README_PHASE4.md — voir section dédiée P4-E pour le détail
+- P4-F (manuel) : créé 10 loading.tsx manquants (7 dashboards personnel + dashboard super-admin + login + activation)
+- Vérification Agent Browser : 
+  * / → 200, page landing complète rendue (hero, fonctionnalités, footer WhatsApp/Email)
+  * /login → 200, formulaire rendu avec tous les champs (Email, Mot de passe, œil, boutons)
+  * /activation → 200, stepper rendu (Étape 1/2 vérification du code)
+  * /admin/dashboard → 307 redirect vers /login?error=config_incomplete (fail-closed middleware OK)
+  * 0 erreur console, 0 erreur runtime sur toutes les pages testées
+- `bun run lint` : ✅ 0 erreur, 0 warning
+- `bunx tsc --noEmit` : 66 erreurs pré-existantes (react-hook-form Resolver mismatches + dev-keeper.ts/examples/skills hors app). AUCUNE nouvelle erreur introduite par Phase 4.
+
+Stage Summary:
+- Phase 4 complète : 9 items numérotés (#3, #9, #11, #13, #14, #16, #17, #18, #19) + 3 AUDIT-B (B-08, B-10, B-13) + 8 AUDIT-C (C-02, C-03, C-05, C-06, C-07, C-08, C-09, C-10) + 8 SQL migrations (022 + 026-032)
+- 30+ fichiers créés/modifiés au total
+- 0 régression, 0 nouveau lint/tsc error
+- Toutes les migrations SQL sont prêtes à être appliquées via Supabase SQL Editor (README_PHASE4.md contient l'ordre d'application + requêtes de vérification)
+- Middleware désormais fail-closed sur routes protégées (AUDIT_SECURITE Conclusion #3 partiellement résolu)
+- Storage fds/justificatifs: signed URLs 1h via routes serveur + magic number %PDF- (AUDIT #2 + #4 résolus)
+- Zod validation sur 9 routes principales (AUDIT #9 résolu pour les routes critiques)
+- Workflow commandes: matrice 9x9 + trigger DB de defense-in-depth (AUDIT-B-08)
+- Audit log table + trigger cascade + CHECK constraints notes (AUDIT-B-13, B-10, #19 au niveau DB)
