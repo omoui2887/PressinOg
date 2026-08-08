@@ -10,7 +10,8 @@
  *   - Infos de limite du plan (plan, limit, count, limitAtteinte)
  *
  * POST — Création d'un compte employé (LOT 9.2) :
- *   Body : { methode, nom, prenom, telephone, email, role, password? }
+ *   Body : { methode, nom, prenom, telephone, email, role, password?,
+ *            modes_paiement_autorises? }
  *   - methode = "creation_directe" :
  *       * Génère un email technique si non fourni ({telephone}@ogpressing.local)
  *       * supabase.auth.admin.createUser({ email, password, email_confirm: true })
@@ -20,6 +21,14 @@
  *       * supabase.auth.admin.inviteUserByEmail(email, { redirectTo })
  *       * INSERT personnel (statut='invite_en_attente', mot_de_passe_temporaire=true)
  *       * Retourne confirmation d'envoi
+ *   - AUDIT-B #14 (modes_paiement_autorises, migration 019) :
+ *       * Si role='caissier' et champ fourni → validé + stocké dans personnel.
+ *       * Si role='caissier' et champ absent → défaut MODES_PAIEMENT_DEFAUT_CAISSIER
+ *         (especes, mobile_money, carte_bancaire — les 3 valeurs de l'enum
+ *         methode_paiement réellement encaissables).
+ *       * Si role !== 'caissier' et champ fourni → 400 (champs caissier sur
+ *         non-caissier, code CHAMPS_CAISSIER_SUR_NON_CAISSIER).
+ *       * La réponse inclut `modes_paiement_autorises` dans `data`.
  *
  * 🔒 SÉCURITÉ :
  *   - GET  : getSupabaseServer() (anon + JWT). RLS isole par pressing.
@@ -193,6 +202,38 @@ const ROLES_VALID_SET = new Set([
   "comptable",
 ]);
 
+/**
+ * Modes de paiement valides pour le champ JSONB `modes_paiement_autorises`
+ * (AUDIT-B #14 — migration 019). On accepte le sur-ensemble de 5 valeurs
+ * autorisé par la CHECK constraint SQL (especes, mobile_money, carte, cheque,
+ * virement) pour rester cohérent avec le PATCH handler et permettre une
+ * extension future de l'enum `methode_paiement`.
+ *
+ * Cependant, le DEFAULT appliqué côté API quand le manager ne fournit pas
+ * explicitement la liste est restreint aux 3 valeurs réellement utilisables
+ * par la route `/api/personnel/caissier/encaisser` (qui valide `methode`
+ * contre `MethodePaiement` = especes | mobile_money | carte_bancaire). On
+ * évite ainsi de stocker 'carte', 'cheque', 'virement' qui ne seraient
+ * jamais utilisables et qui pourraient porter à confusion côté UI.
+ */
+const MODES_PAIEMENT_VALIDES_SET = new Set([
+  "especes",
+  "mobile_money",
+  "carte",
+  "cheque",
+  "virement",
+]);
+
+/** Modes par défaut quand un caissier est créé sans `modes_paiement_autorises`
+ * explicite (AUDIT-B #14 — backward compatible). Restrint aux 3 valeurs de
+ * l'enum `methode_paiement` (especes, mobile_money, carte_bancaire) pour
+ * n'autoriser que les modes réellement encaissables. */
+const MODES_PAIEMENT_DEFAUT_CAISSIER: readonly string[] = [
+  "especes",
+  "mobile_money",
+  "carte_bancaire",
+];
+
 /** Génère un mot de passe aléatoire sécurisé de 10 caractères. */
 function generateRandomPassword(): string {
   const chars =
@@ -220,6 +261,13 @@ interface CreateBody {
   email?: unknown;
   role?: unknown;
   password?: unknown;
+  /**
+   * AUDIT-B #14 — Modes de paiement autorisés pour ce caissier (JSONB array).
+   * Optionnel : si non fourni et que role='caissier', on applique le défaut
+   * MODES_PAIEMENT_DEFAUT_CAISSIER (les 3 modes de l'enum methode_paiement).
+   * Ignoré (et refusé) si role !== 'caissier' — voir validation plus bas.
+   */
+  modes_paiement_autorises?: unknown;
 }
 
 export async function POST(request: NextRequest) {
@@ -348,6 +396,74 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // AUDIT-B #14 — Validation des modes_paiement_autorises (champ caissier).
+  // Ce champ n'est accepté QUE si role === 'caissier'. Si fourni pour un
+  // autre rôle → 400 (champs caissier sur non-caissier). Si non fourni et
+  // que le rôle est caissier, on applique le défaut MODES_PAIEMENT_DEFAUT_CAISSIER
+  // (les 3 valeurs de l'enum methode_paiement) pour préserver la backward
+  // compatibility : un manager qui crée un caissier sans préciser les modes
+  // autorisés obtient un caissier "permissif" (tous les modes encaissables).
+  let modesPaiementAutorises: string[] | null = null;
+  const aChampsCaissier =
+    body.modes_paiement_autorises !== undefined;
+  if (aChampsCaissier) {
+    if (role !== "caissier") {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "modes_paiement_autorises ne s'applique qu'aux caissiers. L'employé ciblé n'est pas caissier.",
+          code: "CHAMPS_CAISSIER_SUR_NON_CAISSIER",
+        },
+        { status: 400 }
+      );
+    }
+    const rawModes = body.modes_paiement_autorises;
+    if (!Array.isArray(rawModes)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "modes_paiement_autorises doit être un tableau de chaînes.",
+        },
+        { status: 400 }
+      );
+    }
+    // Filtre les éléments non-string (sécurité défensive).
+    const modes = rawModes.filter(
+      (m): m is string => typeof m === "string" && m.length > 0
+    );
+    if (modes.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "modes_paiement_autorises doit contenir au moins un mode de paiement.",
+        },
+        { status: 400 }
+      );
+    }
+    const invalides = modes.filter(
+      (m) => !MODES_PAIEMENT_VALIDES_SET.has(m)
+    );
+    if (invalides.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `modes_paiement_autorises contient des valeurs invalides : ${invalides.join(", ")}. Valeurs attendues : especes, mobile_money, carte, cheque, virement.`,
+        },
+        { status: 400 }
+      );
+    }
+    // Déduplique pour éviter les entrées répétées dans le JSONB.
+    modesPaiementAutorises = Array.from(new Set(modes));
+  } else if (role === "caissier") {
+    // Backward compatible : si le manager ne fournit pas explicitement les
+    // modes autorisés, on autorise tous les modes encaissables (3 valeurs de
+    // l'enum methode_paiement). Évite de bloquer la création d'un caissier
+    // sur un UI qui n'envoie pas encore ce champ.
+    modesPaiementAutorises = [...MODES_PAIEMENT_DEFAUT_CAISSIER];
+  }
+
   // Selon la méthode, l'email est obligatoire (invitation) ou optionnel (directe)
   let email = emailRaw;
   if (methode === "lien_invitation") {
@@ -430,6 +546,12 @@ export async function POST(request: NextRequest) {
     // pas de DEFAULT NOW() (002_tables.sql:189 — nullable), on DOIT donc
     // fournir une valeur explicite. On utilise new Date() côté serveur
     // (jamais trusté du client).
+    //
+    // AUDIT-B #14 — Si la cible est caissier, on insère `modes_paiement_autorises`
+    // (valeur explicite fournie par le manager OU défaut MODES_PAIEMENT_DEFAUT_CAISSIER).
+    // Pour les autres rôles, on n'inclut pas la clé → la DB applique son DEFAULT
+    // JSONB (migration 019), mais cette valeur sera ignorée à l'encaissement
+    // (qui ne lit la colonne QUE pour les caissiers).
     const { data: newEmploye, error: insertErr } = await admin
       .from("personnel")
       .insert({
@@ -445,9 +567,12 @@ export async function POST(request: NextRequest) {
         mot_de_passe_temporaire: true,
         cree_par: creatorId,
         date_activation: new Date().toISOString(),
+        ...(modesPaiementAutorises !== null
+          ? { modes_paiement_autorises: modesPaiementAutorises }
+          : {}),
       })
       .select(
-        "id, nom_complet, email, telephone, role, methode_creation, statut_compte, actif, created_at"
+        "id, nom_complet, email, telephone, role, methode_creation, statut_compte, actif, created_at, modes_paiement_autorises"
       )
       .maybeSingle();
 
@@ -554,6 +679,9 @@ export async function POST(request: NextRequest) {
   // #12 — date_invitation est un timestamp serveur (UTC). La colonne n'a
   // pas de DEFAULT NOW() (002_tables.sql:188 — nullable), on DOIT donc
   // fournir une valeur explicite. On utilise new Date() côté serveur.
+  //
+  // AUDIT-B #14 — modes_paiement_autorises est inclus si la cible est caissier
+  // (même logique que la branche creation_directe ci-dessus).
   const { data: newEmploye, error: insertErr } = await admin
     .from("personnel")
     .insert({
@@ -569,9 +697,12 @@ export async function POST(request: NextRequest) {
       mot_de_passe_temporaire: true,
       cree_par: creatorId,
       date_invitation: new Date().toISOString(),
+      ...(modesPaiementAutorises !== null
+        ? { modes_paiement_autorises: modesPaiementAutorises }
+        : {}),
     })
     .select(
-      "id, nom_complet, email, telephone, role, methode_creation, statut_compte, actif, created_at"
+      "id, nom_complet, email, telephone, role, methode_creation, statut_compte, actif, created_at, modes_paiement_autorises"
     )
     .maybeSingle();
 

@@ -167,7 +167,12 @@ export function InfosGeneralesTab({
         .getPublicUrl(path);
       return pub?.publicUrl ?? null;
     } catch (err) {
-      console.warn("[pressing] Échec upload logo (continuons sans) :", err);
+      // 🔒 Audit #16 (Phase 4) : on ne logue pas l'objet err complet
+      // (stack trace avec chemins internes côté serveur).
+      console.warn(
+        "[pressing] Échec upload logo (continuons sans) :",
+        err instanceof Error ? err.message : "erreur"
+      );
       toast.warning("Logo non uploadé", {
         description:
           "Le stockage des logos est indisponible. Les autres informations seront tout de même enregistrées.",

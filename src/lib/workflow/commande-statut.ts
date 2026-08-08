@@ -175,6 +175,123 @@ export function getAllowedNextStatutsArticle(
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Matrice des transitions autorisées (commandes.statut) — AUDIT-B-08         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Matrice des transitions autorisées pour `commandes.statut` (AUDIT-B-08).
+ *
+ * Clé = statut source, valeur = liste des statuts cibles autorisés (hors
+ * no-op ; la fonction `canTransitionCommande` accepte toujours `from === to`).
+ *
+ * Rationnel :
+ *   - On peut toujours avancer dans le workflow canonique
+ *     (recu → en_traitement → lave → repasse → pret → en_livraison → livre/retire).
+ *   - On peut sauter des étapes vers l'avant (ex: recu → pret pour un article
+ *     "déposé prêt").
+ *   - On NE peut JAMAIS reculer (ex: pret → recu interdit, livre → en_traitement
+ *     interdit). C'était le bug AUDIT-B-08 : un PATCH pouvait faire reculer
+ *     une commande "livre" vers "en_traitement" par erreur de saisie.
+ *   - L'annulation ('annule') n'est autorisée QUE depuis 'recu' ou
+ *     'en_traitement' (cohérent avec STATUTS_NON_ANNULABLE du PATCH handler).
+ *     Une commande déjà livrée/retirée ne peut plus être annulée — c'est
+ *     l'équivalent métier d'un "bon livré signé" : il faut passer par un
+ *     avoir/remboursement côté comptabilité, pas par une annulation.
+ *   - `livre`, `retire`, `annule` sont TERMINAUX : aucune transition
+ *     sortante (sauf no-op).
+ *
+ * NB : cette matrice s'applique uniquement au `commandes.statut` global.
+ * Les transitions d'`articles_vetements.statut` (article individuel) sont
+ * régies par `TRANSITIONS_ARTICLE_AUTORISEES` ci-dessus et permettent un
+ * override par les managers (intervention manuelle).
+ *
+ * Référence : AUDIT-B-08 (workflow status transitions sécurisées).
+ */
+export const TRANSITIONS_COMMANDE_AUTORISEES: Readonly<
+  Record<string, readonly string[]>
+> = {
+  // Reçu : peut avancer vers n'importe quel statut de traitement ou être annulé.
+  recu: [
+    "en_traitement",
+    "lave",
+    "repasse",
+    "pret",
+    "en_livraison",
+    "livre",
+    "retire",
+    "annule",
+  ],
+  // En traitement : peut avancer, mais plus vers 'recu' (no-op exclu).
+  en_traitement: [
+    "lave",
+    "repasse",
+    "pret",
+    "en_livraison",
+    "livre",
+    "retire",
+    "annule",
+  ],
+  // Lavé : peut avancer, peut être annulé (le vêtement est encore physiquement
+  // à la pressing — la commande n'est pas encore livrée). Cohérent avec le
+  // comportement existant du PATCH handler (STATUTS_NON_ANNULABLE exclut
+  // 'lave' de la liste des statuts non-annulables).
+  lave: ["repasse", "pret", "en_livraison", "livre", "retire", "annule"],
+  // Repassé : peut avancer ; peut encore être annulé (même raisonnement que 'lave').
+  repasse: ["pret", "en_livraison", "livre", "retire", "annule"],
+  // Prêt : peut être livré/retiré. Annulation interdite (le client est
+  // notifié que sa commande est prête, l'annuler serait un mauvais service).
+  pret: ["en_livraison", "livre", "retire"],
+  // En livraison : peut être livré ou retiré (retour client). Annulation interdite.
+  en_livraison: ["livre", "retire"],
+  // Livré : TERMINAL. Plus aucune transition (le vêtement a quitté la pressing).
+  livre: [],
+  // Retiré : TERMINAL. Le client a récupéré sa commande.
+  retire: [],
+  // Annulé : TERMINAL. Une commande annulée ne peut être "réactivée" via PATCH
+  // (il faut recréer une nouvelle commande).
+  annule: [],
+};
+
+/**
+ * Vérifie si une transition de `commandes.statut` est autorisée (AUDIT-B-08).
+ *
+ * @param from  Statut actuel de la commande (recu, en_traitement, lave, ...).
+ * @param to    Statut cible voulu.
+ * @returns     true si la transition est autorisée (y compris no-op `from === to`).
+ */
+export function canTransitionCommande(
+  from: string | null | undefined,
+  to: string
+): boolean {
+  // No-op : rester dans le même statut est toujours autorisé (utile pour
+  // les PATCH qui ne changent pas le statut mais valident quand même).
+  if (from === to) return true;
+  if (!from) {
+    // Statut source inconnu (cas anormal) — refus défensif.
+    return false;
+  }
+  const allowed = TRANSITIONS_COMMANDE_AUTORISEES[from];
+  if (!allowed) {
+    // Statut source inconnu de la matrice — refus défensif.
+    return false;
+  }
+  return allowed.includes(to);
+}
+
+/**
+ * Pour un statut commande donné, retourne la liste des statuts cibles
+ * autorisés (hors no-op). Utile pour filtrer un <Select> côté UI.
+ *
+ * @param from  Statut actuel de la commande.
+ */
+export function getAllowedNextStatutsCommande(
+  from: string | null | undefined
+): readonly string[] {
+  if (!from) return [];
+  return TRANSITIONS_COMMANDE_AUTORISEES[from] ?? [];
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Guards de paiement                                                         */
 /* -------------------------------------------------------------------------- */
 

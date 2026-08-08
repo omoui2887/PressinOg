@@ -94,10 +94,10 @@ export function NewClientDialog({
   function validate(): boolean {
     const nextErrors: Partial<Record<keyof FormState, string>> = {};
     if (!form.nom_complet.trim()) {
-      nextErrors.nom_complet = "Le nom complet est requis";
+      nextErrors.nom_complet = "Le nom complet est obligatoire";
     }
     if (!form.telephone.trim()) {
-      nextErrors.telephone = "Le téléphone est requis";
+      nextErrors.telephone = "Le téléphone est obligatoire";
     }
     if (
       form.email.trim() &&
