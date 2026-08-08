@@ -1948,3 +1948,38 @@ Stage Summary:
 - Solution : auto-healing — l'app détecte les erreurs de cache, force le reload, et retry automatiquement
 - L'utilisateur doit appliquer la migration 033_reload_pgrst_schema.sql sur Supabase (SQL Editor)
 - Après application de 033, la fonction reload_pgrst_schema() sera disponible pour l'auto-retry
+
+---
+Task ID: FIX-RESTE-IMPAYE
+Agent: main
+Task: Corriger l'absence du "reste à payer" (impayé) pour les paiements partiels dans la liste des commandes
+
+Work Log:
+- Analysé la capture d'écran (VLM) : page détail commande CMD-20260808-399496 (entièrement payée, reste=0)
+- Vérifié le calcul resteAPayer dans commande-detail.tsx (ligne 170) : Math.max(0, montant_total - montant_paye) → CORRECT
+- Vérifié l'affichage du reste dans la section Finances du détail (lignes 529-541) → CORRECT (toujours affiché, couleur selon valeur)
+- Vérifié le trigger DB trigger_recalculer_paiement_commande (migration 005) : test live en DB → UPDATE montant_paye fonctionne correctement après INSERT paiement
+- Identifié le VRAI bug : CommandesList (commandes-list.tsx) a 3 vues :
+  1. Grid view (opt-in) : affiche Total, Payé, Reste → ✅ correct
+  2. Desktop table (vue par défaut "list") : affichait SEULEMENT "Montant" (total) → ❌ PAS de Payé, PAS de Reste
+  3. Mobile cards (vue par défaut "list") : affichait SEULEMENT montant_total → ❌ PAS de Reste
+- Or le mode par défaut est "list" (useViewMode hook, DEFAULT_MODE = "list")
+- Conséquence : dans la vue par défaut, le gérant ne voyait PAS le reste à payer (impayé) pour les commandes partiellement payées
+- Données réelles confirmant le bug : CMD-20260731-8230 (total=11000, payé=10500, reste=500, statut=partiel) → reste invisible en vue list
+
+Fix appliqué (commandes-list.tsx) :
+1. Desktop table : ajout colonne "Reste à payer" entre "Montant" et "Créée le"
+   - Si soldé : affiche "—" en gris (text-muted-foreground)
+   - Si impayé : affiche le montant en rouge (text-danger) + font-semibold
+   - Calcul resteDesktop = Math.max(0, montant_total - montant_paye) par ligne
+2. Mobile cards : ajout bloc "Reste à payer" (visible seulement si !isSoldeMobile)
+   - Fond bg-danger/10 + texte text-danger (rouge) pour attirer l'œil
+   - Affiché entre les badges/statut et les dates
+3. Docstring mis à jour pour documenter le fix (FIX-RESTE-IMPAYE)
+
+Stage Summary:
+- Lint : 0 erreur ✓
+- Le bug était purement UI (le backend + trigger DB + détail page fonctionnaient déjà)
+- 3 vues corrigées : desktop table + mobile cards + grid (déjà OK, non touchée)
+- Le gérant voit maintenant le reste à payer (impayé) directement dans la liste des commandes
+- Mise en évidence visuelle : rouge (text-danger) sur desktop, fond rouge clair (bg-danger/10) sur mobile
