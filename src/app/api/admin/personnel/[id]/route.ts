@@ -44,6 +44,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isValidCIPhone, normalizeCIPhone } from "@/lib/validations/phone";
+import { logAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -93,7 +94,7 @@ function generateRandomPassword(): string {
 
 /** Vérifie l'authentification + autorisation manager. Retourne [me, supabase] ou une Response d'erreur. */
 async function checkManagerAuth(): Promise<
-  | { ok: true; me: { id: string; pressing_id: string }; supabase: Awaited<ReturnType<typeof getSupabaseServer>> }
+  | { ok: true; me: { id: string; pressing_id: string; userId: string }; supabase: Awaited<ReturnType<typeof getSupabaseServer>> }
   | { ok: false; response: NextResponse }
 > {
   const supabase = await getSupabaseServer();
@@ -129,7 +130,10 @@ async function checkManagerAuth(): Promise<
     };
   }
 
-  return { ok: true, me: { id: me.id, pressing_id: me.pressing_id }, supabase };
+  // userId = UUID auth.users de la session courante — utilisé comme `user_id`
+  // pour audit_log (FK auth.users). Conserve `me.id` (personnel.id) pour les
+  // références métier existantes (cree_par, logs console, etc.).
+  return { ok: true, me: { id: me.id, pressing_id: me.pressing_id, userId: userData.user.id }, supabase };
 }
 
 /**
@@ -290,6 +294,19 @@ export async function PATCH(
         { status: 500 }
       );
     }
+
+    // AUDIT — Journalise l'activation/désactivation (audit_log, migration 027).
+    // Best-effort : ne bloque jamais la réponse (logAudit ne throw pas).
+    await logAudit({
+      pressing_id: me.pressing_id,
+      user_id: me.userId,
+      action: action === "desactiver" ? "desactive_personnel" : "reactivate_personnel",
+      entity_type: "personnel",
+      entity_id: target.id,
+      before_state: target as unknown as Record<string, unknown>,
+      after_state: { ...target, ...updates } as unknown as Record<string, unknown>,
+      req: request,
+    });
 
     return NextResponse.json({
       success: true,
@@ -582,6 +599,23 @@ export async function PATCH(
     // un audit trail côté DB (migration 025_notifications_role_change.sql).
     // On logge aussi côté serveur pour permettre à un admin de retrouver
     // l'historique dans les logs.
+    //
+    // [BUG #1 FIX] — Si le NOUVEAU rôle n'est PAS caissier, on NULLifie
+    // explicitement les champs caissier (modes_paiement_autorises,
+    // numero_caisse, nom_affiche_recu) pour satisfaire les CHECK constraints
+    // `check_modes_paiement_caissier_only` et `check_numero_caisse_caissier_only`
+    // (migration 030). Sans cela, un manager qui change un caissier en laveur
+    // sans envoyer `modes_paiement_autorises` laisserait les anciennes valeurs
+    // 'especes' / "Caisse 1" dans la ligne → CHECK violation 23514 remontée
+    // comme un 500 générique. La NULLification est idempotente et sûre même si
+    // ces champs étaient déjà NULL.
+    const nouveauRoleNonCaissier = role !== "caissier";
+    if (nouveauRoleNonCaissier) {
+      updateCaissier.modes_paiement_autorises = null;
+      updateCaissier.numero_caisse = null;
+      updateCaissier.nom_affiche_recu = null; // hygiène (non CHECK-gated)
+    }
+
     const updatePayload: Record<string, unknown> = {
       nom_complet: nomComplet,
       telephone: telephoneNorm,
@@ -610,11 +644,57 @@ export async function PATCH(
       .maybeSingle();
 
     if (updateErr) {
+      // 23514 = check_violation (ex: CHECK check_modes_paiement_caissier_only
+      // ou check_numero_caisse_caissier_only — migration 030). Se produit si
+      // des champs caissier sont non-NULL sur un row dont le rôle n'est pas
+      // caissier. On renvoie un 400 explicite plutôt qu'un 500 générique.
+      if (updateErr.code === "23514") {
+        return NextResponse.json(
+          {
+            success: false,
+            code: "CHAMPS_CAISSIER_SUR_NON_CAISSIER",
+            error:
+              "Les champs caissier (modes de paiement, numéro de caisse) ne peuvent pas être renseignés pour un non-caissier.",
+          },
+          { status: 400 }
+        );
+      }
       console.error("[api/admin/personnel/[id] PATCH modifier] UPDATE error:", updateErr);
       return NextResponse.json(
         { success: false, error: "Erreur lors de la modification" },
         { status: 500 }
       );
+    }
+
+    // AUDIT — Journalise la modification (audit_log, migration 027).
+    // Best-effort : ne bloque jamais la réponse (logAudit ne throw pas).
+    // before_state = snapshot AVANT l'UPDATE (récupéré plus haut via SELECT).
+    // after_state  = row APRÈS l'UPDATE retourné par Supabase (.select()).
+    await logAudit({
+      pressing_id: me.pressing_id,
+      user_id: me.userId,
+      action: "update_personnel",
+      entity_type: "personnel",
+      entity_id: target.id,
+      before_state: target as unknown as Record<string, unknown>,
+      after_state: (updated ?? { ...target, ...updatePayload }) as unknown as Record<string, unknown>,
+      req: request,
+    });
+
+    // Si le rôle a changé, on logge EN PLUS une entrée `role_change` séparée
+    // (before/after role isolés pour faciliter le filtrage côté audit UI /
+    // grep logs). Migration 027 / AuditAction "role_change".
+    if (roleChanged) {
+      await logAudit({
+        pressing_id: me.pressing_id,
+        user_id: me.userId,
+        action: "role_change",
+        entity_type: "personnel",
+        entity_id: target.id,
+        before_state: { role: previousRole },
+        after_state: { role },
+        req: request,
+      });
     }
 
     return NextResponse.json({

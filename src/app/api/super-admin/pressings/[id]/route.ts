@@ -23,6 +23,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { logAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,10 @@ type StatutCible = (typeof STATUTS_VALID)[number];
 /**
  * Vérifie que l'utilisateur courant est super admin.
  * Retourne une Response d'erreur 401/403 si non, sinon null.
+ *
+ * AUDIT (Task FIX-ENCAISSER-SUPERADMIN) : on renvoie désormais `userId`
+ * (UUID auth.users) pour permettre à l'appelant (PATCH) de tracer l'action
+ * dans audit_log.user_id.
  */
 async function ensureSuperAdmin() {
   const supabase = await getSupabaseServer();
@@ -39,6 +44,7 @@ async function ensureSuperAdmin() {
   if (userErr || !userData.user) {
     return {
       supabase,
+      userId: null as string | null,
       error: NextResponse.json(
         { success: false, error: "Non authentifié" },
         { status: 401 }
@@ -54,13 +60,14 @@ async function ensureSuperAdmin() {
   if (!superAdminRow) {
     return {
       supabase,
+      userId: null as string | null,
       error: NextResponse.json(
         { success: false, error: "Accès refusé — super admin requis" },
         { status: 403 }
       ),
     };
   }
-  return { supabase, error: null };
+  return { supabase, userId: userData.user.id, error: null };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -159,7 +166,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { supabase, error: authError } = await ensureSuperAdmin();
+  const { supabase, userId, error: authError } = await ensureSuperAdmin();
   if (authError) return authError;
 
   const { id } = await params;
@@ -193,9 +200,12 @@ export async function PATCH(
       : null;
 
   // ---- Récupère le statut actuel (coherence check) ----
+  // AUDIT : on sélectionne également les champs utiles au before_state du log
+  // audit (motif_suspension, date_suspension, nom) afin d'avoir un snapshot
+  // exploitable dans audit_log.before_state.
   const { data: current } = await supabase
     .from("pressing")
-    .select("id, statut")
+    .select("id, nom, statut, motif_suspension, date_suspension")
     .eq("id", id)
     .maybeSingle();
 
@@ -255,6 +265,43 @@ export async function PATCH(
       { status: 500 }
     );
   }
+
+  // --- Audit log (AUDIT-B-13 / Task FIX-ENCAISSER-SUPERADMIN) ---
+  // Best-effort : logAudit() ne JAMAIS throw ; on l'attend sans bloquer la
+  // réponse utilisateur en cas d'échec (l'erreur est juste loggée en
+  // console côté lib/audit). On journalise :
+  //   - suspendre  → action 'suspend_pressing'
+  //   - réactiver  → action 'reactivate_pressing'
+  // pressing_id = l'UUID du pressing (l'entité touchée EST le pressing).
+  // user_id     = l'UUID auth.users du super admin.
+  const auditAction =
+    statut === "suspendu" ? "suspend_pressing" : "reactivate_pressing";
+  await logAudit({
+    pressing_id: id,
+    user_id: userId,
+    action: auditAction,
+    entity_type: "pressing",
+    entity_id: id,
+    before_state: current
+      ? {
+          id: current.id,
+          nom: current.nom,
+          statut: current.statut,
+          motif_suspension: current.motif_suspension,
+          date_suspension: current.date_suspension,
+        }
+      : null,
+    after_state: updated
+      ? {
+          id: updated.id,
+          nom: updated.nom,
+          statut: updated.statut,
+          motif_suspension: updated.motif_suspension,
+          date_suspension: updated.date_suspension,
+        }
+      : { statut },
+    req: request,
+  });
 
   return NextResponse.json({
     success: true,

@@ -1646,3 +1646,200 @@ Stage Summary:
 - Le CHECK de format `personnel_modes_paiement_autorises_check` utilise désormais l'opérateur `<@` (no subquery) → passe le contrôle PostgreSQL.
 - Les autres sections (DROP NOT NULL, SET DEFAULT NULL, backfills, 2 CHECKs role-based) sont inchangées et valides.
 - Migration totalement idempotente et ordre-indépendante.
+
+---
+Task ID: FIX-ENCAISSER-SUPERADMIN
+Agent: general-purpose (sub-agent)
+Task: (A) Fix notes ≤2000 validation + message 23514 dans la route encaisser. (B) Brancher le log audit dans les routes super-admin pressings/[id] et abonnements/[id]/renouveler. Migrations 027 (audit_log) et 031 (notes ≤ 2000) désormais appliquées en base.
+
+Work Log:
+- Lu le worklog (entrée P4-D lignes 1210+, SQL-FIX 028/030/032 lignes 1610+, et 031_notes_limit_enforcement ligne 1522) pour reprendre le contexte : la CHECK `check_notes_max_length` est active sur `paiements.notes`, et la table `audit_log` (RLS bloquant INSERT côté client → seul service_role via `getSupabaseAdmin()` peut écrire, ce que fait `logAudit()`) est prête.
+- Lu intégralement les 3 fichiers cibles + `src/lib/audit.ts` (référence read-only) avant toute modification.
+
+PART A — `src/app/api/personnel/caissier/encaisser/route.ts` :
+- BUG A1 (notes > 2000 → 23514) : ajouté une garde applicative renvoyant 400 `{ success: false, code: "NOTES_TOO_LONG", error: "Les notes de paiement ne peuvent pas dépasser 2000 caractères." }` immédiatement après la lecture/normalisation de `notes` (~ligne 296). La validation s'appuie sur `notes.length > 2000`, cohérente avec le CHECK DB (length en chars, pas octets).
+- BUG A2 (message 23514 trompeur) : le handler 23514 (~ligne 436) disait "Le paiement ne respecte pas les contraintes (montant ou date)." sans mentionner les notes. Mis à jour en "Le paiement ne respecte pas les contraintes (montant, date ou notes trop longues)." + ajouté `code: "PAIEMENT_INVALIDE"` (au lieu d'un 400 sans code). Ajouté un commentaire listant les 3 CHECK susceptibles de déclencher 23514 (paiements_montant_check, paiements_date_paiement_check, check_notes_max_length migration 031).
+- BUG A3 (audit_log non écrit) : ajouté `import { logAudit } from "@/lib/audit"` + un appel `await logAudit({...})` après l'INSERT paiement réussi (avant le re-fetch de commande). L'appel est best-effort (logAudit ne throw jamais) et ne peut pas bloquer la réponse utilisateur.
+  - Pour récupérer le `user_id` du caissier (auth.users.id), étendu le type `CaissierRow` avec `user_id: string` + ajouté `user_id` aux deux SELECT (primary + fallback) de `getConnectedCaissier()`. La colonne `personnel.user_id` est NOT NULL en base, donc toujours présente.
+  - after_state = { paiement_id, commande_id, montant, methode, notes, date_paiement, est_acompte } ; before_state = null (création). pressing_id = `me.pressing_id`, user_id = `me.user_id`, entity_type = "paiement", entity_id = `paiement.id`, req = `request`.
+
+PART B — `src/app/api/super-admin/pressings/[id]/route.ts` (PATCH suspend/reactivate) :
+- Ajouté `import { logAudit } from "@/lib/audit"`.
+- Étendu `ensureSuperAdmin()` pour retourner `userId: userData.user.id` (UUID auth.users du super admin) en plus de `supabase`. La signature de retour passe de `{ supabase, error }` à `{ supabase, userId, error }`. Le handler GET ignore `userId` (déstructure seulement `supabase, error` — pas de warning d'inutilisé).
+- Le PATCH déstructure désormais `const { supabase, userId, error: authError } = await ensureSuperAdmin();`.
+- Étendu le SELECT du pressing "avant" (`current`) de `id, statut` à `id, nom, statut, motif_suspension, date_suspension` pour fournir un before_state exploitable.
+- Après l'UPDATE réussi, ajouté un `await logAudit({...})` unique avec :
+  - `action = statut === "suspendu" ? "suspend_pressing" : "reactivate_pressing"`
+  - `pressing_id = id`, `user_id = userId`, `entity_type = "pressing"`, `entity_id = id`
+  - `before_state` = { id, nom, statut, motif_suspension, date_suspension } du pressing AVANT
+  - `after_state` = { id, nom, statut, motif_suspension, date_suspension } du pressing APRÈS (lu depuis la ligne `updated` retournée par l'UPDATE)
+  - `req = request`
+
+PART C — `src/app/api/super-admin/abonnements/[id]/renouveler/route.ts` (POST renew) :
+- Ajouté `import { logAudit } from "@/lib/audit"`.
+- `superAdmin.user_id` était déjà disponible (le SELECT `super_admins` récupère déjà `id, user_id, nom_complet, email` — ligne 68), donc pas de modification de signature pour `ensureSuperAdmin` ici.
+- Audit #1 (renew_abonnement) : ajouté après l'UPDATE `abonnements` réussi, AVANT le bloc de réactivation du pressing. before_state = { id, pressing_id, plan, statut, date_fin, montant_mensuel } du SELECT initial ; after_state = { id, plan, statut, date_fin, montant_mensuel, mode_paiement_derniere_echeance, date_derniere_echeance, reference_paiement, paiement_id, duree_mois } depuis `updatedAbonnement` + `paiement.id` + `dureeMois`. pressing_id = `abonnement.pressing_id` (le pressing propriétaire), user_id = `superAdmin.user_id`, entity_type = "abonnement", entity_id = `abonnementId`, req = `request`.
+- Audit #2 (reactivate_pressing) : ajouté dans le bloc `else` (UPDATE pressing réussi → réactivation effective), juste après le `console.log` existant. before_state = { id, statut: oldStatut } ; after_state = { id, statut: "actif" }. pressing_id = `pressingIdRenew`, user_id = `superAdmin.user_id`, entity_type = "pressing", entity_id = `pressingIdRenew`, req = `request`. Non déclenché si le pressing était déjà `actif` (logique existante inchangée).
+
+VÉRIFICATIONS :
+- `bun run lint` → exit 0, aucun warning ni erreur. Aucune régression sur les handlers GET ou sur les réponses 2xx (shapes de réponse inchangées : on ajoute seulement l'appel `logAudit` après le succès de l'opération métier, avant le `return NextResponse.json`).
+- Aucune modification de la logique d'authentification/autorisation.
+- Aucune modification du `await` sur `logAudit` — l'appel est attendu (best-effort : la fonction ne throw jamais, et en cas d'échec elle log en console.error et retourne false sans impacter le flux métier).
+- Les `before_state`/`after_state` sont des `Record<string, unknown>` littéraux (compatibles avec le type `AuditEntry` du fichier `src/lib/audit.ts`).
+
+Stage Summary:
+- 3 fichiers modifiés (1 route caissier + 2 routes super-admin), ~110 lignes ajoutées au total (essentiellement des appels `logAudit` et 1 garde de validation).
+- Aucun nouveau type/interface public ; aucun changement de signature côté client.
+- Toutes les actions sensibles listées dans la migration 027 (encaisser_paiement, suspend_pressing, reactivate_pressing, renew_abonnement) sont désormais journalisées dans `audit_log` avec before/after state, ip_address et user_agent extraits du NextRequest.
+- Prochaines étapes suggérées : (1) vérifier côté UI super admin qu'aucun appel ne casse (régression 0), (2) interroger `audit_log` pour confirmer que les entrées sont écrites (ex: `SELECT action, pressing_id, user_id, created_at FROM audit_log ORDER BY created_at DESC LIMIT 20;`), (3) ajouter une page `/super-admin/audit` de consultation filtrée (action, pressing_id, user_id, date range) — non inclus dans cette tâche.
+
+---
+Task ID: FIX-PERSONNEL-AUDIT
+Agent: general-purpose (sub-agent)
+Task: Fix 2 bugs critiques dans le module personnel + wire audit logging (post-migrations 027 + 030)
+
+Work Log:
+- Lu /home/z/my-project/worklog.md (entrées P4-D, SQL-FIX-028-030-032, SQL-FIX-030-v1.2) pour reprendre le contexte :
+  * P4-D a introduit la validation `modes_paiement_autorises` côté API + le matrice workflow commandes + la cascade désactivation.
+  * SQL-FIX-030-v1.2 a corrigé la migration 030 : `modes_paiement_autorises` est désormais NULLABLE, DEFAULT NULL, backfill non-caissiers→NULL, 2 CHECK constraints `check_modes_paiement_caissier_only` + `check_numero_caisse_caissier_only` + CHECK format via `<@`.
+  * Migration 027_audit_log.sql a créé la table audit_log (RLS bloque INSERT client → seul service_role peut insérer, géré par getSupabaseAdmin() dans src/lib/audit.ts).
+- Lu src/lib/audit.ts (167 lignes) pour confirmer l'API : `logAudit(entry: AuditEntry)` best-effort (catch interne, ne throw jamais). Signature conforme au task description. Types `AuditAction` incluent create_personnel | update_personnel | desactive_personnel | reactivate_personnel | role_change. `entity_type` "personnel" est supporté.
+- Lu intégralement les 2 fichiers cibles avant édition :
+  * `src/app/api/admin/personnel/route.ts` (729 lignes — GET + POST create avec 2 branches creation_directe / lien_invitation).
+  * `src/app/api/admin/personnel/[id]/route.ts` (849 lignes — PATCH desactiver/reactiver/modifier + POST reset_password/resend_invitation). Pas d'action `changer_role` séparée : le changement de rôle est géré dans la branche `modifier` (variables `previousRole` + `roleChanged` déjà calculées).
+
+Fichier 1 — `src/app/api/admin/personnel/route.ts` (POST create) :
+- Ajouté l'import `import { logAudit } from "@/lib/audit";` (ligne 47, après les imports supabase/phone).
+- Mis à jour le commentaire obsolète lignes 551-556 (anciennement "la DB applique son DEFAULT JSONB (migration 019)") → "la DB applique DEFAULT NULL (migration 030) — NULL pour les non-caissiers, conformément aux CHECK constraints check_modes_paiement_caissier_only et check_numero_caisse_caissier_only." (BUG fix de documentation signalé dans le task.)
+- Branche `creation_directe` (avant `return NextResponse.json(...)` ligne ~593→608) : ajout d'un appel `await logAudit({...})` avec action="create_personnel", entity_type="personnel", entity_id=newEmploye.id, before_state=null, after_state=newEmploye (cast `as unknown as Record<string, unknown>`), pressing_id=pressingId, user_id=userData.user.id, req=request. Commentaire explicatif "Best-effort : ne bloque jamais la réponse".
+- Branche `lien_invitation` (avant `return` ligne ~723→751) : appel `logAudit` identique (même action, mêmes params, mêmes casts). Le fire-and-forget n'est pas utilisé — on `await` pour ordering clarity (la fonction est best-effort et rapide).
+
+Fichier 2 — `src/app/api/admin/personnel/[id]/route.ts` (PATCH actions) :
+- Ajouté l'import `import { logAudit } from "@/lib/audit";` (ligne 47).
+- Étendu `checkManagerAuth()` (lignes 95-137) : ajout du champ `userId: string` au type de retour `me` + propagation de `userData.user.id` dans le return. Aucun changement comportemental — l'auth/autorisation reste identique (manager actif requis). Le `userId` est l'UUID `auth.users` de la session courante, nécessaire pour la FK `audit_log.user_id → auth.users(id)`. `me.id` (personnel.id) reste utilisé pour `cree_par` / logs console existants.
+- [BUG #1 FIX] Branche `modifier` (lignes 596-617) : ajout d'un bloc NULL-out AVANT la construction de `updatePayload` :
+  ```ts
+  const nouveauRoleNonCaissier = role !== "caissier";
+  if (nouveauRoleNonCaissier) {
+    updateCaissier.modes_paiement_autorises = null;
+    updateCaissier.numero_caisse = null;
+    updateCaissier.nom_affiche_recu = null; // hygiène (non CHECK-gated)
+  }
+  ```
+  Ces 3 champs sont ensuite inclus dans `updatePayload` via le spread `...updateCaissier` existant. La NULLification est idempotente (sûre si déjà NULL) et satisfait les CHECK constraints `check_modes_paiement_caissier_only` + `check_numero_caisse_caissier_only` (migration 030). Le commentaire inline documente le bug d'origine (manager change caissier→laveur sans envoyer modes_paiement_autorises → anciennes valeurs 'especes' / "Caisse 1" restaient → 23514 → 500 générique).
+- [BUG #1 — défense en profondeur] Branche `modifier` (lignes 646-667) : catch explicite du code PostgreSQL 23514 (check_violation) DANS le handler `if (updateErr)` du UPDATE modifier. Retourne un 400 avec `code: "CHAMPS_CAISSIER_SUR_NON_CAISSIER"` et message métier explicite, plutôt qu'un 500 générique. Comportement identique au code existant pour les autres erreurs (log console.error + 500). Le 23514 catch est DEFENSE-IN-DEPTH : le NULL-out en amont devrait empêcher la violation, mais si une nouvelle CHECK constraint est ajoutée en DB ou si un chemin bypass le NULL-out, le client reçoit un message actionnable plutôt qu'un 500 opaque.
+- Branche `desactiver/reactiver` (lignes 298-309) : ajout d'un appel `await logAudit({...})` après le UPDATE réussi, avant le `return`. action = `action === "desactiver" ? "desactive_personnel" : "reactivate_personnel"`. before_state = `target` (SELECT pré-UPDATE, cast). after_state = `{ ...target, ...updates }` (merge du row pré-UPDATE avec le patch appliqué — statut_compte/actif/date_desactivation).
+- Branche `modifier` (lignes 669-698) : 2 appels `logAudit` :
+  1. `update_personnel` systématiquement (before_state=`target`, after_state=`updated ?? { ...target, ...updatePayload }` — préfère le row DB retourné par .select(), fallback sur la fusion before+payload si `updated` est null).
+  2. `role_change` SEULEMENT si `roleChanged` (avant/après role isolés dans before_state/after_state `{ role: previousRole }` / `{ role }` pour faciliter le filtrage côté audit UI / grep logs).
+  Les deux appels sont `await`-és séquentiellement après le UPDATE réussi, AVANT le `return NextResponse.json(...)`. logAudit étant best-effort, un échec d'audit ne bloque pas la réponse métier (le success return est envoyé quoi qu'il arrive, le await sert juste à l'ordering).
+
+Vérifications :
+- `bun run lint` : ✅ exit 0, 0 erreur, 0 warning (sur tout le projet).
+- `bunx eslint src/app/api/admin/personnel/route.ts "src/app/api/admin/personnel/[id]/route.ts" src/lib/audit.ts` : ✅ exit 0.
+- `bunx tsc --noEmit` : 66 erreurs au total, TOUTES pré-existantes (catalogue-form.tsx, add/edit-product-dialog.tsx, add/edit-service-dialog.tsx, infos-generales-tab.tsx, inscription-form.tsx, mouvement-dialog.tsx, super-admin/abonnements/route.ts, examples/, skills/, dev-keeper.ts). 0 erreur dans `src/app/api/admin/personnel/route.ts`, `src/app/api/admin/personnel/[id]/route.ts`, ou `src/lib/audit.ts`. Conforme au baseline documenté par P4-C (lignes 1285-1289 du worklog) et P4-D.
+- Pas de régression sur les contraintes du task :
+  * 'use server' non ajouté (route handlers — pas requis).
+  * Auth/authorization logic inchangée (checkManagerAuth extended mais aucun garde modifié/supprimé).
+  * Response shape inchangée pour les success responses (mêmes clés, mêmes valeurs).
+  * Imports existants conservés (ajout uniquement de `logAudit`).
+  * `NextRequest` déjà importé dans les 2 fichiers → pas besoin de l'ajouter.
+  * `updateErr.code === "23514"` est type-safe : supabase-js PostgrestError expose `code: string`.
+
+Stage Summary:
+- ✅ BUG #1 (CRITICAL) RÉSOLU : un manager peut désormais changer un caissier en non-caissier (ex: caissier→laveur) SANS envoyer `modes_paiement_autorises` dans le body. Les champs caissier (modes_paiement_autorises, numero_caisse, nom_affiche_recu) sont explicitement NULLifiés dans l'UPDATE payload → les CHECK constraints `check_modes_paiement_caissier_only` et `check_numero_caisse_caissier_only` (migration 030) passent. En défense en profondeur, une 23514 est catchée et renvoyée comme 400 `CHAMPS_CAISSIER_SUR_NON_CAISSIER` au lieu d'un 500 opaque.
+- ✅ BUG #2 RÉSOLU — audit_log wired pour 5 actions :
+  * POST create (creation_directe) → `create_personnel`
+  * POST create (lien_invitation) → `create_personnel`
+  * PATCH [id] action="desactiver" → `desactive_personnel`
+  * PATCH [id] action="reactiver" → `reactivate_personnel`
+  * PATCH [id] action="modifier" → `update_personnel` (+ `role_change` séparé si roleChanged)
+- Chaque entrée audit_log contient : pressing_id, user_id (UUID auth.users de la session), action, entity_type="personnel", entity_id (UUID personnel.id), before_state (snapshot AVANT), after_state (snapshot APRÈS), ip_address + user_agent (extraits automatiquement depuis NextRequest par logAudit).
+- Commentaire obsolète (POST route) mis à jour : "DEFAULT JSONB (migration 019)" → "DEFAULT NULL (migration 030)".
+- 🔒 Sécurité préservée : aucun changement d'auth/autorisation, RLS inchangée, audit #8 (error masking) préservé (les erreurs Supabase restent loggées serveur, le client ne reçoit que des messages métier). Le 23514 catch renvoie un message métier, pas le message Postgres brut.
+- 📁 Fichiers modifiés (2) :
+  * `src/app/api/admin/personnel/route.ts` (+1 import, +2 appels logAudit, 1 commentaire mis à jour)
+  * `src/app/api/admin/personnel/[id]/route.ts` (+1 import, +1 champ `userId` dans checkManagerAuth, +1 bloc NULL-out BUG#1, +1 catch 23514, +3 appels logAudit)
+- Lint 0/0, tsc 0 erreur sur les fichiers modifiés.
+
+---
+Task ID: FIX-COMMANDES-AUDIT
+Agent: general-purpose (sub-agent)
+Task: Wire Zod validation (notes ≤ 2000 chars) + catch DB 23514 (workflow trigger migration 029) + wire audit logging dans les routes POST/PATCH /api/admin/commandes. Migrations 027 (audit_log), 029 (workflow guard trigger), 031 (notes max 2000) désormais appliquées en base.
+
+Work Log:
+- Lu /home/z/my-project/worklog.md (entrées P4-C lignes 1380+, P4-D lignes 1210+, P4-E lignes 1440+, SQL-FIX-028-030-032, FIX-ENCAISSER-SUPERADMIN, FIX-PERSONNEL-AUDIT) pour reprendre le contexte :
+  * P4-C a créé `src/lib/validations/commande.ts` (schemas Zod `createCommandeSchema` + `patchCommandeSchema` avec `notes: z.string().max(2000).optional()`) — ces schémas ÉTAIENT EXISTANTS mais JAMAIS importés dans les routes (dead code).
+  * P4-D a introduit `canTransitionCommande` côté TS (matrice 9x9) + `src/lib/workflow/commande-statut.ts`.
+  * Migration 027_audit_log.sql : table audit_log (RLS bloque INSERT client → seul service_role via `getSupabaseAdmin()` peut écrire, ce que fait `logAudit()`).
+  * Migration 029_workflow_transitions_guard.sql : trigger DB `trg_check_commande_statut_transition` BEFORE UPDATE OF statut → RAISE EXCEPTION ERRCODE 'check_violation' (SQLSTATE 23514) si transition invalide (race condition TOCTOU).
+  * Migration 031_notes_limit_enforcement.sql : CHECK `check_notes_max_length` sur `commandes.notes` (length(notes) <= 2000) — defense-in-depth au Zod `.max(2000)`.
+- Lu les 3 fichiers de référence (read-only) avant toute modification :
+  * `src/lib/validations/commande.ts` (105 lignes) — `createCommandeSchema` accepte client_id (UUID), articles (array d'objets avec catalogue_article_id UUID + quantite int > 0 ≤ 999), date_pret_prevue (ISO), priorite, notes (≤2000), idempotence_key. `.passthrough()` au top-level et sur chaque article (accepte les champs supplémentaires du wizard : service_id, couleur, etat, etc.).
+  * `src/lib/audit.ts` (167 lignes) — `logAudit(entry: AuditEntry)` best-effort (catch interne, ne throw jamais). Types `AuditAction` incluent create_commande | cancel_commande | update_commande. `entity_type` "commande" supporté. IP extraite de X-Forwarded-For / x-real-ip, user-agent du header.
+  * `src/lib/workflow/commande-statut.ts` (650 lignes) — `canTransitionCommande(from, to)` déjà utilisée dans le PATCH route (ligne 436). Matrice 9x9 alignée sur le trigger DB migration 029.
+- Lu intégralement les 2 fichiers cibles avant édition :
+  * `src/app/api/admin/commandes/route.ts` (1095 lignes — GET list + POST create avec numero_commande retry, idempotence_key, articles_vetements individuels par QR, remise, acompte, date_retrait calculée serveur).
+  * `src/app/api/admin/commandes/[id]/route.ts` (518 lignes — GET detail + PATCH cancel/priorite/notes avec verrou optimiste #6).
+
+Fichier 1 — `src/app/api/admin/commandes/route.ts` (POST create) :
+- Ajouté l'import `import { logAudit } from "@/lib/audit";` (ligne 56, après les imports auth/roles).
+- [BUG #1 FIX] Ajouté une validation ciblée `notes` ≤ 2000 chars AVANT l'extraction existante (ligne ~381, après la validation `date_pret_prevue`). Retourne 400 `{ success: false, code: "NOTES_TOO_LONG", error: "Les notes ne peuvent pas dépasser 2000 caractères." }` si `body.notes.trim().length > 2000`.
+  * Choix de design (documenté en commentaire inline) : approche ciblée plutôt que `createCommandeSchema.safeParse(body)` complet. Le schéma Zod est plus strict sur certains champs (ex: `client_id` doit être un UUID strict, alors que la logique existante accepte n'importe quelle string non-vide et laisse la DB rejeter via FK). Un safeParse complet aurait pu renvoyer des messages d'erreur moins actionnables que la logique métier existante (ex: "client_id invalide" au lieu de "Client introuvable dans votre pressing"). L'approche ciblée garantit AUCUNE régression sur les messages d'erreur existants tout en empêchant le 23514 du CHECK DB migration 031.
+  * La contrainte validée correspond exactement au `.max(2000)` du schéma Zod canonique P4-C (`createCommandeSchema.shape.notes`).
+- [BUG #4 FIX — audit create] Ajouté un appel `await logAudit({...})` après l'INSERT réussi (commande + lignes + articles_vetements + acompte éventuel), AVANT le `return NextResponse.json({...}, { status: 201 })` (ligne ~1103).
+  * `action = "create_commande"`, `entity_type = "commande"`, `entity_id = commandeId`.
+  * `pressing_id = pressingId` (déjà résolu via `me.pressing_id`).
+  * `after_state` = snapshot complet de la nouvelle commande : { id, pressing_id, client_id, numero_commande, statut: "recu", statut_paiement, montant_total, montant_paye, priorite, date_pret_prevue, date_retrait, notes }.
+  * `before_state` = null (création).
+  * `req = request` (NextRequest — pour extraction IP + user-agent par logAudit).
+  * user_id : récupéré via `supabase.auth.getUser()` inline au point d'audit (avant le logAudit). `getCurrentPersonnel` n'expose pas `auth.users.id` dans `AuthPersonnel` (seulement `personnel.id`), or `audit_log.user_id` est FK vers `auth.users(id)` — passer `me.id` (personnel.id) ferait échouer l'INSERT avec FK violation. L'appel est fait EN FIN de handler (chemin succès uniquement) pour éviter l'appel réseau sur les chemins d'erreur (400/404/500). Wrap dans try/catch défensif (ne doit pas échouer — déjà authentifié plus haut).
+  * L'appel est `await`-é pour ordering clarity (logAudit est best-effort : ne throw jamais, catch interne, retourne false en cas d'échec sans impacter le flux métier).
+- Cas idempotence replay (ligne 442-448) : PAS d'audit logging. Le replay renvoie une commande existante (déjà créée et auditée lors de la requête initiale). Un nouvel audit `create_commande` serait trompeur (aucune nouvelle commande n'a été créée).
+
+Fichier 2 — `src/app/api/admin/commandes/[id]/route.ts` (PATCH) :
+- Ajouté l'import `import { logAudit } from "@/lib/audit";` (ligne 54, après `canTransitionCommande`).
+- [BUG #2 FIX] Remplacé la troncation silencieuse `.slice(0, 2000)` par un 400 propre (ligne ~302) :
+  * Avant : `notesValue = trimmed ? trimmed.slice(0, 2000) : null;` → perte de données côté client sans warning.
+  * Après : `if (trimmed.length > 2000) return 400 { code: "NOTES_TOO_LONG", error: "Les notes ne peuvent pas dépasser 2000 caractères." };` puis `notesValue = trimmed ? trimmed : null;`.
+  * Le CHECK DB `check_notes_max_length` (migration 031) aurait de toute façon fait échouer l'UPDATE avec 23514 → 500 générique. Le 400 applicatif est plus actionnable et préserve l'intégrité des données utilisateur.
+- [BUG #3 FIX] Ajouté un catch explicite du code PostgreSQL 23514 (check_violation) DANS le handler `if (updateErr || !updated)` du UPDATE (ligne ~520) :
+  * Le guard TS `canTransitionCommande` (étape 5, ligne 436) capture la plupart des transitions invalides AVANT l'UPDATE. Mais une race condition TOCTOU (statut changé entre le SELECT `cmd` à l'étape 4 et l'UPDATE à l'étape 7) ferait lever le trigger DB `trg_check_commande_statut_transition` (migration 029) avec ERRCODE 'check_violation' (SQLSTATE 23514).
+  * Retourne 409 `{ code: "INVALID_TRANSITION", error: "Transition de statut refusée par la base de données (peut être due à une modification concurrente)." }` au lieu d'un 500 générique.
+  * Type-safe : `updateErr` est `PostgrestError | null`. Le check `"code" in updateErr && (updateErr as { code?: string }).code === "23514"` est défensif (PostgrestError expose toujours `code: string`, mais le narrowing TS est prudent).
+- [BUG #4 FIX — audit cancel/update] Ajouté un appel `await logAudit({...})` après l'UPDATE réussi, AVANT le `return NextResponse.json({ success: true, data: updated })` (ligne ~555).
+  * `action = wantCancel ? "cancel_commande" : "update_commande"` (un seul appel générique couvre les deux cas — l'action est discriminée par `wantCancel`).
+  * `entity_type = "commande"`, `entity_id = commandeId`.
+  * `pressing_id = me.pressing_id` (déjà résolu via auth).
+  * `before_state` = snapshot du row PRÉ-UPDATE : `{ id, statut, priorite, updated_at }` (depuis `cmd` sélectionné à l'étape 4). Wrap défensif `cmd ? {...} : null` (cmd est garanti non-null après le check `if (!cmd) return 404` à l'étape 4, mais la défense reste pour la robustesse future).
+  * `after_state` = `updated` (row retourné par le `.select("id, statut, priorite, notes, updated_at").single()` de l'UPDATE) — cast `as Record<string, unknown>` pour le type `AuditEntry.after_state`.
+  * `req = request` (NextRequest).
+  * user_id : récupéré via `supabase.auth.getUser()` inline au point d'audit (même pattern que POST — `getCurrentPersonnel` n'expose pas `auth.users.id`).
+  * Pas d'audit pour le chemin "no-op" (ligne 322 : aucun champ à mettre à jour → on retourne la commande courante sans UPDATE). C'est défensif : un no-op ne modifie rien, donc pas besoin d'audit. Si on voulait tracer même les no-op (pour détecter du polling suspect), on pourrait ajouter un audit dédié — non inclus dans cette tâche.
+
+Vérifications :
+- `bun run lint` : ✅ exit 0, 0 erreur, 0 warning (sur tout le projet).
+- `bunx tsc --noEmit` : 66 erreurs au total, TOUTES pré-existantes (catalogue-form.tsx, add/edit-product-dialog.tsx, add/edit-service-dialog.tsx, infos-generales-tab.tsx, inscription-form.tsx, mouvement-dialog.tsx, super-admin/abonnements/route.ts, examples/, skills/, dev-keeper.ts — baseline documenté par P4-FINAL ligne 1596). 0 erreur dans `src/app/api/admin/commandes/route.ts` ou `src/app/api/admin/commandes/[id]/route.ts` (vérifié via `grep -iE "commandes|audit"` sur la sortie tsc — aucun match).
+- Pas de régression sur les contraintes du task :
+  * 'use server' non ajouté (route handlers — pas requis).
+  * Auth/authorization logic inchangée (aucun garde modifié/supprimé — `getCurrentPersonnel`, `isPersonnelActive`, `hasRole`, `canTransitionCommande`, verrou optimiste #6, `STATUTS_NON_ANNULABLE` tous intacts).
+  * Response shape inchangée pour les success responses (POST : `{ success: true, data: { id, pressing_id, numero_commande, montant_total, montant_paye, statut, statut_paiement, priorite, date_pret_prevue, date_retrait } }` 201 ; PATCH : `{ success: true, data: updated }` 200 — shapes identiques à l'avant, seul l'appel `logAudit` est ajouté AVANT le return).
+  * Imports existants conservés (ajout uniquement de `logAudit`).
+  * `NextRequest` déjà importé dans les 2 fichiers (ligne 48 et 43) → pas besoin de l'ajouter.
+  * `updateErr.code === "23514"` est type-safe via narrowing défensif.
+
+Stage Summary:
+- ✅ BUG #1 (CRITICAL) RÉSOLU — POST /api/admin/commandes valide désormais `notes` ≤ 2000 chars côté API. Plus de 23514 générique du CHECK DB migration 031 → 400 propre avec code `NOTES_TOO_LONG`.
+- ✅ BUG #2 (CRITICAL) RÉSOLU — PATCH /api/admin/commandes/[id] ne tronque plus silencieusement les notes. Retourne 400 `NOTES_TOO_LONG` si notes > 2000 chars (au lieu de `.slice(0, 2000)` qui perdait les données utilisateur sans warning).
+- ✅ BUG #3 RÉSOLU — PATCH /api/admin/commandes/[id] catch le code PostgreSQL 23514 (check_violation) du trigger DB `trg_check_commande_statut_transition` (migration 029). Race condition TOCTOU entre SELECT et UPDATE → 409 `INVALID_TRANSITION` au lieu de 500 opaque. Defense-in-depth au guard TS `canTransitionCommande` (étape 5).
+- ✅ BUG #4 RÉSOLU — audit_log wired pour 3 actions commandes :
+  * POST create → `create_commande` (after_state = snapshot complet de la nouvelle commande, before_state = null)
+  * PATCH cancel (statut → "annule") → `cancel_commande` (before_state = cmd pré-UPDATE, after_state = updated row)
+  * PATCH update (priorite/notes, non-cancel) → `update_commande` (before_state = cmd pré-UPDATE, after_state = updated row)
+- Chaque entrée audit_log contient : pressing_id, user_id (UUID auth.users de la session, récupéré via `supabase.auth.getUser()` inline), action, entity_type="commande", entity_id (UUID commande.id), before_state (snapshot AVANT), after_state (snapshot APRÈS), ip_address + user_agent (extraits automatiquement depuis NextRequest par logAudit).
+- 🔒 Sécurité préservée : aucun changement d'auth/autorisation, RLS inchangée, audit #8 (error masking) préservé (les erreurs Supabase restent loggées serveur, le client ne reçoit que des messages métier). Le 23514 catch renvoie un message métier, pas le message Postgres brut.
+- 📁 Fichiers modifiés (2) :
+  * `src/app/api/admin/commandes/route.ts` (+1 import, +1 garde notes validation, +1 bloc logAudit create_commande)
+  * `src/app/api/admin/commandes/[id]/route.ts` (+1 import, +1 garde notes validation 400 au lieu de slice, +1 catch 23514, +1 bloc logAudit cancel/update)
+- Lint 0/0, tsc 0 erreur sur les fichiers modifiés.
+- ⚠️ Note pour tâche future : le schéma Zod `createCommandeSchema` (P4-C) reste du dead code importé nulle part. Le présent fix privilégie une validation ciblée `notes` pour éviter toute régression sur les messages d'erreur métier existants. Une refactor future pourrait wiring le schéma complet en mode "gate" (safeParse en premier, fallback sur la logique existante pour les messages spécifiques) — non inclus ici pour minimaliser le risque.
