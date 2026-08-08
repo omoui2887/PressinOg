@@ -2,7 +2,7 @@
 -- OgPressing — Migration 030 : Modes paiement caissier (Phase 4 #13)
 -- ============================================================
 -- Fichier    : 030_modes_paiement_caissier.sql
--- Version    : 1.1  (correctif — voir section CORRECTIF ci-dessous)
+-- Version    : 1.2  (correctif — voir sections CORRECTIF ci-dessous)
 -- Description : Ajoute la colonne `numero_caisse` à la table
 --               `public.personnel` et pose deux CHECK constraints
 --               défense-en-profondeur pour garantir que les champs
@@ -115,9 +115,27 @@ WHERE numero_caisse IS NOT NULL
 -- ============================================================
 -- 4. CHECK de FORMAT RELÂCHÉ sur modes_paiement_autorises
 -- ============================================================
+-- ⚠️  CORRECTIF v1.2 — erreur 0A000 au run précédent
+--   PostgreSQL INTERDIT les sous-requêtes dans les CHECK constraints
+--   (erreur 0A000 "cannot use subquery in check constraint"). La
+--   version précédente utilisait `NOT EXISTS (SELECT 1 FROM
+--   jsonb_array_elements_text(...))` → rejeté par PostgreSQL.
+--   La migration 019 originale avait le même bug (jamais réussi à
+--   poser ce CHECK).
+--
+--   Solution : utiliser l'opérateur JSONB `<@` (contained by) qui
+--   vérifie que TOUS les éléments du tableau de gauche sont présents
+--   dans le tableau de droite. C'est une expression pure (pas de
+--   sous-requête), acceptée par PostgreSQL dans un CHECK.
+--
+--   Exemple :
+--     '["especes","carte"]'::jsonb <@ '["especes","mobile_money",
+--     "carte","cheque","virement"]'::jsonb  → TRUE
+--     '["especes","bitcoin"]'::jsonb <@ '["especes",...]'::jsonb   → FALSE
+--
 -- Version relâchée du CHECK 019 : accepte NULL (pour les non-caissiers)
--- et valide le format (array non-vide + éléments dans l'enum valide)
--- seulement si la valeur est non-NULL.
+-- et valide le format (array non-vide + tous éléments dans l'enum
+-- valide) seulement si la valeur est non-NULL.
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -131,17 +149,7 @@ BEGIN
                 OR (
                     jsonb_typeof(modes_paiement_autorises) = 'array'
                     AND jsonb_array_length(modes_paiement_autorises) > 0
-                    AND NOT EXISTS (
-                        SELECT 1
-                        FROM jsonb_array_elements_text(modes_paiement_autorises) AS elem
-                        WHERE elem NOT IN (
-                            'especes',
-                            'mobile_money',
-                            'carte',
-                            'cheque',
-                            'virement'
-                        )
-                    )
+                    AND modes_paiement_autorises <@ '["especes","mobile_money","carte","cheque","virement"]'::jsonb
                 )
             );
     END IF;
@@ -183,11 +191,12 @@ END $$;
 
 -- ============================================================
 -- Fin de la migration 030_modes_paiement_caissier.sql
--- Récapitulatif (v1.1) :
+-- Récapitulatif (v1.2) :
 --   - 1 colonne ajoutée : personnel.numero_caisse TEXT
 --   - 1 colonne modifiée : modes_paiement_autorises → NULLABLE, DEFAULT NULL
---   - 1 CHECK supprimé puis recréé en version relâchée :
---       * personnel_modes_paiement_autorises_check (accepte NULL)
+--   - 1 CHECK supprimé puis recréé en version relâchée SANS sous-requête :
+--       * personnel_modes_paiement_autorises_check (accepte NULL,
+--         valide format + éléments via opérateur JSONB `<@`)
 --   - 2 CHECK constraints role-based :
 --       * check_numero_caisse_caissier_only
 --       * check_modes_paiement_caissier_only
