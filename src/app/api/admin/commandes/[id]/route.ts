@@ -541,6 +541,26 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         { status: 409 }
       );
     }
+    // 22P02 = invalid_input_value_for_enum (ex: statut 'annule' non encore
+    // ajouté à l'enum statut_commande si la migration 024/024b n'est pas
+    // appliquée). On renvoie un 501 clair invitant à appliquer la migration,
+    // plutôt qu'un 500 générique.
+    if (
+      updateErr &&
+      typeof updateErr === "object" &&
+      "code" in updateErr &&
+      (updateErr as { code?: string }).code === "22P02"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "ENUM_VALUE_MISSING",
+          error:
+            "Valeur de statut non supportée par la base de données. Vérifiez que la migration 024b (ajout de la valeur 'annule' à l'enum statut_commande) a été appliquée.",
+        },
+        { status: 501 }
+      );
+    }
     console.error(
       "[api/admin/commandes/[id]] Erreur UPDATE commandes:",
       updateErr
