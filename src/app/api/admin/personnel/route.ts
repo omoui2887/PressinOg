@@ -44,6 +44,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isValidCIPhone, normalizeCIPhone } from "@/lib/validations/phone";
+import { logAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -549,9 +550,10 @@ export async function POST(request: NextRequest) {
     //
     // AUDIT-B #14 — Si la cible est caissier, on insère `modes_paiement_autorises`
     // (valeur explicite fournie par le manager OU défaut MODES_PAIEMENT_DEFAUT_CAISSIER).
-    // Pour les autres rôles, on n'inclut pas la clé → la DB applique son DEFAULT
-    // JSONB (migration 019), mais cette valeur sera ignorée à l'encaissement
-    // (qui ne lit la colonne QUE pour les caissiers).
+    // Pour les autres rôles, on n'inclut pas la clé → la DB applique DEFAULT NULL
+    // (migration 030) — NULL pour les non-caissiers, conformément aux CHECK
+    // constraints check_modes_paiement_caissier_only et
+    // check_numero_caisse_caissier_only.
     const { data: newEmploye, error: insertErr } = await admin
       .from("personnel")
       .insert({
@@ -590,6 +592,19 @@ export async function POST(request: NextRequest) {
     }
 
     // ---- 7a. Réponse : identifiants à communiquer ----
+    // AUDIT — Journalise la création du personnel (audit_log, migration 027).
+    // Best-effort : ne bloque jamais la réponse (logAudit ne throw pas).
+    await logAudit({
+      pressing_id: pressingId,
+      user_id: userData.user.id,
+      action: "create_personnel",
+      entity_type: "personnel",
+      entity_id: newEmploye.id,
+      before_state: null,
+      after_state: newEmploye as unknown as Record<string, unknown>,
+      req: request,
+    });
+
     return NextResponse.json({
       success: true,
       data: newEmploye,
@@ -720,6 +735,19 @@ export async function POST(request: NextRequest) {
   }
 
   // ---- 7b. Réponse : confirmation d'envoi ----
+  // AUDIT — Journalise la création du personnel (audit_log, migration 027).
+  // Best-effort : ne bloque jamais la réponse (logAudit ne throw pas).
+  await logAudit({
+    pressing_id: pressingId,
+    user_id: userData.user.id,
+    action: "create_personnel",
+    entity_type: "personnel",
+    entity_id: newEmploye.id,
+    before_state: null,
+    after_state: newEmploye as unknown as Record<string, unknown>,
+    req: request,
+  });
+
   return NextResponse.json({
     success: true,
     data: newEmploye,

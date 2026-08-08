@@ -53,6 +53,7 @@ import {
   hasRole,
   isPersonnelActive,
 } from "@/lib/auth/roles";
+import { logAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -372,6 +373,30 @@ export async function POST(request: NextRequest) {
       {
         success: false,
         error: "date_pret_prevue doit être une date ISO valide",
+      },
+      { status: 400 }
+    );
+  }
+
+  // AUDIT #19 + migration 031 — Validation notes (≤ 2000 caractères).
+  // Sans ce check, un `notes` > 2000 chars déclencherait une 23514
+  // (check_violation) sur le CHECK `check_notes_max_length` (migration 031)
+  // → 500 générique côté client. On renvoie un 400 propre à la place.
+  //
+  // NB : le schéma Zod canonique `createCommandeSchema` (P4-C) possède
+  // `notes: z.string().max(2000).optional()`. On extrait uniquement cette
+  // contrainte ici pour ne pas perturber les validations métier existantes
+  // (client_id, articles, services, etc.) qui renvoient des messages
+  // spécifiques et plus actionnables pour l'utilisateur.
+  if (
+    typeof body.notes === "string" &&
+    body.notes.trim().length > 2000
+  ) {
+    return NextResponse.json(
+      {
+        success: false,
+        code: "NOTES_TOO_LONG",
+        error: "Les notes ne peuvent pas dépasser 2000 caractères.",
       },
       { status: 400 }
     );
@@ -1074,6 +1099,49 @@ export async function POST(request: NextRequest) {
   // #8 — `date_pret_prevue` et `date_retrait` sont renvoyées pour que le
   // client puisse les afficher immédiatement (sans refetch) sur le ticket
   // et l'écran de confirmation.
+
+  // ---------- 12b. AUDIT-B-13 — Journalisation create_commande ----------
+  // Best-effort : ne bloque jamais le flux métier. logAudit catch toutes
+  // les erreurs en interne (console.error) et retourne false en cas d'échec.
+  //
+  // Récupère l'auth.users.id pour audit_log.user_id (FK → auth.users(id)).
+  // `getCurrentPersonnel` ne l'expose pas dans AuthPersonnel (seulement
+  // personnel.id), on le récupère ici via getUser(). On le fait EN FIN de
+  // handler pour éviter l'appel réseau sur les chemins d'erreur (400/404/500).
+  let authUserId: string | null = null;
+  try {
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser();
+    authUserId = authUser?.id ?? null;
+  } catch {
+    // Ne doit pas arriver (déjà authentifié plus haut), mais défensif.
+    authUserId = null;
+  }
+
+  await logAudit({
+    pressing_id: pressingId,
+    user_id: authUserId,
+    action: "create_commande",
+    entity_type: "commande",
+    entity_id: commandeId,
+    after_state: {
+      id: commandeId,
+      pressing_id: pressingId,
+      client_id: clientId,
+      numero_commande: numeroCommandeFinal,
+      statut: "recu",
+      statut_paiement: statutPaiement,
+      montant_total: montantTotal,
+      montant_paye: montantPaye,
+      priorite: priorite,
+      date_pret_prevue: datePretPrevue,
+      date_retrait: dateRetraitIso,
+      notes: notes,
+    },
+    req: request,
+  });
+
   return NextResponse.json(
     {
       success: true,

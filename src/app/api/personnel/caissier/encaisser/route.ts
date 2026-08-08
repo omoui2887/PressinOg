@@ -46,6 +46,7 @@ import {
   paiementFermeCommande,
   STATUT_COMMANDE_LABELS,
 } from "@/lib/workflow/commande-statut";
+import { logAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -121,6 +122,10 @@ function normaliserModesAutorises(raw: unknown): string[] {
  */
 type CaissierRow = {
   id: string;
+  // user_id = UUID de l'auth.users du caissier. Récupéré pour le log audit
+  // (table audit_log.user_id → auth.users.id). Toujours présent en base
+  // (colonne NOT NULL dans personnel).
+  user_id: string;
   pressing_id: string;
   role: string;
   actif: boolean | null;
@@ -149,7 +154,7 @@ async function getConnectedCaissier() {
   const primary = await supabase
     .from("personnel")
     .select(
-      "id, pressing_id, role, actif, statut_compte, modes_paiement_autorises"
+      "id, user_id, pressing_id, role, actif, statut_compte, modes_paiement_autorises"
     )
     .eq("user_id", userData.user.id)
     .maybeSingle();
@@ -165,7 +170,7 @@ async function getConnectedCaissier() {
     );
     const fallback = await supabase
       .from("personnel")
-      .select("id, pressing_id, role, actif, statut_compte")
+      .select("id, user_id, pressing_id, role, actif, statut_compte")
       .eq("user_id", userData.user.id)
       .maybeSingle();
     me = (fallback.data as CaissierRow | null) ?? null;
@@ -283,6 +288,22 @@ export async function POST(request: NextRequest) {
     typeof body.notes === "string" && body.notes.trim()
       ? body.notes.trim()
       : null;
+  // FIX BUG-A1 (Task FIX-ENCAISSER-SUPERADMIN) : la migration 031 a posé un
+  // CHECK `check_notes_max_length` sur paiements.notes (≤ 2000 caractères).
+  // Sans cette garde applicative, un notes > 2000 chars déclenche l'erreur
+  // PostgreSQL 23514 au INSERT, renvoyée jusqu'ici comme un générique
+  // « paiement invalide ». On valide en amont pour renvoyer un 400 explicite.
+  if (notes && notes.length > 2000) {
+    return NextResponse.json(
+      {
+        success: false,
+        code: "NOTES_TOO_LONG",
+        error:
+          "Les notes de paiement ne peuvent pas dépasser 2000 caractères.",
+      },
+      { status: 400 }
+    );
+  }
 
   // --- Fetch de la commande (RLS isole par pressing_id) ---
   const { data: commande, error: cmdErr } = await supabase
@@ -405,12 +426,20 @@ export async function POST(request: NextRequest) {
 
   if (insertErr || !paiement) {
     console.error("[api/personnel/caissier/encaisser] Erreur INSERT paiement:", insertErr);
-    // 23514 = CHECK violation (montant > 0, date_paiement ≤ NOW()+5min)
+    // 23514 = CHECK violation. Plusieurs CHECK peuvent déclencher ce code :
+    //   - montant > 0  (paiements_montant_check)
+    //   - date_paiement ≤ NOW()+5min  (paiements_date_paiement_check)
+    //   - notes IS NULL OR length(notes) ≤ 2000  (check_notes_max_length, migration 031)
+    // FIX BUG-A2 : on mentionne explicitement « notes trop longues » car la
+    // garde amont (notes.length > 2000) ne couvre que le cas nominal ; un
+    // appelant bypassant la validation JS (curl/Postman) tomberait ici.
     if (insertErr && insertErr.code === "23514") {
       return NextResponse.json(
         {
           success: false,
-          error: "Le paiement ne respecte pas les contraintes (montant ou date).",
+          code: "PAIEMENT_INVALIDE",
+          error:
+            "Le paiement ne respecte pas les contraintes (montant, date ou notes trop longues).",
         },
         { status: 400 }
       );
@@ -420,6 +449,30 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+
+  // --- Audit log (AUDIT-B-13 / Task FIX-ENCAISSER-SUPERADMIN) ---
+  // Best-effort : ne JAMAIS bloquer la réponse si l'audit échoue (la fonction
+  // logAudit interne gère elle-même son try/catch et retourne false en cas
+  // d'erreur, sans throw). On log l'événement `encaisser_paiement` avec le
+  // snapshot après-état (before_state = null car c'est une création).
+  await logAudit({
+    pressing_id: me.pressing_id,
+    user_id: me.user_id,
+    action: "encaisser_paiement",
+    entity_type: "paiement",
+    entity_id: paiement.id,
+    before_state: null,
+    after_state: {
+      paiement_id: paiement.id,
+      commande_id: paiement.commande_id,
+      montant: paiement.montant,
+      methode: paiement.methode,
+      notes,
+      date_paiement: paiement.date_paiement,
+      est_acompte: estAcompte,
+    },
+    req: request,
+  });
 
   // --- Re-fetch de la commande pour retourner le nouveau solde ---
   // (le trigger a déjà mis à jour montant_paye + statut_paiement)
