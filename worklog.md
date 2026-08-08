@@ -1883,3 +1883,30 @@ Stage Summary:
 - ✅ Workflow guard : 23514 catché → 409 INVALID_TRANSITION ; 22P02 catché → 501 ENUM_VALUE_MISSING.
 - ⚠️ 1 SQL à exécuter par l'utilisateur : `supabase/migrations/024b_commandes_missing_columns_fix.sql` (ajoute 'annule' à l'enum + colonne idempotence_key). Sans cela, l'annulation de commande retourne 501 au lieu de fonctionner.
 - Code rendu résilient : pas de 500 opaque même si migrations partiellement appliquées.
+
+---
+Task ID: GITHUB-VERCEL-PUSH
+Agent: main
+Task: Pousser le projet sur GitHub (nouveau token) et Vercel
+
+Work Log:
+- Vérifié .env.local déjà restauré avec credentials Supabase (URL + anon + service_role + PAT)
+- Vérifié .env* dans .gitignore (secrets jamais commités) ✅
+- Git status: 12 commits non poussés en attente (HEAD local: e05c2b6)
+- Remote existant: https://github.com/omoui2887/PressinOg.git
+- Push GitHub avec nouveau token ghp_xspT... via URL tokenized (x-access-token method)
+- Résultat push: 4ea5354..e05c2b6 main -> main ✅ (12 commits poussés)
+- Vérification via GitHub API: commit e05c2b6b513e9f3ea6c0fa58d4d1a3c8a37b143f confirmé sur origin/main
+- Découvert que Vercel EST déjà lié au repo GitHub (intégration auto-déploy activée)
+- Le push a déclenché automatiquement un déploiement Vercel Production (id: 5808120226)
+- Statut déploiement Vercel: "success" / "Deployment has completed" ✅
+- URL preview Vercel: https://pressin-r0h890r29-cloudsaas12-8720s-projects.vercel.app (redirige vers login Vercel = Vercel Authentication activé sur previews)
+- Dev server local: tourne sur port 3000, env vars Supabase chargées (pas d'erreur "env vars manquantes" dans dev.log)
+
+Stage Summary:
+- GitHub: 12 commits poussés avec succès sur omoui2887/PressinOg (main → e05c2b6)
+- Vercel: déploiement Production auto-déclenché par le push GitHub, build réussi (status: success)
+- Le projet Vercel était déjà connecté au repo GitHub — aucun token Vercel nécessaire
+- Les variables d'environnement Supabase sont déjà configurées côté Vercel (déploiements précédents réussis)
+- Note: URL preview protégée par Vercel Authentication (login requis) — l'utilisateur peut désactiver cela dans Settings > Deployment Protection s'il veut un accès public
+- Note runtime: erreur enum "annule" détectée dans dev.log (PATCH /api/admin/commandes → 500) — à corriger dans une tâche ultérieure (valeur enum DB vs code app mismatch)
