@@ -1983,3 +1983,46 @@ Stage Summary:
 - 3 vues corrigées : desktop table + mobile cards + grid (déjà OK, non touchée)
 - Le gérant voit maintenant le reste à payer (impayé) directement dans la liste des commandes
 - Mise en évidence visuelle : rouge (text-danger) sur desktop, fond rouge clair (bg-danger/10) sur mobile
+
+---
+Task ID: FIX-ENCAISSE-ADMIN
+Agent: main
+Task: Permettre de revenir sur la facture d'un client pour régler le paiement (solde impayé)
+
+Work Log:
+- Investigué le flux d'encaissement actuel :
+  - Endpoint POST /api/personnel/caissier/encaisser existe (trigger DB recalcul montant_paye)
+  - MAIS restreint à role="caissier" uniquement (ligne 207: me.role !== "caissier")
+  - Page /personnel/caissier/encaisser existe pour le caissier MAIS pas accessible depuis la page détail
+  - Page détail /admin/commandes/[id] affiche finances + paiements MAIS pas de bouton "Encaisser"
+- Identifié 2 gaps :
+  1. Manager/réceptionniste ne peuvent PAS encaisser (endpoint caissier-only)
+  2. Aucun bouton d'encaissement sur la page détail commande
+
+Fixes appliqués :
+1. src/lib/auth/roles.ts : ajout constante CAN_ENCAISSER_PAIEMENT = [manager, receptionniste, caissier]
+2. src/app/api/personnel/caissier/encaisser/route.ts :
+   - Remplacé check "role !== caissier" par CAN_ENCAISSER_PAIEMENT.includes(role)
+   - Importé PersonnelRole type + CAN_ENCAISSER_PAIEMENT
+   - Mis à jour docstring (sécurité)
+3. src/components/ogpressing/admin/commandes/encaisser-paiement-dialog.tsx (NEW) :
+   - Dialog réutilisable avec formulaire (montant pré-rempli reste, méthode, référence, notes)
+   - Validation montant (1 ≤ montant ≤ reste+1) + notes ≤ 2000 chars
+   - POST /api/personnel/caissier/encaisser + toast succès/erreur
+   - Callback onSuccess (parent appelle router.refresh())
+4. src/components/ogpressing/admin/commandes/commande-detail.tsx :
+   - Ajout import useRouter + EncaisserPaiementDialog
+   - Ajout state encaisserOpen
+   - Ajout bouton "Encaisser le solde" (visible si resteAPayer > 0) dans header actions
+   - Ajout dialog EncaisserPaiementDialog à la fin du JSX (onSuccess = router.refresh)
+
+Fix initial bug : import path "./commande-wizard/remise-labels" était incorrect → corrigé en "../commande-wizard/remise-labels" (commande-wizard est sous admin/, pas sous commandes/)
+
+Stage Summary:
+- Lint : 0 erreur ✓
+- Compilation : OK (module not found résolu)
+- Le manager peut maintenant régler le solde d'une commande partiellement payée depuis la page détail
+- Bouton "Encaisser le solde" visible seulement quand resteAPayer > 0 (disparaît auto après soldage grâce à router.refresh())
+- Dialog pré-remplit le montant avec le reste à payer (modifiable pour acompte supplémentaire)
+- Après encaissement : toast + refresh auto des données (montant_paye, statut_paiement, liste paiements)
+- ⚠️ Cache PostgREST actuellement stale côté Supabase (table pressings introuvable) — empêche le test live end-to-end. L'utilisateur doit appliquer la migration 033 OU attendre le refresh auto (~5-10 min).

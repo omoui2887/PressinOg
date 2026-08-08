@@ -100,6 +100,19 @@ export const CAN_CHANGE_PRIORITE: PersonnelRole[] = [
   "receptionniste",
 ];
 
+/** Rôles autorisés à encaisser un paiement (acompte ou solde final) sur
+ *  une commande. FIX-ENCAISSE-ADMIN : avant ce fix, seul le caissier pouvait
+ *  encaisser (endpoint /api/personnel/caissier/encaisser restreint à
+ *  role="caissier"). Le manager et le réceptionniste peuvent désormais
+ *  encaisser aussi — utile pour régler le solde d'une commande partiellement
+ *  payée directement depuis la page détail (sans passer par l'interface
+ *  caissier dédiée). Le comptable reste exclu (rôle consultatif). */
+export const CAN_ENCAISSER_PAIEMENT: PersonnelRole[] = [
+  "manager",
+  "receptionniste",
+  "caissier",
+];
+
 /** Rôles autorisés à gérer le personnel (manager uniquement). */
 export const CAN_MANAGE_PERSONNEL: PersonnelRole[] = ["manager"];
 

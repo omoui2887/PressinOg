@@ -12,15 +12,20 @@
  *
  * 🔒 SÉCURITÉ :
  *   - Auth Supabase (JWT) obligatoire
- *   - Le personnel connecté doit avoir role="caissier", actif=true,
- *     statut_compte="actif"
- *   - RLS isole automatiquement par pressing_id : le caissier ne peut
+ *   - Le personnel connecté doit avoir un rôle ∈ CAN_ENCAISSER_PAIEMENT
+ *     (manager / réceptionniste / caissier), actif=true, statut_compte="actif".
+ *     FIX-ENCAISSE-ADMIN : avant, seul role="caissier" était accepté. Le
+ *     manager et le réceptionniste peuvent désormais encaisser aussi pour
+ *     régler le solde des commandes partiellement payées depuis la page détail.
+ *   - RLS isole automatiquement par pressing_id : l'opérateur ne peut
  *     encaisser que les commandes de son propre pressing
  *   - RESTRICTION MODES PAIEMENT (AUDIT 9.11 — fix migration 019) :
  *     la méthode de paiement doit être (a) un enum valide (METHODES_VALID)
  *     ET (b) présent dans `me.modes_paiement_autorises` (JSONB array
  *     propre à chaque caissier). Un caissier peut ainsi être restreint
- *     à 'especes' + 'mobile_money' uniquement, par exemple.
+ *     à 'especes' + 'mobile_money' uniquement, par exemple. Pour les
+ *     manager/réceptionniste (qui n'ont pas de modes_paiement_autorises
+ *     configuré), le fallback MODES_AUTORISES_DEFAUT autorise tous les modes.
  *
  * ⚙️ LOGIQUE :
  *   1. Fetch la commande par id (RLS filtre par pressing)
@@ -39,6 +44,10 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import {
+  CAN_ENCAISSER_PAIEMENT,
+  type PersonnelRole,
+} from "@/lib/auth/roles";
 import type { MethodePaiement } from "@/lib/types/database.types";
 import {
   peutEncaisserAcompte,
@@ -204,10 +213,19 @@ async function getConnectedCaissier() {
       ),
     };
   }
-  if (me.role !== "caissier") {
+  // FIX-ENCAISSE-ADMIN : avant, seul role="caissier" pouvait encaisser. On
+  // accepte désormais tous les rôles listés dans CAN_ENCAISSER_PAIEMENT
+  // (manager, réceptionniste, caissier) pour permettre au gérant de régler
+  // le solde d'une commande partiellement payée directement depuis la page
+  // détail (sans passer par l'interface caissier dédiée).
+  if (!CAN_ENCAISSER_PAIEMENT.includes(me.role as PersonnelRole)) {
     return {
       error: NextResponse.json(
-        { success: false, error: "Accès refusé — rôle caissier requis" },
+        {
+          success: false,
+          error:
+            "Accès refusé — rôle insuffisant pour encaisser un paiement",
+        },
         { status: 403 }
       ),
     };
