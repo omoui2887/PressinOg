@@ -34,6 +34,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { isValidCIPhone, normalizeCIPhone } from "@/lib/validations/phone";
 
 export const dynamic = "force-dynamic";
 
@@ -322,6 +323,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // AUDIT-B-03 — Validation du téléphone ivoirien (centralisée dans
+  // `isValidCIPhone`). Avant ce fix, seul le non-vide était vérifié, ce qui
+  // permettait de stocker des numéros mal formés (ex : "abc", "123").
+  if (!isValidCIPhone(telephone)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          "Le téléphone doit être un numéro ivoirien valide (ex : 07 00 00 00 00 ou +225 07 00 00 00 00).",
+      },
+      { status: 400 }
+    );
+  }
+
+  // AUDIT-B-03 — Normalisation vers +225XXXXXXXXXX pour cohérence avec les
+  // autres routes (activation, inscription, clients).
+  const telephoneNorm = normalizeCIPhone(telephone);
+
   if (!ROLES_VALID_SET.has(role)) {
     return NextResponse.json(
       { success: false, error: "Rôle invalide." },
@@ -345,7 +364,7 @@ export async function POST(request: NextRequest) {
   } else {
     // creation_directe : si pas d'email, on génère un email technique
     if (!email || !email.includes("@")) {
-      email = phoneToEmail(telephone);
+      email = phoneToEmail(telephoneNorm);
     }
   }
 
@@ -356,7 +375,7 @@ export async function POST(request: NextRequest) {
     .from("personnel")
     .select("id, email, telephone")
     .eq("pressing_id", pressingId)
-    .or(`email.eq.${email},telephone.eq.${telephone}`)
+    .or(`email.eq.${email},telephone.eq.${telephoneNorm}`)
     .limit(1)
     .maybeSingle();
 
@@ -387,7 +406,7 @@ export async function POST(request: NextRequest) {
       email_confirm: true, // pas besoin de vérification email pour création directe
       user_metadata: {
         nom_complet: nomComplet,
-        telephone,
+        telephone: telephoneNorm,
         role,
       },
     });
@@ -407,6 +426,10 @@ export async function POST(request: NextRequest) {
     const newUserId = createdUser.user.id;
 
     // ---- 6a. INSERT dans personnel (service_role — contourne RLS) ----
+    // #12 — date_activation est un timestamp serveur (UTC). La colonne n'a
+    // pas de DEFAULT NOW() (002_tables.sql:189 — nullable), on DOIT donc
+    // fournir une valeur explicite. On utilise new Date() côté serveur
+    // (jamais trusté du client).
     const { data: newEmploye, error: insertErr } = await admin
       .from("personnel")
       .insert({
@@ -414,7 +437,7 @@ export async function POST(request: NextRequest) {
         user_id: newUserId,
         nom_complet: nomComplet,
         email,
-        telephone,
+        telephone: telephoneNorm,
         role,
         methode_creation: "creation_directe",
         statut_compte: "actif",
@@ -448,7 +471,7 @@ export async function POST(request: NextRequest) {
       methode: "creation_directe",
       credentials: {
         email,
-        telephone,
+        telephone: telephoneNorm,
         password,
         nom_complet: nomComplet,
       },
@@ -528,6 +551,9 @@ export async function POST(request: NextRequest) {
   }
 
   // ---- 6b. INSERT dans personnel ----
+  // #12 — date_invitation est un timestamp serveur (UTC). La colonne n'a
+  // pas de DEFAULT NOW() (002_tables.sql:188 — nullable), on DOIT donc
+  // fournir une valeur explicite. On utilise new Date() côté serveur.
   const { data: newEmploye, error: insertErr } = await admin
     .from("personnel")
     .insert({
@@ -535,7 +561,7 @@ export async function POST(request: NextRequest) {
       user_id: newUserId,
       nom_complet: nomComplet,
       email,
-      telephone,
+      telephone: telephoneNorm,
       role,
       methode_creation: "lien_invitation",
       statut_compte: "invite_en_attente",

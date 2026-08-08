@@ -30,7 +30,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { ViewMode } from "@/hooks/use-view-mode";
 
-interface ViewToggleProps {
+export interface ViewToggleProps {
   value: ViewMode;
   onChange: (mode: ViewMode) => void;
   size?: "sm" | "default";

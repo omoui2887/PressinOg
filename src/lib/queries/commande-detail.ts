@@ -19,11 +19,52 @@
  * requête « minimale » qui ne sélectionne que les colonnes garanties
  * d'exister (description + champs de base). Le nom de l'article est
  * alors dérivé du champ `description` de commande_lignes.
+ *
+ * 🔧 ROBUSTESSE Phase-1 — colonne `priorite` (migration 024) :
+ * La colonne `priorite` (TEXT 'normal' | 'express') a été ajoutée par
+ * la migration 024_commande_annule_express.sql. Si cette migration n'est
+ * pas encore appliquée sur la base, toutes les requêtes l'incluant
+ * échouent. On ajoute donc une 4e tentative (COMMANDE_BASE_SANS_PRIORITE)
+ * qui exclut cette colonne pour garantir le fonctionnement même avant
+ * l'application de la migration.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-// Colonnes communes de la table `commandes` (garanties d'exister)
+// Colonnes communes de la table `commandes` (garanties d'exister).
+// Inclut `priorite` (migration 024).
 const COMMANDE_BASE = `
+  id,
+  pressing_id,
+  numero_commande,
+  statut,
+  statut_paiement,
+  montant_total,
+  montant_paye,
+  remise_type,
+  remise_valeur,
+  montant_total_avant_remise,
+  montant_remise,
+  date_reception,
+  date_pret_prevue,
+  date_pret_reel,
+  date_livraison,
+  date_retrait,
+  livraison,
+  adresse_livraison,
+  frais_livraison,
+  priorite,
+  notes,
+  cree_par,
+  created_at,
+  updated_at,
+  client:clients(id, nom_complet, telephone, email, adresse, points_fidelite),
+  cree_par_personnel:personnel!commandes_cree_par_fkey(id, nom_complet),
+  paiements:paiements(id, montant, methode, reference, date_paiement, est_acompte, enregistre_par, notes, created_at)
+`;
+
+// Variante sans la colonne `priorite` (migration 024 non appliquée).
+// Utilisée uniquement par la 4e tentative de fallback.
+const COMMANDE_BASE_SANS_PRIORITE = `
   id,
   pressing_id,
   numero_commande,
@@ -162,13 +203,44 @@ export async function fetchCommandeDetail(
     .eq("id", commandeId)
     .maybeSingle();
 
-  if (errUltra) {
-    console.error(
-      "[fetchCommandeDetail] Requête ultra-minimale aussi échouée:",
-      errUltra
-    );
-    return { commande: null, error: errUltra.message ?? String(errUltra) };
+  if (!errUltra && commandeUltra) {
+    return { commande: commandeUltra, error: null };
   }
 
-  return { commande: commandeUltra, error: null };
+  if (!errUltra && !commandeUltra) {
+    // La commande n'existe pas ou RLS la masque.
+    return { commande: null, error: null };
+  }
+
+  // --- Tentative 4 : requête ultra-minimale SANS priorite ---
+  // La tentative 3 a échoué — probablement parce que la migration 024
+  // (colonne `priorite`) n'a pas encore été appliquée sur cette base.
+  // On retente en excluant `priorite` du SELECT.
+  console.warn(
+    "[fetchCommandeDetail] Requête ultra-minimale échouée, fallback sans priorite:",
+    errUltra?.message ?? errUltra
+  );
+
+  const { data: cmdNoPriorite, error: errNoPriorite } = await supabase
+    .from("commandes")
+    .select(
+      `${COMMANDE_BASE_SANS_PRIORITE},
+      ${LIGNES_MINIMAL},
+      ${ARTICLES_ULTRA_MINIMAL}`
+    )
+    .eq("id", commandeId)
+    .maybeSingle();
+
+  if (errNoPriorite) {
+    console.error(
+      "[fetchCommandeDetail] Requête sans priorite aussi échouée:",
+      errNoPriorite
+    );
+    return {
+      commande: null,
+      error: errNoPriorite.message ?? String(errNoPriorite),
+    };
+  }
+
+  return { commande: cmdNoPriorite, error: null };
 }

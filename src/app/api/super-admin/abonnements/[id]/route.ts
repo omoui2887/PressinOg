@@ -1,7 +1,7 @@
 /**
  * OgPressing — API /api/super-admin/abonnements/[id] (PATCH)
  * -----------------------------------------------------------
- * Met à jour un abonnement : changement de plan OU suspension.
+ * Met à jour un abonnement : changement de plan, suspension OU réactivation.
  *
  * Actions supportées (via body.action) :
  *   - "changer_plan" : body.plan = 'starter' | 'pro' | 'business'
@@ -9,6 +9,10 @@
  *                        (cf. PLAN_PRICING ci-dessous, valeurs réelles de la
  *                        landing page pricing.tsx).
  *   - "suspendre"    : → met à jour abonnements.statut = 'suspendu'
+ *   - "reactiver"    : → met à jour abonnements.statut = 'actif'
+ *                      + AUDIT-B-09 : réactive aussi pressing.statut='actif'
+ *                        si le pressing était suspendu/essai (sans toucher au
+ *                        personnel — voir renouveler/route.ts pour le détail).
  *
  * 🔒 SÉCURITÉ : getSupabaseServer() + RLS super_admin_full_access sur
  *    abonnements. Aucune transaction bancaire.
@@ -86,12 +90,16 @@ export async function PATCH(
 
   const action = typeof body.action === "string" ? body.action : "";
 
-  if (action !== "changer_plan" && action !== "suspendre") {
+  if (
+    action !== "changer_plan" &&
+    action !== "suspendre" &&
+    action !== "reactiver"
+  ) {
     return NextResponse.json(
       {
         success: false,
         error:
-          "Action invalide. Valeurs attendues : 'changer_plan' ou 'suspendre'.",
+          "Action invalide. Valeurs attendues : 'changer_plan', 'suspendre' ou 'reactiver'.",
       },
       { status: 400 }
     );
@@ -165,6 +173,91 @@ export async function PATCH(
         { success: false, error: "Erreur lors du changement de plan" },
         { status: 500 }
       );
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: updated,
+      action,
+    });
+  }
+
+  // ---- action === "reactiver" — AUDIT-B-09 ----
+  // Réactive un abonnement suspendu (statut='actif') ET réactive le pressing
+  // associé si son statut était 'suspendu' ou 'essai'. Le personnel désactivé
+  // n'est PAS réactivé automatiquement (le manager doit le faire manuellement —
+  // cf. commentaire dans renouveler/route.ts étape 4).
+  //
+  // Cette action est distincte de "renouveler" : elle ne crée PAS de paiement
+  // ni ne modifie date_fin. Elle sert à lever manuellement une suspension sans
+  // nouvelle échéance (ex : erreur de saisie, retard régularisé hors SaaS).
+  if (action === "reactiver") {
+    if (abonnement.statut === "actif") {
+      return NextResponse.json(
+        { success: false, error: "Cet abonnement est déjà actif" },
+        { status: 400 }
+      );
+    }
+
+    const { data: updated, error: updateErr } = await supabase
+      .from("abonnements")
+      .update({
+        statut: "actif" as const,
+        enregistre_par: superAdmin.id,
+      })
+      .eq("id", abonnementId)
+      .select(
+        "id, plan, statut, date_debut, date_fin, montant_mensuel, mode_paiement_derniere_echeance, date_derniere_echeance, reference_paiement, justificatif_url"
+      )
+      .single();
+
+    if (updateErr) {
+      console.error(
+        "[api/super-admin/abonnements/[id]] Erreur UPDATE (reactiver):",
+        updateErr
+      );
+      return NextResponse.json(
+        { success: false, error: "Erreur lors de la réactivation" },
+        { status: 500 }
+      );
+    }
+
+    // AUDIT-B-09 — Réactivation du pressing (même logique que renouveler/route.ts).
+    // On ne réactive QUE si pressing.statut est 'suspendu' ou 'essai' (pas 'actif').
+    // Le personnel désactivé n'est PAS réactivé automatiquement.
+    const pressingIdReact = abonnement.pressing_id;
+    const { data: pressingRow, error: pressingSelErr } = await supabase
+      .from("pressing")
+      .select("id, statut")
+      .eq("id", pressingIdReact)
+      .maybeSingle();
+
+    if (pressingSelErr) {
+      console.error(
+        "[api/super-admin/abonnements/[id]] Erreur SELECT pressing (réactivation):",
+        pressingSelErr
+      );
+      // Non bloquant : l'abonnement est réactivé, on log l'erreur.
+    } else if (
+      pressingRow &&
+      (pressingRow.statut === "suspendu" || pressingRow.statut === "essai")
+    ) {
+      const oldStatut = pressingRow.statut;
+      const { error: pressingUpdErr } = await supabase
+        .from("pressing")
+        .update({ statut: "actif" as const })
+        .eq("id", pressingIdReact)
+        .in("statut", ["suspendu", "essai"]);
+      if (pressingUpdErr) {
+        console.error(
+          "[api/super-admin/abonnements/[id]] Erreur UPDATE pressing (réactivation):",
+          pressingUpdErr
+        );
+      } else {
+        console.log(
+          `[reactiver] Pressing ${pressingIdReact} reactivated from ${oldStatut} to actif`
+        );
+      }
     }
 
     return NextResponse.json({

@@ -661,3 +661,329 @@ Stage Summary:
 - L'utilisateur ne verra plus l'erreur "service_id est requis" : les services sont synchronisés avant le chargement du catalogue, garantissant que chaque article a un service_id valide (UUID réel)
 - Si un cas limite persiste (ex: service supprimé entre-temps), le toast indique clairement quels articles sont affectés et propose de recharger la page
 - Lint propre, dev server prêt. L'utilisateur peut vérifier via le Preview Panel.
+
+---
+Task ID: P1-C
+Agent: rapports-fixer
+Task: Fix 3 problèmes Phase-2 sur le module rapports + TypeScript (daily revenue, period discounts, tsc)
+
+Work Log:
+- Lu le worklog précédent (~300 dernières lignes) pour reprendre le contexte : tarifs par article, POS, sync-services, etc. — module rapports non touché jusqu'ici.
+- Lu les 2 fichiers cibles : `src/app/api/admin/rapports/journalier/route.ts` (190 lignes, export .xlsx journalier) et `src/app/api/admin/rapports/route.ts` (480 lignes, agrégats /admin/rapports).
+- Vérifié le schéma DB : `commandes.date_reception` existe (NOT NULL TIMESTAMPTZ DEFAULT NOW(), 002_tables.sql:254), positionnée à `nowIso` dans le POST /api/admin/commandes. Enum `statut_commande` a 8 valeurs (recu/en_traitement/lave/repasse/pret/en_livraison/livre/retire) — la valeur `annule` sera ajoutée par un autre agent.
+- Lu `rapports-helpers.tsx` (482 lignes) : types `CommandeRow`, `RemiseAppliquee`, `ClientImpaye`, `RapportsDataResponse`, etc. + `computePeriode()` (UTC, 4 modes : aujourdhui/semaine/mois/perso).
+- Lancé `bunx tsc --noEmit` : 467 lignes d'erreurs au total, 67 dans `src/`. Categorisé : 3 erreurs dans rapports/route.ts (TS2345 type littéral + 2 × TS2352 cast relations supabase), 1 erreur shared/index.ts (ViewToggleProps non exporté), et ~60 erreurs react-hook-form dans plusieurs dialogues (Resolver/Control/SubmitHandler — pattern identique, hors scope).
+
+Fix 1 — Daily revenue calculation bug (rapports/journalier + rapports/route.ts) :
+- `src/app/api/admin/rapports/journalier/route.ts` : changé le filtre du SELECT commandes de `.gte("created_at", ...).lte("created_at", ...)` vers `.gte("date_reception", ...).lte("date_reception", ...)`. Le SELECT garde `created_at` (utilisé pour la colonne "heure" HH:mm — l'heure d'insertion) et l'ORDER BY reste sur `created_at` (ordre chronologique de saisie). Ajout d'un commentaire explicatif documentant pourquoi `date_reception` est la bonne date métier.
+- `src/app/api/admin/rapports/route.ts` :
+  • Ajouté le champ `statut: string | null` à l'interface `CommandeRow` + au SELECT SQL.
+  • Ajouté `const activeCommandes = commandesList.filter((c) => c.statut !== "annule");` (forward-compatible : no-op tant que `annule` n'existe pas dans l'enum).
+  • Utilisé `activeCommandes` pour : `ca_total`, `nombre_commandes`, `panier_moyen`, `total_remises`, `buildCaParJour()`, et la liste `commandeIds` qui alimente `buildCaParTypeService()`.
+  • Ajout d'un bloc commentaire explicatif sur l'exclusion des annulées.
+
+Fix 2 — AUDIT-C-01 Period discounts filter (rapports/route.ts) :
+- Section "7. Remises appliquées sur la période" : `commandesAvecRemise` est maintenant dérivé de `activeCommandes` (au lieu de `commandesList`), ce qui exclut les commandes annulées à la fois de la liste affichée ET du total `total_remises` (StatCard).
+- Le second fetch (pour le nom du client) garde `.in("id", cmdIdsAvecRemise)` — les IDs viennent déjà de `activeCommandes`, donc les annulées sont exclues à la source.
+- Ajout d'un bloc commentaire AUDIT-C-01 documentant les 2 invariants (bornes de période + exclusion annulées).
+- Bonus : appliqué le même filtre `annule` à la section "6. Clients avec impayés" via `.neq("statut", "annule")` sur la requête SQL (une commande annulée ne doit pas être comptée comme impayé). Forward-compatible : si `annule` n'existe pas dans l'enum, `.neq` ne filtre rien.
+
+Fix 3 — AUDIT-C-04 TypeScript compilation (rapports + quick wins) :
+- `src/app/api/admin/rapports/route.ts` — 3 erreurs corrigées :
+  • Ligne 210 : `const typesPresents = [...TYPES_SERVICE_ORDONNES].filter(...)` → typé explicitement `string[]` (sinon TS infère un tableau de littéraux et refuse le `.push(t: string)`).
+  • Ligne 349 : `(lignes || []) as LigneRow[]` → `(lignes || []) as unknown as LigneRow[]` (supabase-js infère `service` comme un tableau pour la relation, PostgREST renvoie un objet 1-1).
+  • Ligne 443 : `(cmdAvecClient || []) as CommandeAvecClientRow[]` → `as unknown as CommandeAvecClientRow[]` (même raison pour `client`).
+- `src/components/shared/view-toggle.tsx` : changé `interface ViewToggleProps` → `export interface ViewToggleProps` pour résoudre l'erreur `TS2724` dans `src/components/shared/index.ts` (barrel qui re-exportait `type ViewToggleProps`).
+- Erreurs non touchées (hors scope explicite) :
+  • `src/app/api/admin/commandes/route.ts` — autre agent (P1-A/B) travaille dessus, NEW erreurs sont apparues pendant ma session (lignes 853, 885, 886).
+  • `src/lib/supabase/middleware.ts` — autre agent, NEW erreurs (lignes 356, 384, 703) — type `RoleInfo` modifié, trial_expired/abonnement_suspended attendus.
+  • `src/app/api/public/activation/route.ts` — autre agent, ligne d'erreur a changé (328 → 355).
+  • `src/app/api/personnel/caissier/encaisser/route.ts` — manque `modes_paiement_autorises` dans le type (1 erreur).
+  • `src/app/api/super-admin/abonnements/route.ts` — overload supabase (1 erreur).
+  • `src/components/ogpressing/admin/pressing/infos-generales-tab.tsx`, `services/add|edit-service-dialog.tsx`, `stock/add|edit-product-dialog.tsx`, `stock/mouvement-dialog.tsx`, `landing/inscription-form.tsx`, `super-admin/catalogue/catalogue-form.tsx` : ~60 erreurs react-hook-form (pattern Resolver/Control/SubmitHandler) — refactor large, out of scope.
+
+Vérifications :
+- `bun run lint` : ✅ exit 0, 0 erreur, 0 warning.
+- `bunx tsc --noEmit` : 467 → 460 lignes d'erreurs. Dans les fichiers que j'ai touchés : 0 erreur (3 dans rapports/route.ts + 1 dans shared/index.ts = 4 erreurs résolues). Les erreurs restantes sont dans des fichiers hors scope (autre agent en cours ou refactors RHF importants).
+- `tail -30 dev.log` : trafic GET / 200 normal, aucune erreur de compilation. Le message "Supabase env vars manquantes" est attendu (.env.local absent — consigne disait de ne pas utiliser agent-browser).
+- Aucune nouvelle erreur introduite par mes changements (vérifié par diff avant/après sur `/tmp/tsc_src.txt`).
+
+Stage Summary:
+- Fix #4 (daily revenue) : `/api/admin/rapports/journalier` filtre maintenant par `date_reception` (date métier) au lieu de `created_at` (date DB). Une commande saisie à 23:59 avec `date_reception` au lendemain apparaîtra sur le bon rapport.
+- Fix AUDIT-C-01 (remises période) : la liste des remises appliquées et le StatCard "Total remises" excluent désormais les commandes annulées. Dérive de `activeCommandes` au lieu de `commandesList`. Période via `created_at` inchangée (cohérent avec les autres routes rapports).
+- Fix CA global : `ca_total`, `panier_moyen`, `nombre_commandes`, `total_remises`, `ca_par_jour`, `ca_par_type_service` et la liste `clients_impayes` excluent tous les commandes annulées (forward-compatible avec l'enum `annule` à venir).
+- Fix AUDIT-C-04 (tsc) : 4 erreurs résolues (3 rapports + 1 view-toggle). 0 erreur dans tous les fichiers `src/app/api/admin/rapports/**`, `src/lib/queries/**`, et `src/components/ogpressing/admin/rapports/**`. Total tsc : 467 → 460 lignes (les nouvelles erreurs middleware/commandes viennent du travail parallèle d'un autre agent sur ces fichiers).
+- Fichiers modifiés : `src/app/api/admin/rapports/journalier/route.ts`, `src/app/api/admin/rapports/route.ts`, `src/components/shared/view-toggle.tsx`.
+- Lint 0/0, dev server OK, aucun build/lint cassé.
+
+---
+Task ID: P1-A
+Agent: activation-security-fixer
+Task: Fix 3 Phase-1 urgent security issues (AUDIT-B-01 TOCTOU activation, AUDIT-B-05 trial 7d expiry, AUDIT-B-04 subscription suspension)
+
+Work Log:
+- Lu le worklog précédent (contexte : SaaS OgPressing, multi-tenant Supabase + Next.js 16, dev server sur port 3000)
+- Lu les fichiers cibles :
+  - `src/app/api/public/activation/route.ts` (359 lignes — flux activation en 6 étapes avec rollback manuel)
+  - `src/lib/supabase/middleware.ts` (854 lignes — updateSession avec cache HMAC-SHA256 5 min, sections 1-7 déjà en place : non-auth redirect, role cache, compte désactivé, compte non actif, pressing_statut=suspendu, auth→dashboard redirect, route protection par rôle)
+  - `src/app/(public)/login/page.tsx` (référence style éditorial Luxe : AuroraBackground + OrnateCorner + Card glass-panel + boutons variants editorial/editorialGhost)
+  - `src/middleware.ts` (matcher exclut /api/* — donc pas besoin de gérer les routes API)
+- Fix 1 (AUDIT-B-01 TOCTOU activation) — `src/app/api/public/activation/route.ts` étape 6 :
+  - Ajouté `.eq("utilise", false)` à l'UPDATE pour garantir l'atomicité au niveau DB
+  - Ajouté `.select("id").maybeSingle()` pour récupérer la ligne mise à jour (ou null si 0 ligne)
+  - Changé la déstructure en `{ data: updatedCode, error: updateCodeError }`
+  - Ajouté un check `if (!updatedCode)` qui log côté serveur "[activation] Code utilisé concurremment (TOCTOU) — rollback" puis throw `new Error("TOCTOU: code used concurrently")` → déclenche le catch block existant qui fait le rollback (delete abonnement, personnel, pressing, user Auth) et renvoie un 500 générique au client
+- Fix 2 + Fix 3 (AUDIT-B-05 + AUDIT-B-04) — `src/lib/supabase/middleware.ts` :
+  - Étendu l'interface `RoleInfo` avec 2 nouveaux champs : `trial_expired: boolean` et `abonnement_suspended: boolean`
+  - Étendu l'interface `RoleCachePayload` avec les mêmes 2 champs optionnels (pour la sérialisation dans le cookie)
+  - Mis à jour `fetchRoleFromDB` : après avoir récupéré le personnel, si `pressing_id` est non null, fetch le dernier abonnement (`SELECT statut, date_fin FROM abonnements WHERE pressing_id = ? ORDER BY date_debut DESC LIMIT 1`) et détermine les 2 flags (essai + date_fin<now → trial_expired ; statut=suspendu → abonnement_suspended). Super admins : false/false (pas de pressing).
+  - Mis à jour `setRoleCacheCookie` pour inclure les 2 flags dans le payload signé
+  - Mis à jour le path "cache hit" dans `updateSession` pour peupler `trial_expired` et `abonnement_suspended` depuis le payload du cookie (avec `!!` pour coerce boolean)
+  - Ajouté section 5.6 entre 5.5 (pressing_statut=suspendu → signOut) et 6 (auth→dashboard redirect) : si user non-super-admin avec pressing_id ET (trial_expired OU abonnement_suspended), redirige /admin/* et /personnel/* vers /compte-suspendu (priorité suspension) ou /activation-expiree. Ne s'applique PAS aux routes publiques.
+  - Mis à jour section 6 : ajout d'une condition pour NE PAS rediriger un user en essai expiré / suspendu vers son dashboard depuis une route auth (sinon il bouclerait dashboard→/activation-expiree). L'user reste sur la page publique courante.
+- Créé `src/app/(public)/activation-expiree/page.tsx` :
+  - Carte centrée sur fond navy avec AuroraBackground + OrnateCorner (cohérent avec /login)
+  - Icône Clock en badge doré, titre "Essai expiré", description claire
+  - Bouton "Contacter le support" (editorial variant) → ouvre WhatsApp https://wa.me/2250576103277 dans un nouvel onglet
+  - Bouton "Se déconnecter" (editorialGhost variant) → supabase.auth.signOut() puis window.location.assign("/login")
+- Créé `src/app/(public)/compte-suspendu/page.tsx` :
+  - Même structure que /activation-expiree, avec icône Ban en badge rouge (editorial-danger)
+  - Texte adapté : "L'abonnement de votre pressing a été suspendu"
+- Créé `supabase/migrations/023_activation_trial_suspension.sql` :
+  - COMMENT ON TABLE documentant le garde TOCTOU app-level
+  - Pas de changement de schéma effectif (les fixes sont app-level — la colonne `utilise` existe déjà, les statuts d'abonnement existent déjà)
+- Vérifications :
+  - `bun run lint` : ✅ 0 erreur / 0 warning
+  - `bunx tsc --noEmit` sur mes fichiers modifiés : ✅ 0 erreur dans middleware.ts, 0 erreur dans les 2 nouvelles pages. 1 erreur dans activation/route.ts à la ligne 355 — PRÉ-EXISTENTE (vérifié via git stash : même erreur à la ligne 328 avant mes changements, le décalage de 27 lignes correspond à mes ajouts). L'erreur vient de `createdPressingId: string | null` assigné à `pressing_id: string` — non introduite par mes changements.
+  - Dev server (port 3000) : GET /activation-expiree → HTTP 200, GET /compte-suspendu → HTTP 200 (pages compilent et servent correctement, pas d'erreur de compilation dans dev.log)
+
+Stage Summary:
+- ✅ AUDIT-B-01 (TOCTOU activation) : l'UPDATE du code utilise maintenant `.eq("utilise", false)` + `.select("id").maybeSingle()`. Si 0 ligne mise à jour (code utilisé concurremment), on log + throw → le catch block existant fait le rollback complet (abonnement + personnel + pressing + user Auth) et renvoie un 500 générique. Plus aucun risque de double activation d'un même code.
+- ✅ AUDIT-B-05 (essai 7 jours expiré) : le middleware fetch le dernier abonnement du pressing (mis en cache 5 min dans le cookie HMAC) et redirige /admin/* et /personnel/* vers /activation-expiree si statut='essai' AND date_fin<now. Page dédiée avec contact WhatsApp + bouton déconnexion. Les super-admins ne sont pas affectés.
+- ✅ AUDIT-B-04 (suspension abonnement, version légère) : même mécanisme — si statut='suspendu', redirige /admin/* et /personnel/* vers /compte-suspendu. Suspension prioritaire sur l'essai expiré (si les deux conditions sont vraies). Ne signOut PAS l'utilisateur (il peut se déconnecter proprement depuis la page).
+- ✅ Pages créées : /activation-expiree et /compte-suspendu (style éditorial Luxe cohérent avec /login)
+- ✅ Migration 023 créée (documentation + COMMENT ON TABLE, pas de schéma change requis)
+- ✅ Lint OK, compilation OK, dev server sert les nouvelles pages en 200
+- ⚠️ Pré-existant : 1 erreur TS dans activation/route.ts ligne 355 (createdPressingId string|null vs pressing_id string) — NON introduite par cette tâche (vérifié via git stash)
+- 🔒 Sécurité : le cache rôle (5 min TTL) signifie qu'une suspension/expiration peut mettre jusqu'à 5 min à être répercutée — acceptable pour la "light version". Le pressing_statut='suspendu' (différent de abonnements.statut='suspendu') continue à déconnecter immédiatement l'utilisateur (section 5.5 existante, inchangée).
+
+---
+Task ID: P1-B
+Agent: commandes-fixer
+Task: Fix 5 Phase-1 issues on the commandes module: #1 (numero_commande collision), #5 (cancellation PATCH endpoint), AUDIT-B-02 (role helper), #2 (express priority), #15 (idempotence for createCommande).
+
+Work Log:
+- Lu le worklog (768 lignes) pour reprendre le contexte des tâches précédentes (POS, tarifs, audits, etc.).
+- Lu les 2 fichiers API à modifier :
+  * `src/app/api/admin/commandes/route.ts` (936 lignes — GET list + POST create)
+  * `src/app/api/admin/commandes/[id]/route.ts` (171 lignes — GET detail seul, pas de PATCH)
+- Lu `src/lib/queries/commande-detail.ts` (174 lignes — requête partagée avec 3 fallbacks) et `supabase/migrations/001_enums.sql` (vérifié que `statut_article` ne contient PAS 'annule' → articles non modifiés à l'annulation).
+
+Modifications apportées (5 fichiers) :
+
+1. **CREATED `src/lib/auth/roles.ts`** (AUDIT-B-02 — role helper centralisé) :
+   - Type `PersonnelRole` (7 valeurs), interface `AuthPersonnel { id, pressing_id, role, actif, statut_compte }`.
+   - `getCurrentPersonnel(supabase)` : lit user Auth + table `personnel` (user_id), retourne null si non authentifié/introuvable.
+   - `isPersonnelActive(p)` : `actif === true && statut_compte === 'actif'`.
+   - `hasRole(p, allowed)` : vérifie l'appartenance à une liste de rôles.
+   - 5 constantes de rôles par opération : `CAN_CREATE_COMMANDES` (manager/réceptionniste/caissier/comptable), `CAN_CANCEL_COMMANDES` (manager/réceptionniste/caissier), `CAN_CHANGE_PRIORITE` (manager/réceptionniste), `CAN_MANAGE_PERSONNEL` (manager), `CAN_VIEW_RAPPORTS` (manager/comptable/réceptionniste).
+
+2. **CREATED `supabase/migrations/024_commande_annule_express.sql`** :
+   - `ALTER TYPE statut_commande ADD VALUE IF NOT EXISTS 'annule'` (#5).
+   - `ALTER TABLE commandes ADD COLUMN priorite TEXT NOT NULL DEFAULT 'normal'` + CHECK constraint `commandes_priorite_check` (normal|express) (#2).
+   - `ALTER TABLE commandes ADD COLUMN idempotence_key TEXT` + `CREATE UNIQUE INDEX idx_commandes_idempotence ON commandes (pressing_id, idempotence_key) WHERE idempotence_key IS NOT NULL` (#15).
+   - COMMENTs sur les nouvelles colonnes.
+
+3. **MODIFIED `src/app/api/admin/commandes/route.ts`** (numero retry + priorite + idempotence + role helper) :
+   - Header comment mis à jour (format XXXXXX, retry, idempotence, priorite).
+   - Import du role helper (`CAN_CREATE_COMMANDES`, `getCurrentPersonnel`, `hasRole`, `isPersonnelActive`).
+   - `generateNumeroCommande()` : 6 chiffres aléatoires (100000-999999) au lieu de 4 (1000-9999).
+   - Nouvelle fonction `isUniqueViolation(err)` : détecte SQLSTATE 23505 ou messages "unique/duplicate/déjà/existe déjà".
+   - GET : refactorisé pour utiliser `getCurrentPersonnel` + `isPersonnelActive`. Ajout de `priorite` au SELECT.
+   - POST : refactorisé pour utiliser le role helper + `hasRole(me, CAN_CREATE_COMMANDES)` (403 si rôle insuffisant).
+   - POST : validation du champ optionnel `priorite` (default 'normal').
+   - POST : parsing du champ optionnel `idempotence_key` (string ≤ 100 chars, trim).
+   - POST : lookup idempotent AVANT la validation complète — si une commande existe déjà pour (pressing_id, idempotence_key), retour 200 avec la commande existante (replay idempotent). Masquage des erreurs Supabase (audit #8).
+   - POST (Step 9 INSERT) : boucle de retry jusqu'à 5 tentatives. À chaque collision (isUniqueViolation), log `console.warn` + régénération du numero_commande. Après 5 échecs, retour 500 générique. Inclusion de `priorite` et `idempotence_key` dans l'INSERT. Type `NewCommandeRow` extrait en interface nommée (fixe 2 erreurs TS de narrowing).
+   - POST (Step 12) : réponse 201 inclut `priorite` + `numero_commande` final (récupéré depuis l'INSERT réussi).
+
+4. **MODIFIED `src/app/api/admin/commandes/[id]/route.ts`** (PATCH cancellation + role helper) :
+   - Header comment mis à jour (PATCH ajouté, sécurité, audit #8).
+   - Imports du role helper (`CAN_CANCEL_COMMANDES`, `CAN_CHANGE_PRIORITE`, `getCurrentPersonnel`, `hasRole`, `isPersonnelActive`).
+   - GET : refactorisé pour utiliser `getCurrentPersonnel` + `isPersonnelActive`.
+   - NOUVEAU PATCH handler (~230 lignes) :
+     * Body `{ statut?, notes?, priorite? }`.
+     * Si `statut === 'annule'` : vérifie `CAN_CANCEL_COMMANDES` (403 sinon). Fetch la commande (RLS isole par pressing → 404 si introuvable). Refuse l'annulation si statut ∈ {pret, en_livraison, livre, retire, annule} (409 avec message clair). UPDATE commandes SET statut='annule', updated_at=now(). NB : `statut_article` enum ne contient pas 'annule' → articles_vetements NON modifiés (seule la commande est annulée).
+     * Si `priorite` fournie ('normal' | 'express') : vérifie `CAN_CHANGE_PRIORITE` (403 sinon). Refuse si statut ≠ 'recu' (409). UPDATE SET priorite.
+     * Si `notes` fournie (clé présente) : string ≤ 2000 chars ou null (efface). UPDATE SET notes.
+     * Si plusieurs champs fournis : combinés en un seul UPDATE.
+     * Si aucun champ fourni : retourne la commande courante (200).
+     * Audit #8 : erreurs Supabase loggées serveur, message générique "Erreur interne du serveur" au client.
+     * Réponse 200 : `{ id, statut, priorite, notes, updated_at }`.
+
+5. **MODIFIED `src/lib/queries/commande-detail.ts`** (priorite + 4e fallback) :
+   - Ajout de `priorite` à `COMMANDE_BASE` (entre `frais_livraison` et `notes`).
+   - Nouvelle constante `COMMANDE_BASE_SANS_PRIORITE` (sans priorite) pour gérer le cas où la migration 024 n'est pas encore appliquée.
+   - Ajout d'une 4e tentative de fallback (tentative 4) qui utilise `COMMANDE_BASE_SANS_PRIORITE` si les 3 premières échouent — préserve la robustesse existante (la fonction ne casse pas si la migration 024 n'est pas appliquée).
+   - Header comment mis à jour pour expliquer la 4e tentative.
+
+Vérifications :
+- `bun run lint` : ✅ 0 erreur, 0 warning.
+- `bunx tsc --noEmit` : ✅ 0 erreur dans mes 5 fichiers modifiés/créés (vérifié par grep). Les autres erreurs sont pré-existantes dans des fichiers hors périmètre (infos-generales-tab.tsx, add-service-dialog.tsx, dev-keeper.ts, etc.).
+- Dev server : `.env.local` manquant (message "Supabase env vars manquantes" dans dev.log) — pas testé via agent-browser (conforme aux instructions).
+- Audit #8 respecté : toutes les erreurs Supabase sont loggées serveur (`console.error` / `console.warn`) et le client ne reçoit que "Erreur interne du serveur" ou messages métier génériques.
+
+Stage Summary:
+- ✅ #1 (numero_commande collision) : 6 chiffres aléatoires + retry loop 5 tentatives avec log warn à chaque collision.
+- ✅ #5 (cancellation) : PATCH handler complet avec rôles (CAN_CANCEL_COMMANDES), garde-fou statut (recu/en_traitement seulement), 409 clair sinon. Migration 024 ajoute 'annule' à statut_commande. articles_vetements non modifiés (statut_article n'a pas 'annule').
+- ✅ AUDIT-B-02 (role helper) : `src/lib/auth/roles.ts` créé et appliqué à GET/POST `/commandes` et GET/PATCH `/commandes/[id]`. Même sémantique 401/403 préservée.
+- ✅ #2 (express priority) : colonne `priorite` (TEXT normal|express) + CHECK constraint. POST accepte et stocke `priorite`. GET list + GET detail (via fetchCommandeDetail) retournent `priorite`. PATCH permet le changement (CAN_CHANGE_PRIORITE, statut='recu' seulement).
+- ✅ #15 (idempotence) : colonne `idempotence_key` + index unique partiel. POST fait un lookup early-return (200 + commande existante) si la clé existe déjà pour le pressing. Sinon, inclusion dans l'INSERT. Backward compatible (pas de clé = comportement inchangé).
+- ⚠️ Migration 024 à exécuter manuellement dans le SQL Editor Supabase (comme les migrations 021 et 023 précédentes).
+- 🔒 Sécurité préservée : RLS gère l'isolation par pressing_id, pressing_id jamais trusté du client, audit #8 (error masking) appliqué partout.
+
+---
+Task ID: P2-D
+Agent: personnel-security-fixer
+Task: Fix 4 issues Phase-2 — phone validation standardization (AUDIT-B-03), temp password enforcement (AUDIT-B-06), last manager protection (AUDIT-B-07), role change notification (AUDIT-B-11)
+
+Work Log:
+- Lu le worklog (843 lignes) pour reprendre le contexte des agents P1-A, P1-B, P1-C (audit TOCTOU, trial/suspension, role helper, commandes module, rapports).
+- Lu intégralement les fichiers cibles avant édition :
+  * `src/app/api/public/activation/route.ts` (390 lignes — flux activation 6 étapes avec rollback)
+  * `src/app/api/public/inscription/route.ts` (276 lignes — formulaire landing)
+  * `src/app/api/admin/personnel/route.ts` (572 lignes — GET list + POST create)
+  * `src/app/api/admin/personnel/[id]/route.ts` (718 lignes — PATCH desactiver/reactiver/modifier + POST reset_password/resend_invitation)
+  * `src/app/api/admin/clients/route.ts` (343 lignes — GET list + POST create)
+  * `src/app/api/admin/clients/[id]/route.ts` (366 lignes — GET + PATCH)
+  * `src/lib/supabase/middleware.ts` (964 lignes — updateSession avec cache HMAC + sections 1-7, P1-A a ajouté 5.6 trial/suspension)
+  * `src/app/(personnel)/personnel/changer-mot-de-passe/page.tsx` (555 lignes — page client-side qui appelle directement Supabase, pas d'API dédiée)
+  * `src/middleware.ts` (matcher exclut /api/.* — important pour ne pas intercepter les API)
+  * `supabase/migrations/002_tables.sql` + `011_lot3_gap_fill.sql` (vérifié que `mot_de_passe_temporaire BOOLEAN` existe déjà depuis migration 011)
+  * `src/lib/types/database.types.ts` (la colonne `mot_de_passe_temporaire` n'est pas typée — pre-existing TS errors signalées par P1-C, lint passe quand même)
+
+Fix 1 — AUDIT-B-03 Phone validation standardization :
+- CRÉÉ `src/lib/validations/phone.ts` avec 3 fonctions : `cleanPhone` (nettoie espaces/-/().), `isValidCIPhone` (valide formats 0XXXXXXXXX, +225XXXXXXXXXX, 225XXXXXXXXXX + fallback permissif 8-15 chiffres), `normalizeCIPhone` (normalise vers +225XXXXXXXXXX).
+- APPLIQUÉ le helper à 5 routes (chaque fois : validation + normalisation avant stockage) :
+  * `src/app/api/public/activation/route.ts` : remplacé l'ancienne regex `/^\+?\d{8,20}$/` par `isValidCIPhone`. Normalisation dans le payload retourné par `validate()` → impacte `pressing.telephone` ET `personnel.telephone`.
+  * `src/app/api/public/inscription/route.ts` : remplacé `/^(\+225)?0?\d{8,10}$/` par `isValidCIPhone`. Normalisation dans le payload `validate()` → impacte `demandes_inscription.telephone` (et le dédoublonnage 24h qui compare sur le telephone).
+  * `src/app/api/admin/personnel/route.ts` POST : ajout validation `isValidCIPhone` (avant seul le non-vide était vérifié) + `normalizeCIPhone`. Variable `telephoneNorm` utilisée dans phoneToEmail, anti-doublon, createUser user_metadata, INSERT personnel, credentials response.
+  * `src/app/api/admin/personnel/[id]/route.ts` PATCH "modifier" : ajout validation + normalisation. `telephoneNorm` utilisé dans anti-doublon et UPDATE.
+  * `src/app/api/admin/clients/route.ts` POST : ajout validation + normalisation. `telephoneNorm` utilisé dans anti-doublon et INSERT.
+  * `src/app/api/admin/clients/[id]/route.ts` PATCH : ajout validation + normalisation sur le champ `telephone` quand il est fourni (la route fait de l'update partiel conditionnel).
+
+Fix 2 — AUDIT-B-06 Temp password enforcement :
+- Analyse du flux existant : `computeDashboardTarget` redirige déjà vers `/personnel/changer-mot-de-passe` quand `mot_de_passe_temporaire=true` (section 6 du middleware), mais SEULEMENT pour les routes "auth" (/, /login, /activation, /auth/callback). Si un user avec temp password navigue directement vers /admin/dashboard, la section 7 (cross-space) le laissait passer (role match).
+- Vérification du cache payload : `mot_de_passe_temporaire` est DÉJÀ dans `RoleInfo` ET dans `RoleCachePayload` (P1-A l'avait ajouté). Pas besoin d'étendre les interfaces.
+- Vérification de la page `/personnel/changer-mot-de-passe` : elle utilise directement `supabase.auth.updateUser({ password })` + `UPDATE personnel SET mot_de_passe_temporaire=false`. Pas d'API dédiée — pas besoin de créer/fixer d'endpoint API.
+- AJOUTÉ section 6.5 dans `updateSession` (entre section 6 auth→dashboard et section 7 cross-space) : si user est personnel (pas super_admin) ET `mot_de_passe_temporaire=true` ET path ∉ {/personnel/changer-mot-de-passe, /login, /activation-expiree, /compte-suspendu, /auth/callback} → redirect vers `/personnel/changer-mot-de-passe`.
+- AJOUTÉ section 2c (avant section 3, après cache miss) : quand user est sur `/personnel/changer-mot-de-passe` ET que le cache dit `mot_de_passe_temporaire=true`, on force un re-fetch DB. Sans ce garde, l'utilisateur serait bloqué en boucle : change son mot de passe → navigue au dashboard → middleware lit le cache stale (5 min TTL) → redirige vers /personnel/changer-mot-de-passe. Le re-fetch détecte `mot_de_passe_temporaire=false` en DB, met à jour le cache, et la page peut rediriger vers le dashboard.
+- Note : les API routes sont exclues par le matcher racine (`(?!...|api/.*|...)`) — pas besoin de filtrer API dans la nouvelle section.
+- Super_admins non affectés : `fetchRoleFromDB` renvoie toujours `mot_de_passe_temporaire=false` pour eux (pas de ligne dans `personnel`).
+
+Fix 3 — AUDIT-B-07 Last manager protection :
+- AJOUTÉ fonction helper `countActiveManagers(supabase, pressingId)` qui compte `role='manager' AND actif=true AND statut_compte='actif'` dans le pressing.
+- DANS PATCH "desactiver" : ajout `role` au SELECT cible, et garde anti-lockout : si `action='desactiver' AND target.role='manager' AND target.statut_compte='actif'` ET `countActiveManagers <= 1` → 409 "Impossible de désactiver le dernier manager du pressing. Désignez d'abord un autre manager." (code DERNIER_MANAGER).
+- DANS PATCH "modifier" : garde similaire si `target.role='manager' AND new role !== 'manager' AND target.statut_compte='actif'` ET `countActiveManagers <= 1` → 409 "Impossible de changer le rôle du dernier manager du pressing. Désignez d'abord un autre manager." (code DERNIER_MANAGER).
+- Subtilité : on ne déclenche le garde QUE si la cible est un manager ACTIF (`statut_compte='actif'`). Désactiver/rétrograder un manager déjà 'invite_en_attente' ou 'desactive' ne réduit pas le nombre de managers actifs, donc pas de risque de lockout (et on évite les faux positifs).
+
+Fix 4 — AUDIT-B-11 Role change notification :
+- CRÉÉ `supabase/migrations/025_notifications_role_change.sql` : ajoute `dernier_changement_role TIMESTAMPTZ` et `notes_changement_role TEXT` à `personnel` + COMMENTs.
+- DANS PATCH "modifier" : ajout `statut_compte` et `nom_complet` au SELECT cible pour permettre la détection de changement de rôle et le log.
+- Détection : `const previousRole = target.role as string; const roleChanged = previousRole !== role;` (placé AVANT la condition caissier pour pouvoir l'utiliser dans le garde last-manager et dans la réponse).
+- Si `roleChanged=true` : ajout au `updatePayload` de `dernier_changement_role = NOW()` et `notes_changement_role = "Rôle changé de \"X\" à \"Y\" par le manager Z le TIMESTAMP"` + `console.log("[personnel] Role change: ${nom_complet} ${previousRole} → ${role} by ${me.id}")`.
+- Réponse : ajout `roleChanged: boolean` et `previousRole: string | null` dans le JSON renvoyé au client (pour que le UI puisse afficher une confirmation).
+
+Vérifications :
+- `bun run lint` : ✅ exit 0, 0 erreur, 0 warning.
+- `bunx tsc --noEmit` : 0 erreur dans TOUS les fichiers modifiés (vérifié par grep ciblé). Les erreurs restantes sont pré-existantes et hors scope : ~60 erreurs react-hook-form dans catalogue-form/infos-generales/service-dialog/product-dialog/mouvement-dialog/inscription-form, 1 erreur dans caissier/encaisser/route.ts (pre-existing, mentionnée par P1-C), 1 erreur dans super-admin/abonnements/route.ts (pre-existing).
+- `tail -30 dev.log` : aucun compile error, serveur tourne, message "Supabase env vars manquantes" attendu (.env.local absent — consigne disait de ne pas utiliser agent-browser).
+- Audit #8 respecté : aucune erreur Supabase brute exposée au client (messages génériques "Erreur interne du serveur" ou messages métier clairs).
+
+Stage Summary:
+- ✅ AUDIT-B-03 (phone validation) : helper `src/lib/validations/phone.ts` créé et appliqué à 5 routes (activation, inscription, personnel POST, personnel PATCH, clients POST) + 1 route bonus (clients PATCH pour cohérence). Tous les téléphones sont maintenant normalisés vers +225XXXXXXXXXX avant stockage.
+- ✅ AUDIT-B-06 (temp password enforcement) : section 6.5 du middleware force la redirection vers `/personnel/changer-mot-de-passe` pour tout user personnel avec `mot_de_passe_temporaire=true` accédant à une route hors allowlist. Section 2c ajoute un re-fetch DB sur /personnel/changer-mot-de-passe pour invalider le cache stale après changement réussi (sans cela, boucle de redirection jusqu'à 5 min).
+- ✅ AUDIT-B-07 (last manager protection) : helper `countActiveManagers` + garde 409 dans PATCH "desactiver" et PATCH "modifier" (changement de rôle). Empêche le lockout complet d'un pressing par suppression du dernier manager actif. Subtilité : garde déclenché uniquement si la cible est un manager ACTIF (évite faux positifs sur managers déjà en attente/désactivés).
+- ✅ AUDIT-B-11 (role change notification) : migration 025 ajoute `dernier_changement_role` (TIMESTAMPTZ) + `notes_changement_role` (TEXT) à `personnel`. PATCH "modifier" peuple ces colonnes + `console.log` quand le rôle change. Réponse JSON inclut `roleChanged` + `previousRole` pour le UI.
+- Fichiers modifiés : 7 fichiers (5 routes API + middleware + 1 helper nouveau) + 2 créés (phone.ts + migration 025).
+- ⚠️ Migration 025 à exécuter manuellement dans le SQL Editor Supabase (comme les migrations 021, 023, 024 précédentes).
+- ⚠️ Note pour le UI : si le UI souhaite afficher une confirmation de changement de rôle, il peut lire `response.roleChanged` (boolean) et `response.previousRole` (string|null) dans la réponse du PATCH /api/admin/personnel/[id] (action: "modifier").
+
+---
+Task ID: P3-E
+Agent: subscription-commandes-fixer
+Task: Fix 4 problèmes Phase-3 : AUDIT-B-09 (réactivation abonnement), #6 (verrou optimiste PATCH), #8 (computeDateRetrait), #12 (timestamps serveur).
+
+Work Log:
+- Lu le worklog précédent (~200 dernières lignes) pour reprendre le contexte : P1-A (activation + middleware), P1-B (commandes — numero retry, PATCH cancellation, priorite, idempotence, role helper), P1-C (rapports), race condition POS, etc.
+- Lu intégralement les 5 fichiers à modifier :
+  * `src/app/api/super-admin/abonnements/[id]/renouveler/route.ts` (293 lignes — POST, déclaratif, INSERT paiements + UPDATE abonnements.statut='actif' + extension date_fin).
+  * `src/app/api/super-admin/abonnements/[id]/route.ts` (214 lignes — PATCH avec 2 actions : 'changer_plan' | 'suspendre').
+  * `src/app/api/admin/commandes/[id]/route.ts` (416 lignes — GET detail + PATCH écrit par P1-B : annulation/priorite/notes).
+  * `src/app/api/admin/commandes/route.ts` (1040 lignes — GET list + POST create écrit par P1-B : numero retry, idempotence, priorite).
+  * `src/app/api/admin/personnel/[id]/route.ts` (674 lignes — PATCH avec 3 actions + POST reset_password / resend_invitation).
+- Lu `supabase/migrations/001_enums.sql` : `statut_pressing` enum a valeurs 'actif' | 'suspendu' | 'essai' — PAS de 'essai_expire' (l'essai expiré est représenté par `abonnements.statut='essai' AND date_fin<NOW()`, géré par middleware P1-A section 5.6).
+- Lu `supabase/migrations/002_tables.sql` : `commandes.date_retrait TIMESTAMPTZ` (nullable, ligne 258), `commandes.date_reception NOT NULL DEFAULT NOW()` (254), `paiements.date_paiement NOT NULL DEFAULT NOW()` (325), `personnel.date_invitation/date_activation/date_desactivation` (188-190, nullable SANS DEFAULT), `pressing.statut statut_pressing DEFAULT 'essai'` (118).
+- Lu `supabase/migrations/005_triggers.sql` : trigger `set_updated_at()` BEFORE UPDATE sur 16 tables (commandes, personnel, pressing, abonnements, paiements, etc.) — `NEW.updated_at = NOW()`. Donc le `updated_at` est TOUJOURS auto-mis à jour par le trigger, même si l'app tente de le set explicitement.
+- Vérifié via `rg` qu'aucune route ne truste un timestamp client pour les champs `date_reception | date_paiement | date_invitation | date_activation | date_desactivation` (cf. Fix 4).
+
+Fix 1 — AUDIT-B-09 (réactivation pressing sur renouvellement) :
+- `src/app/api/super-admin/abonnements/[id]/renouveler/route.ts` : ajout étape 4 après l'UPDATE abonnements. SELECT `pressing.id, statut` pour le `pressing_id` de l'abonnement. Si `statut ∈ ('suspendu', 'essai')` : UPDATE `pressing SET statut='actif' WHERE id=? AND statut IN ('suspendu','essai')` (garde défensive contre race). Log `console.log("[renewal] Pressing ${pressingIdRenew} reactivated from ${oldStatut} to actif")`. Erreurs SELECT/UPDATE pressing sont non-bloquantes (l'abonnement est déjà renouvelé — on log et continue). Personnel désactivé NON réactivé automatiquement (commentaire explicatif : on ne sait pas distinguer désactivation légitime vs suite à suspension). Header docstring mis à jour (étape 6 ajoutée).
+- `src/app/api/super-admin/abonnements/[id]/route.ts` : ajout d'une 3e action PATCH `'reactiver'` (en plus de `'changer_plan'` et `'suspendre'`). Refuse si `abonnement.statut === 'actif'` (400). UPDATE `abonnements SET statut='actif'`. Puis même logique de réactivation du pressing que dans renouveler/route.ts (SELECT + UPDATE conditionnel `statut IN ('suspendu','essai')` + log `[reactiver] Pressing ... reactivated from ${oldStatut} to actif`). Header docstring mis à jour. Validation initiale `action` étendue pour accepter `'reactiver'`.
+
+Fix 2 — #6 (verrou optimiste sur PATCH) :
+- `src/app/api/admin/commandes/[id]/route.ts` PATCH : 
+  * Ajout parsing de `body.expected_updated_at` (ISO string optionnel). Si fourni et parsable (Date valide), on le compare à `commandes.updated_at` courant avant l'UPDATE.
+  * Section "no-op" (aucun champ à modifier) : ajout d'un check optimiste avant de renvoyer la commande courante (permet au client de détecter une modification concurrente même sur un PATCH no-op). 409 `code: "CONCURRENT_MODIFICATION"` avec message "La commande a été modifiée par un autre utilisateur. Veuillez recharger et réessayer." si mismatch.
+  * Section 4 (fetch commande avant UPDATE) : SELECT étendu pour inclure `updated_at`. Ajout d'un check optimiste avant l'UPDATE (même logique 409). Commentaire explicatif sur le trigger `set_updated_at` (migration 005) qui garantit que toute modification concurrente change `updated_at`.
+  * Rétro-compatible : si `expected_updated_at` absent ou non parsable, aucun check n'est effectué (anciens clients continuent de fonctionner).
+- `src/app/api/admin/personnel/[id]/route.ts` PATCH action='modifier' : 
+  * Ajout parsing de `body.expected_updated_at` (même pattern).
+  * SELECT `target` étendu pour inclure `updated_at` (en plus de `id, pressing_id, email, telephone, role`).
+  * Check optimiste avant l'UPDATE : 409 `code: "CONCURRENT_MODIFICATION"` avec message "Cet employé a été modifié par un autre utilisateur. Veuillez recharger et réessayer." si mismatch.
+  * Header docstring mis à jour pour documenter le nouveau champ optionnel.
+  * Rétro-compatible.
+
+Fix 3 — #8 (computeDateRetrait) :
+- `src/app/api/admin/commandes/route.ts` POST :
+  * Ajout validation défensive : `date_pret_prevue` doit être parsable en Date (sinon 400 "date_pret_prevue doit être une date ISO valide"). Utilise `new Date(datePretPrevue)` + check `Number.isNaN(datePretParsed.getTime())`.
+  * Calcul `dateRetraitIso` après détermination de `priorite` :
+    - Commandes normales → `date_pret_prevue + 7 jours` (RETRAIT_DELAY_NORMAL_MS = 7 * 24 * 60 * 60 * 1000).
+    - Commandes 'express' → `date_pret_prevue + 3 jours` (RETRAIT_DELAY_EXPRESS_MS = 3 * 24 * 60 * 60 * 1000).
+    - Calcul : `new Date(datePretParsed.getTime() + retraitDelayMs).toISOString()`.
+  * INSERT commandes : ajout `date_retrait: dateRetraitIso` dans le payload. Commentaire `#8` documentant le calcul côté serveur.
+  * Réponse 201 : ajout `date_pret_prevue` et `date_retrait` dans `data` pour que le client puisse les afficher immédiatement (sans refetch) sur le ticket et l'écran de confirmation.
+  * Header docstring mis à jour (section #8).
+
+Fix 4 — #12 (timestamps serveur) :
+- Vérification systématique : `rg "body\.date_|body\['date_"` → aucune route ne truste `date_reception | date_paiement | date_invitation | date_activation | date_desactivation` depuis le body client. Les seules `body.date_*` lues sont `body.date_pret_prevue` (date métier — input wizard, pas un timestamp serveur) et `body.date_expiration` (date d'expiration produit stock, pas un timestamp). AUCUN fix de sécurité requis — c'était déjà correct.
+- Vérification : `rg "created_at:\s*new Date"` → aucun INSERT ne set `created_at` explicitement (toutes les tables ont `DEFAULT NOW()`).
+- Ajout de commentaires `#12` documentant le choix "server-side timestamp (UTC) — could also rely on DB DEFAULT NOW()" sur :
+  * `src/app/api/admin/commandes/route.ts` POST : `date_reception: nowIso` (DEFAULT NOW() existe, mais on garde explicite pour cohérence avec `nowIso` utilisé pour l'acompte) + `date_paiement: nowIso` (même raison).
+  * `src/app/api/personnel/caissier/encaisser/route.ts` : `date_paiement: new Date().toISOString()`.
+  * `src/app/api/admin/personnel/route.ts` POST : `date_activation` (création directe — colonne nullable sans DEFAULT, on DOIT fournir) et `date_invitation` (lien_invitation — idem).
+  * `src/app/api/admin/personnel/[id]/route.ts` PATCH : `date_desactivation` (action 'desactiver') et `date_invitation` (POST resend_invitation).
+
+Vérifications :
+- `bun run lint` : ✅ exit 0, 0 erreur, 0 warning. (Note : une erreur de parsing a initialement été signalée dans `src/app/api/public/inscription/route.ts` ligne 267, mais c'était un problème de cache ESLint stale — `rm -rf .eslintcache node_modules/.cache` a résolu. Le fichier en question n'a PAS été touché par cette tâche, l'erreur venait du cache.)
+- `bunx tsc --noEmit` sur mes fichiers modifiés : ✅ 0 erreur dans `src/app/api/super-admin/abonnements/[id]/**`, `src/app/api/admin/commandes/**`, `src/app/api/admin/personnel/**`, `src/app/api/admin/clients/route.ts`, `src/app/api/personnel/caissier/encaisser/route.ts`. 2 erreurs pré-existantes dans `src/app/api/super-admin/abonnements/route.ts` (overload supabase — P1-C l'avait déjà notée) et `src/app/api/personnel/caissier/encaisser/route.ts:154` (modes_paiement_autorises manquant dans le type — P1-C l'avait déjà notée) — NON introduites par mes changements.
+- `tail -30 dev.log` : ✅ trafic GET / 200 normal, "✓ Compiled in 174ms", aucune erreur de compilation. Message "Supabase env vars manquantes" attendu (.env.local absent — consigne disait de ne pas utiliser agent-browser).
+- Audit #8 (error masking) préservé : toutes les erreurs Supabase sont loggées serveur (`console.error` / `console.warn`) et le client ne reçoit que "Erreur interne du serveur" ou messages métier génériques. Aucune régression.
+- Sécurité préservée : RLS gère l'isolation par pressing_id, pressing_id jamais trusté du client, `expected_updated_at` est juste une valeur de comparaison (pas utilisée pour écrire).
+
+Stage Summary:
+- ✅ AUDIT-B-09 (réactivation abonnement) : le POST `/api/super-admin/abonnements/[id]/renouveler` réactive désormais `pressing.statut='actif'` si le pressing était 'suspendu' ou 'essai' (garde défensive `statut IN ('suspendu','essai')` contre race). Log serveur `[renewal] Pressing ... reactivated from ${oldStatut} to actif`. Personnel désactivé NON réactivé (le manager doit le faire manuellement — discutable mais sûr). NOUVELLE action PATCH `'reactiver'` ajoutée à `/api/super-admin/abonnements/[id]` pour lever une suspension sans nouveau paiement (geste commercial, erreur de saisie, etc.) — applique la même réactivation du pressing.
+- ✅ #6 (verrou optimiste) : PATCH `/api/admin/commandes/[id]` et PATCH `/api/admin/personnel/[id]` (action='modifier') acceptent désormais un champ optionnel `expected_updated_at` (ISO string). Si fourni, comparé à `updated_at` courant avant l'UPDATE → 409 `code: "CONCURRENT_MODIFICATION"` avec message clair "modifiée par un autre utilisateur. Veuillez recharger et réessayer." Rétro-compatible : sans le champ, ancien comportement (last-write-wins). Le trigger `set_updated_at` (migration 005) garantit que toute modification concurrente change `updated_at`, rendant le check fiable.
+- ✅ #8 (computeDateRetrait) : POST `/api/admin/commandes` calcule désormais `date_retrait` côté serveur = `date_pret_prevue + 7 jours` (normal) ou `+ 3 jours` (express). Aucune entrée client pour cette date (sécurité + cohérence). Stockée dans `commandes.date_retrait` (TIMESTAMPTZ nullable — 002_tables.sql:258). Renvoyée dans la réponse 201 pour affichage immédiat côté client.
+- ✅ #12 (timestamps serveur) : audit confirme qu'AUCUNE route ne truste un timestamp client pour `date_reception | date_paiement | date_invitation | date_activation | date_desactivation`. Aucun INSERT ne set `created_at` explicitement (toutes les tables ont DEFAULT NOW()). Commentaires `#12` ajoutés sur les 5 emplacements clés (commandes POST x2, encaisser, personnel POST x2, personnel PATCH/POST x2) documentant le choix "server-side timestamp (UTC) — could also rely on DB DEFAULT NOW()" pour traçabilité.
+- 🔒 Sécurité préservée : RLS, audit #8 (error masking), role helper (P1-B) — aucune régression.
+- ⚠️ Migration : aucune nouvelle migration requise. Les colonnes `date_retrait`, `updated_at`, `pressing.statut` existent déjà (002_tables.sql, 005_triggers.sql, 001_enums.sql).
+- 📁 Fichiers modifiés (7) :
+  * `src/app/api/super-admin/abonnements/[id]/renouveler/route.ts` (AUDIT-B-09)
+  * `src/app/api/super-admin/abonnements/[id]/route.ts` (AUDIT-B-09 — nouvelle action 'reactiver')
+  * `src/app/api/admin/commandes/[id]/route.ts` (#6 verrou optimiste)
+  * `src/app/api/admin/commandes/route.ts` (#8 computeDateRetrait + #12 commentaires)
+  * `src/app/api/admin/personnel/[id]/route.ts` (#6 verrou optimiste + #12 commentaires)
+  * `src/app/api/admin/personnel/route.ts` (#12 commentaires)
+  * `src/app/api/personnel/caissier/encaisser/route.ts` (#12 commentaire)
+- Lint 0/0, dev server OK, aucun build cassé. Prêt pour la suite.

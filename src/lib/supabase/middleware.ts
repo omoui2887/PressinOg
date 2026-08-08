@@ -93,6 +93,18 @@ interface RoleInfo {
    *  Utilisé pour bloquer les utilisateurs d'un pressing suspendu
    *  (LOT 5.3 — un pressing suspendu ne peut plus se connecter). */
   pressing_statut: string | null;
+  /** AUDIT-B-05 — True si l'abonnement courant du pressing est en essai
+   *  expiré (statut='essai' AND date_fin < now). Toujours false pour les
+   *  super admins (pas de pressing). Quand true, on redirige /admin/* et
+   *  /personnel/* vers /activation-expiree. */
+  trial_expired: boolean;
+  /** AUDIT-B-04 — True si l'abonnement courant du pressing est suspendu
+   *  (abonnements.statut='suspendu'). Toujours false pour les super admins.
+   *  Quand true, on redirige /admin/* et /personnel/* vers /compte-suspendu.
+   *  NB : différent de `pressing_statut === 'suspendu'` (qui est un statut
+   *  du pressing, pas de l'abonnement — la suspension pressing déconnecte
+   *  immédiatement l'utilisateur, la suspension abonnement est plus douce). */
+  abonnement_suspended: boolean;
 }
 
 /** Payload signé stocké dans le cookie `ogp_role_cache`.
@@ -116,6 +128,14 @@ interface RoleCachePayload {
    *  `setRoleCacheCookie` appel conditionnel) → si ce champ vaut
    *  'suspendu' ou est absent, on retombe sur la DB. */
   pressing_statut?: string | null;
+  /** AUDIT-B-05 — True si l'essai de 7 jours est expiré au moment de la mise
+   *  en cache. Le TTL court (5 min) garantit qu'une activation d'abonnement
+   *  (passage essai → actif) soit répercutée en max 5 min. */
+  trial_expired?: boolean;
+  /** AUDIT-B-04 — True si l'abonnement est suspendu (statut='suspendu') au
+   *  moment de la mise en cache. Le TTL court (5 min) garantit qu'une
+   *  réactivation soit répercutée en max 5 min. */
+  abonnement_suspended?: boolean;
   /** Expiration en ms epoch. */
   exp: number;
 }
@@ -276,6 +296,8 @@ async function setRoleCacheCookie(
     pressing_id: info.pressing_id,
     mot_de_passe_temporaire: info.mot_de_passe_temporaire,
     pressing_statut: info.pressing_statut,
+    trial_expired: info.trial_expired,
+    abonnement_suspended: info.abonnement_suspended,
     exp: Date.now() + ROLE_CACHE_TTL_MS,
   };
   const signed = await signRoleCache(payload, secret);
@@ -318,6 +340,14 @@ function clearRoleCacheCookie(response: NextResponse): void {
  * (policy `super_admin_full_access` USING is_super_admin()). Un personnel
  * peut lire sa propre ligne dans `personnel` (policy d'isolation par
  * pressing via `get_pressing_id_utilisateur()`).
+ *
+ * AUDIT-B-05 + AUDIT-B-04 : pour un personnel rattaché à un pressing, on
+ * fetch également le dernier abonnement du pressing afin de déterminer si
+ * l'essai de 7 jours est expiré (statut='essai' AND date_fin < now) ou si
+ * l'abonnement est suspendu (statut='suspendu'). Ces 2 flags sont mis en
+ * cache dans le cookie `ogp_role_cache` (5 min TTL) et utilisés par
+ * `updateSession` pour rediriger les routes /admin/* et /personnel/* vers
+ * /activation-expiree ou /compte-suspendu respectivement.
  */
 async function fetchRoleFromDB(
   supabase: SupabaseClient,
@@ -339,6 +369,8 @@ async function fetchRoleFromDB(
       actif: true,
       statut_compte: "actif",
       pressing_statut: null,
+      trial_expired: false,
+      abonnement_suspended: false,
     };
   }
 
@@ -358,15 +390,47 @@ async function fetchRoleFromDB(
   // `pressing` est un objet { statut } ou null (si pressing_id absent ou
   // ligne supprimée). On normalise en string | null.
   const pressingRow = pers.pressing as { statut?: string } | null;
+  const pressingId = (pers.pressing_id as string | null) ?? null;
+
+  // AUDIT-B-05 + AUDIT-B-04 : fetch du dernier abonnement du pressing
+  // pour déterminer si l'essai est expiré ou si l'abonnement est suspendu.
+  // RLS : un personnel peut lire les abonnements de son propre pressing
+  // (policy d'isolation par pressing).
+  let trialExpired = false;
+  let abonnementSuspended = false;
+  if (pressingId) {
+    const { data: abn } = await supabase
+      .from("abonnements")
+      .select("statut, date_fin")
+      .eq("pressing_id", pressingId)
+      .order("date_debut", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (abn) {
+      const statut = (abn.statut as string) ?? "";
+      if (statut === "suspendu") {
+        abonnementSuspended = true;
+      }
+      if (
+        statut === "essai" &&
+        abn.date_fin &&
+        new Date(abn.date_fin as string) < new Date()
+      ) {
+        trialExpired = true;
+      }
+    }
+  }
 
   return {
     user_id: userId,
     role: pers.role as RoleCacheRole,
-    pressing_id: (pers.pressing_id as string | null) ?? null,
+    pressing_id: pressingId,
     mot_de_passe_temporaire: !!pers.mot_de_passe_temporaire,
     actif: !!pers.actif,
     statut_compte: (pers.statut_compte as string) ?? "invite_en_attente",
     pressing_statut: pressingRow?.statut ?? null,
+    trial_expired: trialExpired,
+    abonnement_suspended: abonnementSuspended,
   };
 }
 
@@ -690,6 +754,11 @@ export async function updateSession(
         // cache. Le TTL court (5 min) garantit qu'une suspension soit
         // répercutée en max 5 min (au prochain cache miss → DB query).
         pressing_statut: payload.pressing_statut ?? null,
+        // AUDIT-B-05 + AUDIT-B-04 : flags d'essai expiré / abonnement
+        // suspendu mis en cache. Le TTL court (5 min) garantit qu'une
+        // activation ou réactivation soit répercutée en max 5 min.
+        trial_expired: !!payload.trial_expired,
+        abonnement_suspended: !!payload.abonnement_suspended,
       };
     }
   }
@@ -710,6 +779,43 @@ export async function updateSession(
       roleInfo.pressing_statut !== "suspendu"
     ) {
       await setRoleCacheCookie(responseRef.current, roleInfo, cacheSecret);
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // 2c. AUDIT-B-06 — Invalidation ciblée du cache pour /personnel/changer-
+  //     mot-de-passe. Le cache (5 min TTL) est signé HMAC et httpOnly →
+  //     la page de changement de mot de passe ne peut PAS le modifier pour
+  //     refléter `mot_de_passe_temporaire = false` après un changement
+  //     réussi. Sans cette invalidation, l'utilisateur serait bloqué en
+  //     boucle : change son mot de passe → navigue au dashboard → le
+  //     middleware lit le cache stale (mot_de_passe_temporaire=true) →
+  //     le redirige vers /personnel/changer-mot-de-passe.
+  //
+  //     Solution : quand l'utilisateur est sur /personnel/changer-mot-de-
+  //     passe ET que le cache dit mot_de_passe_temporaire=true, on force
+  //     un re-fetch DB pour vérifier la valeur courante. Si le mot de
+  //     passe a été changé (DB dit false), on met à jour le cache. La
+  //     page peut alors détecter mot_de_passe_temporaire=false (via son
+  //     propre SELECT) et rediriger vers le dashboard.
+  // ---------------------------------------------------------------------
+  if (
+    roleInfo &&
+    roleInfo.mot_de_passe_temporaire &&
+    pathname === "/personnel/changer-mot-de-passe"
+  ) {
+    const freshInfo = await fetchRoleFromDB(supabase, user.id);
+    if (freshInfo) {
+      roleInfo = freshInfo;
+      // Re-cache la valeur fraîche (mot_de_passe_temporaire peut maintenant
+      // être false). On respecte les mêmes conditions que pour le cache miss.
+      if (
+        roleInfo.actif &&
+        roleInfo.statut_compte === "actif" &&
+        roleInfo.pressing_statut !== "suspendu"
+      ) {
+        await setRoleCacheCookie(responseRef.current, roleInfo, cacheSecret);
+      }
     }
   }
 
@@ -779,13 +885,103 @@ export async function updateSession(
   }
 
   // ---------------------------------------------------------------------
+  // 5.6. AUDIT-B-05 + AUDIT-B-04 — Essai expiré / Abonnement suspendu
+  //      (version légère). On ne signOut PAS l'utilisateur (il peut
+  //      toujours se déconnecter proprement depuis la page d'information),
+  //      on redirige juste les routes applicatives (/admin/* et
+  //      /personnel/*) vers une page d'information.
+  //
+  //      - AUDIT-B-05 : abonnements.statut='essai' AND date_fin < now
+  //        → redirect /activation-expiree
+  //      - AUDIT-B-04 : abonnements.statut='suspendu'
+  //        → redirect /compte-suspendu
+  //
+  //      Ne s'applique PAS aux super admins (pas de pressing rattaché).
+  //      Ne s'applique PAS aux routes publiques (/, /login, /activation,
+  //      /activation-expiree, /compte-suspendu) — l'utilisateur doit
+  //      pouvoir se déconnecter ou contacter le support depuis ces pages.
+  // ---------------------------------------------------------------------
+  if (
+    roleInfo.role !== "super_admin" &&
+    roleInfo.pressing_id &&
+    (roleInfo.trial_expired || roleInfo.abonnement_suspended)
+  ) {
+    const isAdminRoute =
+      pathname === "/admin" || pathname.startsWith("/admin/");
+    const isPersonnelRoute =
+      pathname === "/personnel" || pathname.startsWith("/personnel/");
+
+    if (isAdminRoute || isPersonnelRoute) {
+      // La suspension abonnement a priorité sur l'essai expiré (au cas où
+      // un super-admin suspendrait un pressing dont l'essai venait d'expirer).
+      const target = roleInfo.abonnement_suspended
+        ? "/compte-suspendu"
+        : "/activation-expiree";
+      return redirectTo(request, responseRef.current, target);
+    }
+  }
+
+  // ---------------------------------------------------------------------
   // 6. Redirect auth → dashboard
   //    Si user déjà connecté tente d'accéder à /, /login ou /activation
   //    → redirect automatique vers son dashboard.
+  //
+  //    ⚠️ Si l'utilisateur est en essai expiré ou abonnement suspendu, on
+  //    NE redirige PAS vers le dashboard (qui serait immédiatement bloqué
+  //    par la section 5.6 ci-dessus) — on le laisse sur la page publique
+  //    courante pour qu'il puisse se déconnecter ou contacter le support.
   // ---------------------------------------------------------------------
-  if (isAuthRoute) {
+  if (isAuthRoute && !roleInfo.trial_expired && !roleInfo.abonnement_suspended) {
     const target = computeDashboardTarget(roleInfo);
     return redirectTo(request, responseRef.current, target);
+  }
+
+  // ---------------------------------------------------------------------
+  // 6.5. AUDIT-B-06 — Mot de passe temporaire obligatoire.
+  //      Si l'utilisateur est un personnel (pas super_admin) avec
+  //      `mot_de_passe_temporaire=true`, on le force à changer son mot de
+  //      passe avant tout autre accès applicatif. Les routes autorisées
+  //      sont limitées à :
+  //        - /personnel/changer-mot-de-passe (la page de changement elle-même)
+  //        - /login (pour se déconnecter — la page appelle signOut)
+  //        - /activation-expiree, /compte-suspendu (pages d'info P1-A)
+  //        - /auth/callback (échange PKCE — doit laisser passer pour
+  //          compléter la session avant la redirection vers le changement
+  //          de mot de passe)
+  //
+  //      ⚠️ Les API routes sont EXCLUES par le matcher de middleware racine
+  //      (src/middleware.ts : `(?!...|api/.*|...)`). On ne peut donc PAS
+  //      intercepter les appels API ici — c'est intentionnel, les API
+  //      gèrent leur propre auth via getSupabaseServer() et la plupart des
+  //      endpoints utiles au changement de mot de passe (ex : logout) sont
+  //      accessibles depuis la page /personnel/changer-mot-de-passe.
+  //
+  //      Les super_admins ne sont pas affectés : `fetchRoleFromDB` renvoie
+  //      toujours `mot_de_passe_temporaire=false` pour eux (pas de ligne
+  //      dans `personnel`).
+  //
+  //      Note : la section 6 ci-dessus gère déjà les routes "auth" (/, /login,
+  //      /activation, /auth/callback) en redirigeant vers le dashboard cible
+  //      — qui est `/personnel/changer-mot-de-passe` quand
+  //      `mot_de_passe_temporaire=true` (cf. `computeDashboardTarget`).
+  //      Cette section 6.5 étend la protection aux routes applicatives
+  //      (/admin/*, /personnel/* hors allowlist, /super-admin/* — bien que
+  //      les super_admins ne soient pas concernés).
+  // ---------------------------------------------------------------------
+  if (
+    roleInfo.role !== "super_admin" &&
+    roleInfo.mot_de_passe_temporaire &&
+    pathname !== "/personnel/changer-mot-de-passe" &&
+    pathname !== "/login" &&
+    pathname !== "/activation-expiree" &&
+    pathname !== "/compte-suspendu" &&
+    pathname !== "/auth/callback"
+  ) {
+    return redirectTo(
+      request,
+      responseRef.current,
+      "/personnel/changer-mot-de-passe"
+    );
   }
 
   // ---------------------------------------------------------------------

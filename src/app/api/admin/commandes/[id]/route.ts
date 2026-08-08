@@ -1,6 +1,6 @@
 /**
- * OgPressing — API /api/admin/commandes/[id] (GET detail)
- * --------------------------------------------------------
+ * OgPressing — API /api/admin/commandes/[id] (GET detail + PATCH update)
+ * ---------------------------------------------------------------------
  * LOT 7 — détail complet d'une commande pour la page de suivi/détail :
  *   - champs de la commande
  *   - client (clients) imbriqué
@@ -9,20 +9,47 @@
  *   - articles (articles_vetements) avec assigne imbriqué, ordonnés par created_at ASC
  *   - paiements ordonnés par date_paiement DESC
  *
- * Réponse :
+ * PATCH (Phase-1) :
+ *   - Annulation d'une commande (#5) : `statut: "annule"` — réservé aux
+ *     rôles CAN_CANCEL_COMMANDES (manager / réceptionniste / caissier).
+ *     Refusée si la commande est déjà dans un statut terminal
+ *     ('pret', 'livre', 'retire', 'en_livraison', 'annule') → 409.
+ *   - Changement de priorité (#2) : `priorite: "normal" | "express"` —
+ *     réservé aux rôles CAN_CHANGE_PRIORITE (manager / réceptionniste).
+ *     Refusé si la commande n'est plus en statut 'recu' → 409.
+ *   - Mise à jour des notes : `notes: string | null`.
+ *   - Tous les champs fournis sont combinés en un seul UPDATE.
+ *   - Verrou optimiste (#6) : le body peut contenir `expected_updated_at`
+ *     (ISO string). Si fourni, on compare à `commandes.updated_at` courant ;
+ *     en cas de mismatch → 409 "modifiée par un autre utilisateur". Rétro-
+ *     compatible : si le champ est absent, aucun check n'est effectué.
+ *
+ * Réponse GET :
  *   { success: true, data: CommandeDetail }
+ * Réponse PATCH :
+ *   { success: true, data: { id, statut, priorite, notes, updated_at } }
  *
  * 🔒 SÉCURITÉ :
  *   - getSupabaseServer() (client anon + JWT) → RLS `isolation_pressing`
  *     isole par pressing_id. Si la commande n'existe pas ou n'appartient pas
  *     au pressing, la SELECT renvoie null → 404.
- *   - Auth : n'importe quel personnel actif.
- *   - 401 si non authentifié, 403 si personnel inactif, 404 si commande
- *     introuvable.
+ *   - pressing_id n'est jamais trusté du client (RLS gère l'isolation).
+ *   - Auth : n'importe quel personnel actif pour GET ; rôle dépendant de
+ *     l'opération pour PATCH.
+ *   - 401 si non authentifié, 403 si personnel inactif ou rôle insuffisant,
+ *     404 si commande introuvable, 409 si l'opération n'est pas applicable.
+ *   - Audit #8 : les erreurs Supabase sont masquées au client (log serveur).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { fetchCommandeDetail } from "@/lib/queries/commande-detail";
+import {
+  CAN_CANCEL_COMMANDES,
+  CAN_CHANGE_PRIORITE,
+  getCurrentPersonnel,
+  hasRole,
+  isPersonnelActive,
+} from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -32,28 +59,14 @@ interface RouteParams {
 
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   const supabase = await getSupabaseServer();
-  const { data: userData, error: userErr } = await supabase.auth.getUser();
-  if (userErr || !userData.user) {
+  const me = await getCurrentPersonnel(supabase);
+  if (!me) {
     return NextResponse.json(
       { success: false, error: "Non authentifié" },
       { status: 401 }
     );
   }
-
-  // Vérifie que l'appelant est un personnel actif
-  const { data: me } = await supabase
-    .from("personnel")
-    .select("id, actif, statut_compte")
-    .eq("user_id", userData.user.id)
-    .maybeSingle();
-
-  if (!me) {
-    return NextResponse.json(
-      { success: false, error: "Accès refusé — personnel introuvable" },
-      { status: 403 }
-    );
-  }
-  if (me.actif !== true || me.statut_compte !== "actif") {
+  if (!isPersonnelActive(me)) {
     return NextResponse.json(
       { success: false, error: "Accès refusé — compte inactif" },
       { status: 403 }
@@ -168,4 +181,302 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       paiements,
     },
   });
+}
+
+/* -------------------------------------------------------------------------- */
+/*  PATCH — MISE À JOUR PARTIELLE (annulation, priorité, notes)               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Statuts à partir desquels une commande ne peut plus être annulée.
+ * Une commande ne peut être annulée que si elle est en 'recu' ou
+ * 'en_traitement' (cf. cahier des charges #5).
+ */
+const STATUTS_NON_ANNULABLE = new Set([
+  "pret",
+  "en_livraison",
+  "livre",
+  "retire",
+  "annule",
+]);
+
+export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  const supabase = await getSupabaseServer();
+  const me = await getCurrentPersonnel(supabase);
+  if (!me) {
+    return NextResponse.json(
+      { success: false, error: "Non authentifié" },
+      { status: 401 }
+    );
+  }
+  if (!isPersonnelActive(me)) {
+    return NextResponse.json(
+      { success: false, error: "Accès refusé — compte inactif" },
+      { status: 403 }
+    );
+  }
+
+  const { id: commandeId } = await params;
+
+  // ---------- 1. Parse body ----------
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { success: false, error: "Corps de requête invalide (JSON attendu)" },
+      { status: 400 }
+    );
+  }
+
+  // ---------- 2. Extraction + validation des champs ----------
+  const statutRaw =
+    typeof body.statut === "string" ? body.statut.trim() : "";
+  const prioriteRaw =
+    typeof body.priorite === "string" ? body.priorite.trim() : "";
+  // `notes` peut être absent (undefined), null (effacer), ou une string.
+  const notesProvided = Object.prototype.hasOwnProperty.call(body, "notes");
+
+  // #6 — Verrou optimiste (optional) : si `expected_updated_at` est fourni,
+  // on comparera sa valeur à commandes.updated_at avant l'UPDATE. Permet
+  // au client de détecter une modification concurrente et de proposer à
+  // l'utilisateur de recharger. Rétro-compatible : champ absent = pas de check.
+  const expectedUpdatedAtRaw =
+    typeof body.expected_updated_at === "string"
+      ? body.expected_updated_at.trim()
+      : "";
+  // Valide le format (ISO string parsable). Si invalide, on ignore le check
+  // plutôt que de renvoyer 400 — le client ancien pourrait envoyer du n'importe
+  // quoi sans casser la rétro-compatibilité.
+  let expectedUpdatedAt: Date | null = null;
+  if (expectedUpdatedAtRaw) {
+    const d = new Date(expectedUpdatedAtRaw);
+    if (!Number.isNaN(d.getTime())) {
+      expectedUpdatedAt = d;
+    }
+  }
+
+  // Validation priorite (si fournie)
+  let priorite: "normal" | "express" | null = null;
+  if (prioriteRaw) {
+    if (prioriteRaw !== "normal" && prioriteRaw !== "express") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "priorite invalide (valeurs attendues : 'normal' ou 'express')",
+        },
+        { status: 400 }
+      );
+    }
+    priorite = prioriteRaw;
+  }
+
+  // Validation statut : seul "annule" est géré par PATCH en Phase-1.
+  // Les autres transitions de statut passent par les endpoints métier dédiés
+  // (workflow laveur/repasseur, etc.) pour éviter un PATCH trop générique.
+  if (statutRaw && statutRaw !== "annule") {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Changement de statut non supporté via PATCH (seul 'annule' est géré).",
+      },
+      { status: 400 }
+    );
+  }
+  const wantCancel = statutRaw === "annule";
+
+  // Validation notes (si fournie) : string <= 2000 chars ou null.
+  let notesValue: string | null | undefined = undefined;
+  if (notesProvided) {
+    if (body.notes === null) {
+      notesValue = null;
+    } else if (typeof body.notes === "string") {
+      const trimmed = body.notes.trim();
+      notesValue = trimmed ? trimmed.slice(0, 2000) : null;
+    } else {
+      return NextResponse.json(
+        { success: false, error: "notes doit être une chaîne ou null" },
+        { status: 400 }
+      );
+    }
+  }
+
+  // Aucun champ à mettre à jour → on retourne la commande courante.
+  if (!wantCancel && !priorite && !notesProvided) {
+    const { data: current, error: curErr } = await supabase
+      .from("commandes")
+      .select("id, statut, priorite, notes, updated_at")
+      .eq("id", commandeId)
+      .maybeSingle();
+    if (curErr) {
+      console.error("[api/admin/commandes/[id]] Erreur SELECT:", curErr);
+      return NextResponse.json(
+        { success: false, error: "Erreur interne du serveur" },
+        { status: 500 }
+      );
+    }
+    if (!current) {
+      return NextResponse.json(
+        { success: false, error: "Commande introuvable" },
+        { status: 404 }
+      );
+    }
+    // #6 — Verrou optimiste : même sans champ à modifier, on vérifie
+    // expected_updated_at si fourni (permet au client de détecter un changement
+    // concurrent même sur un PATCH "no-op").
+    if (expectedUpdatedAt && current.updated_at) {
+      const currentUpdatedAt = new Date(current.updated_at);
+      if (
+        !Number.isNaN(currentUpdatedAt.getTime()) &&
+        currentUpdatedAt.getTime() !== expectedUpdatedAt.getTime()
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "La commande a été modifiée par un autre utilisateur. Veuillez recharger et réessayer.",
+            code: "CONCURRENT_MODIFICATION",
+          },
+          { status: 409 }
+        );
+      }
+    }
+    return NextResponse.json({ success: true, data: current });
+  }
+
+  // ---------- 3. Vérification des rôles ----------
+  // Annulation : manager / réceptionniste / caissier.
+  if (wantCancel && !hasRole(me, CAN_CANCEL_COMMANDES)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Accès refusé — rôle insuffisant pour annuler une commande",
+      },
+      { status: 403 }
+    );
+  }
+  // Priorité : manager / réceptionniste.
+  if (priorite && !hasRole(me, CAN_CHANGE_PRIORITE)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Accès refusé — rôle insuffisant pour changer la priorité",
+      },
+      { status: 403 }
+    );
+  }
+
+  // ---------- 4. Fetch la commande (RLS isole par pressing) ----------
+  const { data: cmd, error: cmdErr } = await supabase
+    .from("commandes")
+    .select("id, statut, priorite, updated_at")
+    .eq("id", commandeId)
+    .maybeSingle();
+
+  if (cmdErr) {
+    console.error("[api/admin/commandes/[id]] Erreur SELECT commande:", cmdErr);
+    // Sécurité (audit #8) : masque le message Supabase au client.
+    return NextResponse.json(
+      { success: false, error: "Erreur interne du serveur" },
+      { status: 500 }
+    );
+  }
+  if (!cmd) {
+    return NextResponse.json(
+      { success: false, error: "Commande introuvable" },
+      { status: 404 }
+    );
+  }
+
+  // #6 — Verrou optimiste : si `expected_updated_at` est fourni (et a pu être
+  // parsé), on compare sa valeur à cmd.updated_at courant. En cas de mismatch,
+  // on renvoie 409 pour inviter le client à recharger la commande avant de
+  // retenter la modification. Le trigger `set_updated_at` (migration 005)
+  // garantit que updated_at est auto-mis à jour à NOW() sur chaque UPDATE,
+  // donc toute modification concurrente aura inévitablement changé cette valeur.
+  if (expectedUpdatedAt && cmd.updated_at) {
+    const currentUpdatedAt = new Date(cmd.updated_at);
+    if (
+      !Number.isNaN(currentUpdatedAt.getTime()) &&
+      currentUpdatedAt.getTime() !== expectedUpdatedAt.getTime()
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "La commande a été modifiée par un autre utilisateur. Veuillez recharger et réessayer.",
+          code: "CONCURRENT_MODIFICATION",
+        },
+        { status: 409 }
+      );
+    }
+  }
+
+  // ---------- 5. Vérifications métier ----------
+  if (wantCancel) {
+    // Annulation possible seulement si statut ∈ {recu, en_traitement}.
+    if (STATUTS_NON_ANNULABLE.has(cmd.statut)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Annulation impossible : la commande est déjà au statut '${cmd.statut}'. Seules les commandes 'recu' ou 'en_traitement' peuvent être annulées.`,
+        },
+        { status: 409 }
+      );
+    }
+  }
+  if (priorite) {
+    // Changement de priorité possible seulement si statut === 'recu'.
+    // (Une fois le traitement en cours, la priorité n'a plus de sens.)
+    if (cmd.statut !== "recu") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Changement de priorité impossible : la commande est au statut '${cmd.statut}' (seul le statut 'recu' permet de changer la priorité).`,
+        },
+        { status: 409 }
+      );
+    }
+  }
+
+  // ---------- 6. Construction du payload UPDATE ----------
+  const updatePayload: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+  if (wantCancel) {
+    updatePayload.statut = "annule";
+    // NB : le `statut_article` enum (articles_vetements.statut) ne contient
+    // pas la valeur 'annule' (cf. migration 001_enums.sql). On ne met donc
+    // pas à jour les articles_vetements individuels — seule la commande est
+    // annulée. Le statut global 'annule' de la commande prime côté UI.
+  }
+  if (priorite) {
+    updatePayload.priorite = priorite;
+  }
+  if (notesValue !== undefined) {
+    updatePayload.notes = notesValue;
+  }
+
+  // ---------- 7. UPDATE ----------
+  const { data: updated, error: updateErr } = await supabase
+    .from("commandes")
+    .update(updatePayload)
+    .eq("id", commandeId)
+    .select("id, statut, priorite, notes, updated_at")
+    .single();
+
+  if (updateErr || !updated) {
+    console.error(
+      "[api/admin/commandes/[id]] Erreur UPDATE commandes:",
+      updateErr
+    );
+    // Sécurité (audit #8) : masque le message Supabase au client.
+    return NextResponse.json(
+      { success: false, error: "Erreur interne du serveur" },
+      { status: 500 }
+    );
+  }
+
+  // ---------- 8. Réponse succès ----------
+  return NextResponse.json({ success: true, data: updated });
 }

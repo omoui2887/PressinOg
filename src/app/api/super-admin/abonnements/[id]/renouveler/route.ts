@@ -28,6 +28,11 @@
  *   5. UPDATE `abonnements` : date_fin, statut='actif',
  *      mode_paiement_derniere_echeance, date_derniere_echeance=now,
  *      reference_paiement, justificatif_url, enregistre_par
+ *   6. AUDIT-B-09 — Réactivation du pressing : si pressing.statut était
+ *      'suspendu' ou 'essai', on le repasse à 'actif'. Le personnel
+ *      désactivé n'est PAS réactivé automatiquement (le manager doit le
+ *      faire manuellement — on ne sait pas distinguer désactivation
+ *      légitime vs désactivation suite à suspension).
  *
  * 🔒 SÉCURITÉ : getSupabaseServer() + RLS super_admin_full_access sur
  *    abonnements & paiements. Aucune transaction bancaire n'est effectuée —
@@ -279,6 +284,57 @@ export async function POST(
       },
       { status: 500 }
     );
+  }
+
+  // ---- 4. AUDIT-B-09 — Réactivation du pressing ----
+  // Lors d'un renouvellement, si le pressing était suspendu (non-paiement)
+  // ou en essai (période d'essai 7 jours), on le repasse en 'actif'. Le
+  // pressing.statut est l'enum `statut_pressing` (migration 001_enums.sql) :
+  // 'actif' | 'suspendu' | 'essai' — il n'existe PAS de valeur 'essai_expire'
+  // (l'essai expiré est représenté par `abonnements.statut='essai' AND
+  // date_fin<NOW()`, géré par le middleware — voir P1-A section 5.6).
+  // On ne réactive QUE si le statut est 'suspendu' ou 'essai' ; 'actif' est
+  // laissé inchangé (cas nominal : renouvellement avant expiration).
+  //
+  // ⚠️ On ne réactive PAS automatiquement le personnel dont le compte aurait
+  // pu être désactivé (statut_compte='desactive') : on ne sait pas distinguer
+  // une désactivation légitime (fin de contrat) d'une désactivation suite à
+  // suspension. Le manager devra réactiver manuellement les comptes concernés.
+  const pressingIdRenew = abonnement.pressing_id;
+  const { data: pressingRow, error: pressingSelErr } = await supabase
+    .from("pressing")
+    .select("id, statut")
+    .eq("id", pressingIdRenew)
+    .maybeSingle();
+
+  if (pressingSelErr) {
+    console.error(
+      "[api/super-admin/abonnements/[id]/renouveler] Erreur SELECT pressing (réactivation):",
+      pressingSelErr
+    );
+    // Non bloquant : l'abonnement est renouvelé, on log l'erreur et on continue.
+  } else if (pressingRow && (pressingRow.statut === "suspendu" || pressingRow.statut === "essai")) {
+    const oldStatut = pressingRow.statut;
+    const { error: pressingUpdErr } = await supabase
+      .from("pressing")
+      .update({ statut: "actif" as const })
+      .eq("id", pressingIdRenew)
+      // Garde défensive : on ne met à jour QUE si le statut est toujours
+      // 'suspendu' ou 'essai' (évite un race condition avec une autre
+      // opération concurrente sur le pressing).
+      .in("statut", ["suspendu", "essai"]);
+    if (pressingUpdErr) {
+      console.error(
+        "[api/super-admin/abonnements/[id]/renouveler] Erreur UPDATE pressing (réactivation):",
+        pressingUpdErr
+      );
+      // Non bloquant : l'abonnement est renouvelé, on log l'erreur et on
+      // continue. Le super-admin pourra réactiver le pressing manuellement.
+    } else {
+      console.log(
+        `[renewal] Pressing ${pressingIdRenew} reactivated from ${oldStatut} to actif`
+      );
+    }
   }
 
   return NextResponse.json({

@@ -23,6 +23,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { isValidCIPhone, normalizeCIPhone } from "@/lib/validations/phone";
 
 export const dynamic = "force-dynamic";
 
@@ -259,7 +260,21 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         { status: 400 }
       );
     }
-    updates.telephone = v;
+    // AUDIT-B-03 — Validation du téléphone ivoirien (centralisée dans
+    // `isValidCIPhone`). Avant ce fix, seul le non-vide était vérifié.
+    if (!isValidCIPhone(v)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Le téléphone doit être un numéro ivoirien valide (ex : 07 00 00 00 00 ou +225 07 00 00 00 00).",
+        },
+        { status: 400 }
+      );
+    }
+    // AUDIT-B-03 — Normalisation vers +225XXXXXXXXXX pour cohérence avec
+    // les autres routes (activation, inscription, personnel, clients POST).
+    updates.telephone = normalizeCIPhone(v);
   }
 
   if ("email" in body) {

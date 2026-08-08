@@ -29,6 +29,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { isValidCIPhone, normalizeCIPhone } from "@/lib/validations/phone";
 import type { ApiResponse } from "@/lib/types";
 
 /* ----------------------- Constantes ----------------------- */
@@ -91,11 +92,12 @@ function validate(input: InscriptionInput): {
     errors.push("Le prénom doit comporter entre 2 et 50 caractères.");
   }
 
-  // Téléphone ivoirien : 0 + 10 chiffres OU +225 + 10 chiffres
-  // (après nettoyage espaces/-/parenthèses)
-  const telClean = telephone.replace(/[\s\-().]/g, "");
-  const telIvoirien = /^(\+225)?0?\d{8,10}$/.test(telClean);
-  if (!telIvoirien) {
+  // AUDIT-B-03 — Validation centralisée des téléphones ivoiriens (délégation
+  // au helper `isValidCIPhone`). L'ancienne regex `/^(\+225)?0?\d{8,10}$/`
+  // était trop restrictive (refusait les numéros non-CI valides) et
+  // inconsistante avec les autres routes. Le helper accepte les formats
+  // 0XXXXXXXXX, +225XXXXXXXXXX, 225XXXXXXXXXX + un fallback permissif.
+  if (!isValidCIPhone(telephone)) {
     errors.push(
       "Le téléphone doit être un numéro ivoirien valide (ex : 07 00 00 00 00 ou +225 07 00 00 00 00)."
     );
@@ -171,12 +173,14 @@ function validate(input: InscriptionInput): {
   // - nom_gerant = "Prenom Nom" (concaténation spec 4.2 → schema DB 1 champ)
   // - commune = adresse (équivalent spec)
   // - nombre_machines / nombre_employes / plan_souhaite (nouvelles colonnes)
+  // - telephone : AUDIT-B-03 — normalisé vers +225XXXXXXXXXX pour cohérence
+  //   avec les autres routes (activation, personnel).
   return {
     ok: true,
     data: {
       nom_gerant: `${prenom} ${nom}`.trim(),
       nom_pressing,
-      telephone: telClean,
+      telephone: normalizeCIPhone(telephone),
       email,
       ville,
       commune: adresse,

@@ -7,10 +7,14 @@
  *   Body { action: "desactiver" }   → statut='desactive', actif=false, date_desactivation=NOW()
  *   Body { action: "reactiver" }    → statut='actif', actif=true, date_desactivation=NULL
  *   Body { action: "modifier", nom, prenom, telephone, email, role,
- *          modes_paiement_autorises?, nom_affiche_recu?, seuil_alerte_impaye? }
+ *          modes_paiement_autorises?, nom_affiche_recu?, seuil_alerte_impaye?,
+ *          expected_updated_at? }
  *                                   → UPDATE nom_complet, telephone, email, role
  *                                     + champs caissier si la cible est/become caissier
  *                                     (AUDIT 9.7 — fix migration 019)
+ *                                   → #6 : verrou optimiste via `expected_updated_at`
+ *                                     (comparé à personnel.updated_at courant ; 409 si mismatch).
+ *                                     Rétro-compatible : champ absent = pas de check.
  *
  * POST — actions sur l'authentification (nécessitent service_role) :
  *   Body { action: "reset_password" }
@@ -39,6 +43,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { isValidCIPhone, normalizeCIPhone } from "@/lib/validations/phone";
 
 export const dynamic = "force-dynamic";
 
@@ -127,6 +132,30 @@ async function checkManagerAuth(): Promise<
   return { ok: true, me: { id: me.id, pressing_id: me.pressing_id }, supabase };
 }
 
+/**
+ * AUDIT-B-07 — Compte les managers actifs d'un pressing.
+ *
+ * Un "manager actif" est défini par : `role='manager' AND actif=true AND
+ * statut_compte='actif'`. Cette fonction est utilisée par le garde-fou
+ * anti-lockout pour empêcher qu'un pressing se retrouve sans aucun manager
+ * actif (soit par désactivation, soit par changement de rôle).
+ *
+ * @returns le nombre de managers actifs (0 si la requête échoue).
+ */
+async function countActiveManagers(
+  supabase: Awaited<ReturnType<typeof getSupabaseServer>>,
+  pressingId: string
+): Promise<number> {
+  const { count } = await supabase
+    .from("personnel")
+    .select("id", { count: "exact", head: true })
+    .eq("pressing_id", pressingId)
+    .eq("role", "manager")
+    .eq("actif", true)
+    .eq("statut_compte", "actif");
+  return count ?? 0;
+}
+
 /* ================================================================
  *  PATCH — Désactiver / Réactiver / Modifier
  * ================================================================ */
@@ -166,10 +195,11 @@ export async function PATCH(
 
   // ---- Action: désactiver / réactiver ----
   if (action === "desactiver" || action === "reactiver") {
-    // Vérifie que la cible existe + appartient au même pressing (RLS le garantit)
+    // Vérifie que la cible existe + appartient au même pressing (RLS le garantit).
+    // On récupère aussi `role` pour AUDIT-B-07 (last manager protection).
     const { data: target } = await supabase
       .from("personnel")
-      .select("id, nom_complet, statut_compte, pressing_id")
+      .select("id, nom_complet, statut_compte, pressing_id, role")
       .eq("id", targetId)
       .maybeSingle();
 
@@ -201,11 +231,41 @@ export async function PATCH(
       );
     }
 
+    // AUDIT-B-07 — Last manager protection.
+    // Si on désactive un manager, on vérifie qu'il reste au moins un autre
+    // manager actif dans le pressing. Sans ce garde, un manager pouvait
+    // désactiver le dernier manager actif → lockout complet du pressing
+    // (plus personne ne peut gérer le personnel, les commandes, etc.).
+    // NB : on ne déclenche le garde QUE si la cible est un manager ACTIF
+    // (statut_compte='actif'). Désactiver un manager déjà 'invite_en_attente'
+    // ou 'desactive' ne réduit pas le nombre de managers actifs, donc pas
+    // de risque de lockout.
+    if (
+      action === "desactiver" &&
+      target.role === "manager" &&
+      target.statut_compte === "actif"
+    ) {
+      const activeManagers = await countActiveManagers(supabase, me.pressing_id);
+      if (activeManagers <= 1) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Impossible de désactiver le dernier manager du pressing. Désignez d'abord un autre manager.",
+            code: "DERNIER_MANAGER",
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     const updates =
       action === "desactiver"
         ? {
             statut_compte: "desactive" as const,
             actif: false,
+            // #12 — date_desactivation : timestamp serveur (UTC). La colonne
+            // n'a pas de DEFAULT NOW() (002_tables.sql:190 — nullable).
             date_desactivation: new Date().toISOString(),
           }
         : {
@@ -248,12 +308,44 @@ export async function PATCH(
       typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     const role = typeof body.role === "string" ? body.role : "";
 
+    // #6 — Verrou optimiste (optionnel). Si `expected_updated_at` est fourni,
+    // on comparera sa valeur à personnel.updated_at avant l'UPDATE. Rétro-
+    // compatible : si absent ou non parsable, aucun check n'est effectué.
+    const expectedUpdatedAtRaw =
+      typeof body.expected_updated_at === "string"
+        ? body.expected_updated_at.trim()
+        : "";
+    let expectedUpdatedAt: Date | null = null;
+    if (expectedUpdatedAtRaw) {
+      const d = new Date(expectedUpdatedAtRaw);
+      if (!Number.isNaN(d.getTime())) {
+        expectedUpdatedAt = d;
+      }
+    }
+
     if (!nom || !prenom || !telephone) {
       return NextResponse.json(
         { success: false, error: "Nom, prénom et téléphone sont obligatoires." },
         { status: 400 }
       );
     }
+
+    // AUDIT-B-03 — Validation du téléphone ivoirien (centralisée dans
+    // `isValidCIPhone`). Avant ce fix, seul le non-vide était vérifié.
+    if (!isValidCIPhone(telephone)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Le téléphone doit être un numéro ivoirien valide (ex : 07 00 00 00 00 ou +225 07 00 00 00 00).",
+        },
+        { status: 400 }
+      );
+    }
+
+    // AUDIT-B-03 — Normalisation vers +225XXXXXXXXXX pour cohérence avec
+    // les autres routes (activation, inscription, personnel POST).
+    const telephoneNorm = normalizeCIPhone(telephone);
 
     if (!ROLES_VALID_SET.has(role)) {
       return NextResponse.json(
@@ -272,10 +364,16 @@ export async function PATCH(
       body.seuil_alerte_impaye !== undefined;
 
     // Vérifie que la cible existe + appartient au même pressing.
-    // On récupère aussi `role` pour valider la condition caissier.
+    // On récupère aussi :
+    //   - `role` + `statut_compte` pour AUDIT-B-07 (last manager protection)
+    //     et AUDIT-B-11 (role change notification).
+    //   - `nom_complet` pour le log AUDIT-B-11.
+    //   - `updated_at` pour le verrou optimiste (#6).
     const { data: target } = await supabase
       .from("personnel")
-      .select("id, pressing_id, email, telephone, role")
+      .select(
+        "id, pressing_id, email, telephone, role, statut_compte, nom_complet, updated_at"
+      )
       .eq("id", targetId)
       .maybeSingle();
 
@@ -291,6 +389,58 @@ export async function PATCH(
         { success: false, error: "Accès refusé" },
         { status: 403 }
       );
+    }
+
+    // #6 — Verrou optimiste : si `expected_updated_at` est fourni, on compare
+    // sa valeur à target.updated_at. En cas de mismatch, on renvoie 409 pour
+    // inviter le client à recharger. Le trigger `set_updated_at` (migration
+    // 005) auto-met à jour updated_at = NOW() sur chaque UPDATE, donc toute
+    // modification concurrente aura inévitablement changé cette valeur.
+    if (expectedUpdatedAt && target.updated_at) {
+      const currentUpdatedAt = new Date(target.updated_at);
+      if (
+        !Number.isNaN(currentUpdatedAt.getTime()) &&
+        currentUpdatedAt.getTime() !== expectedUpdatedAt.getTime()
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Cet employé a été modifié par un autre utilisateur. Veuillez recharger et réessayer.",
+            code: "CONCURRENT_MODIFICATION",
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    // AUDIT-B-07 — Last manager protection (changement de rôle).
+    // Si la cible est un manager actif ET le nouveau rôle n'est pas "manager",
+    // on vérifie qu'il reste au moins un autre manager actif après ce
+    // changement. Sans ce garde, un manager pouvait rétrograder le dernier
+    // manager actif → lockout complet du pressing.
+    // NB : on ne déclenche le garde QUE si la cible est un manager ACTIF
+    // (statut_compte='actif'). Changer le rôle d'un manager déjà désactivé
+    // ou en attente d'invitation ne réduit pas le nombre de managers actifs.
+    const previousRole = target.role as string;
+    const roleChanged = previousRole !== role;
+    if (
+      roleChanged &&
+      previousRole === "manager" &&
+      target.statut_compte === "actif"
+    ) {
+      const activeManagers = await countActiveManagers(supabase, me.pressing_id);
+      if (activeManagers <= 1) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Impossible de changer le rôle du dernier manager du pressing. Désignez d'abord un autre manager.",
+            code: "DERNIER_MANAGER",
+          },
+          { status: 409 }
+        );
+      }
     }
 
     // Condition caissier : role courant OU nouveau role
@@ -399,11 +549,12 @@ export async function PATCH(
     const email = emailRaw || null;
     const nomComplet = `${prenom} ${nom}`;
 
-    // Anti-doublon (email/téléphone) — exclut l'employé courant
-    if (email || telephone) {
+    // Anti-doublon (email/téléphone) — exclut l'employé courant.
+    // AUDIT-B-03 : on utilise le numéro normalisé pour la comparaison.
+    if (email || telephoneNorm) {
       const orParts: string[] = [];
       if (email) orParts.push(`email.eq.${email}`);
-      if (telephone) orParts.push(`telephone.eq.${telephone}`);
+      if (telephoneNorm) orParts.push(`telephone.eq.${telephoneNorm}`);
       const { data: duplicate } = await supabase
         .from("personnel")
         .select("id")
@@ -425,15 +576,35 @@ export async function PATCH(
       }
     }
 
+    // AUDIT-B-11 — Role change notification.
+    // Si le rôle change, on ajoute les colonnes `dernier_changement_role`
+    // (TIMESTAMPTZ) et `notes_changement_role` (TEXT) à l'UPDATE pour garder
+    // un audit trail côté DB (migration 025_notifications_role_change.sql).
+    // On logge aussi côté serveur pour permettre à un admin de retrouver
+    // l'historique dans les logs.
+    const updatePayload: Record<string, unknown> = {
+      nom_complet: nomComplet,
+      telephone: telephoneNorm,
+      email,
+      role,
+      ...updateCaissier,
+    };
+
+    if (roleChanged) {
+      const nowIso = new Date().toISOString();
+      const noteRole = `Rôle changé de "${previousRole}" à "${role}" par le manager ${me.id} le ${nowIso}`;
+      updatePayload.dernier_changement_role = nowIso;
+      updatePayload.notes_changement_role = noteRole;
+      // Audit trail serveur (visible dans les logs Vercel / Docker).
+      console.log(
+        `[personnel] Role change: ${target.nom_complet} ` +
+          `${previousRole} → ${role} by ${me.id}`
+      );
+    }
+
     const { data: updated, error: updateErr } = await supabase
       .from("personnel")
-      .update({
-        nom_complet: nomComplet,
-        telephone,
-        email,
-        role,
-        ...updateCaissier,
-      })
+      .update(updatePayload)
       .eq("id", targetId)
       .select(PERSONNEL_SELECT_AFTER_UPDATE)
       .maybeSingle();
@@ -450,6 +621,9 @@ export async function PATCH(
       success: true,
       data: updated,
       action: "modifier",
+      // AUDIT-B-11 — Indicateurs de changement de rôle pour le UI.
+      roleChanged,
+      previousRole: roleChanged ? previousRole : null,
     });
   }
 
@@ -639,6 +813,8 @@ export async function POST(
     // Met à jour date_invitation
     // ⚠️ FIX BUG-AUDIT-RUNTIME #6 (P2) : on vérifie l'erreur UPDATE pour ne
     // pas renvoyer `success: true` si la mise à jour a échoué en base.
+    // #12 — date_invitation : timestamp serveur (UTC). La colonne n'a pas
+    // de DEFAULT NOW() (002_tables.sql:188 — nullable).
     const { error: updInvErr } = await admin
       .from("personnel")
       .update({ date_invitation: new Date().toISOString() })
