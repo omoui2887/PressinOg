@@ -21,6 +21,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { isValidCIPhone, normalizeCIPhone } from "@/lib/validations/phone";
 
 export const dynamic = "force-dynamic";
 
@@ -277,6 +278,21 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
+  // AUDIT-B-03 — Validation du téléphone ivoirien (centralisée dans
+  // `isValidCIPhone`). Avant ce fix, seul le non-vide était vérifié.
+  if (!isValidCIPhone(telephone)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          "Le téléphone doit être un numéro ivoirien valide (ex : 07 00 00 00 00 ou +225 07 00 00 00 00).",
+      },
+      { status: 400 }
+    );
+  }
+  // AUDIT-B-03 — Normalisation vers +225XXXXXXXXXX pour cohérence avec les
+  // autres routes (activation, inscription, personnel).
+  const telephoneNorm = normalizeCIPhone(telephone);
   // Validation basique email
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return NextResponse.json(
@@ -290,13 +306,13 @@ export async function POST(request: NextRequest) {
     .from("clients")
     .select("id")
     .eq("pressing_id", personnel.pressing_id)
-    .eq("telephone", telephone)
+    .eq("telephone", telephoneNorm)
     .maybeSingle();
   if (existing) {
     return NextResponse.json(
       {
         success: false,
-        error: `Un client avec le téléphone ${telephone} existe déjà dans votre pressing`,
+        error: `Un client avec le téléphone ${telephoneNorm} existe déjà dans votre pressing`,
       },
       { status: 409 }
     );
@@ -308,7 +324,7 @@ export async function POST(request: NextRequest) {
     .insert({
       pressing_id: personnel.pressing_id,
       nom_complet: nomComplet,
-      telephone: telephone,
+      telephone: telephoneNorm,
       email: email,
       adresse: adresse,
       notes: notes,

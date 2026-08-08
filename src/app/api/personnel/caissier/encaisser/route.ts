@@ -365,6 +365,9 @@ export async function POST(request: NextRequest) {
   // --- INSERT paiement ---
   // Le trigger `trigger_recalculer_paiement_commande` met à jour
   // automatiquement commandes.montant_paye + statut_paiement.
+  // #12 — date_paiement est un timestamp serveur (UTC). On pourrait aussi
+  // déléguer à la DB DEFAULT NOW() (002_tables.sql:325), mais on garde la
+  // valeur explicite pour cohérence avec les autres INSERT de paiements.
   const insertPayload: Record<string, unknown> = {
     commande_id: commandeId,
     montant,

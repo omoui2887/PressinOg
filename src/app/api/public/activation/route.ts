@@ -31,6 +31,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { isValidCIPhone, normalizeCIPhone } from "@/lib/validations/phone";
 import type { ApiResponse } from "@/lib/types";
 
 /* ----------------------- Constantes ----------------------- */
@@ -97,9 +98,15 @@ function validate(input: ActivationInput): {
   if (nom_pressing.length < 2 || nom_pressing.length > 100) {
     errors.push("Le nom du pressing doit comporter entre 2 et 100 caractères.");
   }
-  const telClean = telephone.replace(/[\s\-().]/g, "");
-  if (!/^\+?\d{8,20}$/.test(telClean)) {
-    errors.push("Le téléphone doit contenir entre 8 et 20 chiffres.");
+  // AUDIT-B-03 — Validation centralisée des téléphones ivoiriens.
+  // L'ancienne regex `/^\+?\d{8,20}$/` était trop permissive et inconsistante
+  // avec les autres routes (inscription, personnel). On délègue maintenant à
+  // `isValidCIPhone` qui accepte les formats 0XXXXXXXXX, +225XXXXXXXXXX,
+  // 225XXXXXXXXXX et un fallback permissif pour les numéros non-CI.
+  if (!isValidCIPhone(telephone)) {
+    errors.push(
+      "Le téléphone doit être un numéro ivoirien valide (ex : 07 09 09 09 09 ou +225 07 09 09 09 09)."
+    );
   }
   if (ville.length > 100) errors.push("La ville est trop longue (max 100).");
   if (commune.length > 100) errors.push("La commune est trop longue (max 100).");
@@ -107,6 +114,12 @@ function validate(input: ActivationInput): {
   if (errors.length > 0) {
     return { ok: false, error: errors.join(" ") };
   }
+
+  // AUDIT-B-03 — Normalisation vers le format +225XXXXXXXXXX avant stockage.
+  // On retourne le numéro normalisé (et non l'entrée brute) afin que les
+  // INSERTs dans `pressing.telephone` et `personnel.telephone` soient
+  // cohérents avec les autres routes (inscription, personnel).
+  const telephoneNormalized = normalizeCIPhone(telephone);
 
   return {
     ok: true,
@@ -116,7 +129,7 @@ function validate(input: ActivationInput): {
       email,
       password,
       nom_pressing,
-      telephone,
+      telephone: telephoneNormalized,
       ville: ville || null,
       commune: commune || null,
     },
@@ -308,14 +321,30 @@ export async function POST(req: NextRequest) {
     createdAbonnementId = abonnement.id;
 
     /* --- Étape 6 : Marquer le code comme utilisé --- */
-    const { error: updateCodeError } = await supabase
+    // 🔒 AUDIT-B-01 — Garde TOCTOU : on ajoute `.eq("utilise", false)` à
+    // l'UPDATE pour garantir l'atomicité au niveau DB. Sans ce garde, deux
+    // requêtes concurrentes utilisant le même code pouvaient toutes les deux
+    // passer l'étape 1 (check utilise === false) puis réussir l'UPDATE (qui
+    // ne testait que l'id) → double activation (deux pressings créés d'un
+    // seul code).
+    //
+    // Avec `.eq("utilise", false)` + `.select("id").maybeSingle()`, l'UPDATE
+    // ne modifie la ligne QUE si utilise est toujours false au moment de
+    // l'exécution. Si un autre processus l'a déjà positionné à true entre
+    // temps, l'UPDATE affecte 0 ligne → `updatedCode` est null → on lève
+    // une erreur qui déclenche le rollback (suppression du pressing,
+    // personnel, abonnement, user Auth créés aux étapes 2-5).
+    const { data: updatedCode, error: updateCodeError } = await supabase
       .from("codes_activation")
       .update({
         utilise: true,
         date_utilisation: new Date().toISOString(),
         pressing_id_cible: createdPressingId,
       })
-      .eq("id", codeRow.id);
+      .eq("id", codeRow.id)
+      .eq("utilise", false)
+      .select("id")
+      .maybeSingle();
 
     if (updateCodeError) {
       // Sécurité (audit #8) : log serveur seul, message générique au client.
@@ -323,9 +352,23 @@ export async function POST(req: NextRequest) {
       throw new Error("Erreur interne du serveur");
     }
 
+    if (!updatedCode) {
+      // 0 ligne mise à jour = le code a été utilisé concurremment entre
+      // l'étape 1 (check) et l'étape 6 (UPDATE). On log côté serveur et on
+      // déclenche le rollback via le catch block ci-dessous (le message
+      // renvoyé au client reste générique).
+      console.error(
+        "[activation] Code utilisé concurremment (TOCTOU) — rollback"
+      );
+      throw new Error("TOCTOU: code used concurrently");
+    }
+
     /* --- Succès --- */
+    // À ce point, createdPressingId est garanti non-null : si l'INSERT pressing
+    // avait échoué (étape 3), on aurait throw avant d'arriver ici. Le guard
+    // `!` explicite satisfait TypeScript (createdPressingId est `string | null`).
     return NextResponse.json<ApiResponse<{ pressing_id: string; email: string }>>(
-      { success: true, data: { pressing_id: createdPressingId, email } },
+      { success: true, data: { pressing_id: createdPressingId!, email } },
       { status: 200 }
     );
   } catch (err) {

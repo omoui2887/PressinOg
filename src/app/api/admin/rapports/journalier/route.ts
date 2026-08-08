@@ -133,6 +133,13 @@ export async function GET(request: NextRequest) {
   }
 
   // Récupère les commandes du jour avec relations ( RLS isole par pressing_id )
+  //
+  // ⚠️ Filtre sur `date_reception` (date métier = moment où la commande est
+  // reçue par le pressing) et NON sur `created_at` (date d'insertion DB).
+  // Une commande saisie à 23:59:59 avec `date_reception` au lendemain doit
+  // apparaître sur le rapport du lendemain, pas sur celui du jour de saisie.
+  // `date_reception` est positionnée à `new Date().toISOString()` dans le
+  // POST /api/admin/commandes (voir 002_tables.sql : NOT NULL DEFAULT NOW()).
   const { data: commandes, error: cmdErr } = await supabase
     .from("commandes")
     .select(
@@ -147,8 +154,8 @@ export async function GET(request: NextRequest) {
       paiements:paiements(methode)
       `
     )
-    .gte("created_at", bounds.start)
-    .lte("created_at", bounds.end)
+    .gte("date_reception", bounds.start)
+    .lte("date_reception", bounds.end)
     .order("created_at", { ascending: true });
 
   if (cmdErr) {

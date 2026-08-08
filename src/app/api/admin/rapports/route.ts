@@ -59,6 +59,15 @@ interface CommandeRow {
   montant_paye: number | null;
   montant_remise: number | null;
   remise_type: string | null;
+  /**
+   * Statut métier de la commande (enum `statut_commande` :
+   * recu | en_traitement | lave | repasse | pret | en_livraison | livre | retire).
+   * Un autre agent ajoute la valeur `annule` à l'enum — on exclut donc
+   * toutes les commandes dont le statut est `annule` des calculs de CA
+   * (forward-compatible : si `annule` n'existe pas encore, le filtre est
+   * un no-op et toutes les commandes sont considérées comme actives).
+   */
+  statut: string | null;
   statut_paiement: string | null;
   created_at: string;
   client_id: string | null;
@@ -203,8 +212,13 @@ function buildCaParTypeService(lignes: LigneRow[]): PointCaParTypeService[] {
     sums.set(type, (sums.get(type) || 0) + (l.montant_ligne || 0));
   }
 
-  // Préserve l'ordre canonique, puis ajoute d'éventuels types inattendus
-  const typesPresents = [...TYPES_SERVICE_ORDONNES].filter((t) => sums.has(t));
+  // Préserve l'ordre canonique, puis ajoute d'éventuels types inattendus.
+  // `typesPresents` est typé `string[]` car on y pousse des types non-connus
+  // (clés du Map `sums`, qui sont des `string`) en plus des littéraux
+  // canoniques de `TYPES_SERVICE_ORDONNES`.
+  const typesPresents: string[] = [...TYPES_SERVICE_ORDONNES].filter((t) =>
+    sums.has(t)
+  );
   for (const t of sums.keys()) {
     if (!(TYPES_SERVICE_ORDONNES as readonly string[]).includes(t)) {
       typesPresents.push(t);
@@ -272,10 +286,14 @@ export async function GET(request: NextRequest) {
   const { start, end } = computePeriode(periode, customStart, customEnd);
 
   /* -------- 1. Commandes de la période (filtre created_at) -------- */
+  // Le filtre périodique reste sur `created_at` (cohérent avec les autres
+  // routes /api/admin/rapports/*). Pour le rapport journalier
+  // (/api/admin/rapports/journalier) qui est plus sensible à la date métier,
+  // on filtre sur `date_reception` (voir ce fichier).
   const { data: commandes, error: cmdErr } = await supabase
     .from("commandes")
     .select(
-      "id, numero_commande, montant_total, montant_paye, montant_remise, remise_type, statut_paiement, created_at, client_id"
+      "id, numero_commande, statut, montant_total, montant_paye, montant_remise, remise_type, statut_paiement, created_at, client_id"
     )
     .gte("created_at", start)
     .lte("created_at", end);
@@ -290,19 +308,28 @@ export async function GET(request: NextRequest) {
 
   const commandesList: CommandeRow[] = (commandes || []) as CommandeRow[];
 
+  // ⚠️ Exclusion des commandes annulées : une commande annulée ne doit pas
+  // compter dans le CA, le panier moyen, le total des remises, le graphique
+  // CA par jour, ni la section remises appliquées. On exclut également ces
+  // commandes du calcul des impayés (un client ne doit pas être marqué
+  // impayé pour une commande annulée). Forward-compatible : `annule` sera
+  // ajouté à l'enum `statut_commande` par un autre agent (migration à venir).
+  // Tant que la valeur n'existe pas, le filtre est un no-op.
+  const activeCommandes = commandesList.filter((c) => c.statut !== "annule");
+
   /* -------- 2. Stats agrégées (4 StatCards) -------- */
-  const ca_total = commandesList.reduce(
+  const ca_total = activeCommandes.reduce(
     (sum, c) => sum + (c.montant_total || 0),
     0
   );
-  const nombre_commandes = commandesList.length;
+  const nombre_commandes = activeCommandes.length;
   const panier_moyen = nombre_commandes > 0 ? Math.round(ca_total / nombre_commandes) : 0;
-  const total_remises = commandesList
+  const total_remises = activeCommandes
     .filter((c) => c.remise_type && c.remise_type !== "aucune")
     .reduce((sum, c) => sum + (c.montant_remise || 0), 0);
 
   /* -------- 3. CA par jour (1 point par jour UTC dans la période) -------- */
-  const ca_par_jour = buildCaParJour(commandesList, start, end);
+  const ca_par_jour = buildCaParJour(activeCommandes, start, end);
 
   /* -------- 4. CA par mode de paiement -------- */
   // Filtre sur date_paiement (préféré), fallback défensif sur created_at
@@ -328,11 +355,13 @@ export async function GET(request: NextRequest) {
   const ca_par_mode = buildCaParMode(paiementsList);
 
   /* -------- 5. CA par type de service -------- */
-  // Récupère les lignes des commandes de la période, avec le type du service
-  // lié. La RLS filtre via commande → pressing automatiquement.
+  // Récupère les lignes des commandes actives de la période, avec le type du
+  // service lié. La RLS filtre via commande → pressing automatiquement.
+  // On n'utilise que les `activeCommandes` (hors `annule`) pour ne pas compter
+  // les lignes de commandes annulées dans le CA par type de service.
   let ca_par_type_service: PointCaParTypeService[] = [];
-  if (commandesList.length > 0) {
-    const commandeIds = commandesList.map((c) => c.id);
+  if (activeCommandes.length > 0) {
+    const commandeIds = activeCommandes.map((c) => c.id);
     const { data: lignes, error: lignesErr } = await supabase
       .from("commande_lignes")
       .select("montant_ligne, service:services(type)")
@@ -345,8 +374,12 @@ export async function GET(request: NextRequest) {
       );
       // Non bloquant : on renvoie un tableau vide
     } else {
+      // Cast via `unknown` : supabase-js infère `service` comme un tableau
+      // `{ type: any }[]` pour les relations, mais PostgREST renvoie un
+      // objet unique (la relation est 1-1). Notre `LigneRow` local attend
+      // `service: { type: string | null } | null`.
       ca_par_type_service = buildCaParTypeService(
-        (lignes || []) as LigneRow[]
+        (lignes || []) as unknown as LigneRow[]
       );
     }
   }
@@ -364,14 +397,18 @@ export async function GET(request: NextRequest) {
   } else if (clientsData && clientsData.length > 0) {
     const clientIds = (clientsData as ClientRow[]).map((c) => c.id);
 
-    // Récupère les commandes impayées (non_paye ou partiel) de ces clients
+    // Récupère les commandes impayées (non_paye ou partiel) de ces clients.
+    // On exclut les commandes annulées (`statut !== 'annule'`) : une commande
+    // annulée ne doit pas être comptée comme impayé. Forward-compatible : si
+    // `annule` n'existe pas encore dans l'enum, le `.neq` ne filtre rien.
     const { data: cmdImpayees, error: cmdImpayeesErr } = await supabase
       .from("commandes")
       .select(
         "client_id, montant_total, montant_paye, statut_paiement"
       )
       .in("client_id", clientIds)
-      .in("statut_paiement", ["non_paye", "partiel"]);
+      .in("statut_paiement", ["non_paye", "partiel"])
+      .neq("statut", "annule");
 
     if (cmdImpayeesErr) {
       console.error(
@@ -416,14 +453,22 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  /* -------- 7. Remises appliquées sur la période -------- */
+  /* -------- 7. Remises appliquées sur la période (hors annulations) -------- */
+  // AUDIT-C-01 : la section "remises appliquées" et le StatCard "Total
+  // remises" doivent :
+  //   1. Utiliser les bornes de période `start`/`end` déjà appliquées en amont
+  //      via `commandesList` (filtre `created_at` du SELECT principal).
+  //   2. Exclure les commandes annulées (`statut === 'annule'`) : une commande
+  //      annulée ne doit figurer ni dans la liste des remises ni dans le total.
+  // On dérive donc `commandesAvecRemise` de `activeCommandes` (filtre
+  // `statut !== 'annule'` appliqué au §1) puis on fetch les noms clients.
   let remises_appliquees: RemiseAppliquee[] = [];
-  const commandesAvecRemise = commandesList.filter(
+  const commandesAvecRemise = activeCommandes.filter(
     (c) => c.remise_type && c.remise_type !== "aucune"
   );
 
   if (commandesAvecRemise.length > 0) {
-    // On a déjà les champs nécessaires dans commandesList, sauf le nom du
+    // On a déjà les champs nécessaires dans activeCommandes, sauf le nom du
     // client. On fetch les clients associés (via la relation Supabase).
     const cmdIdsAvecRemise = commandesAvecRemise.map((c) => c.id);
     const { data: cmdAvecClient, error: cmdClientErr } = await supabase
@@ -440,7 +485,10 @@ export async function GET(request: NextRequest) {
         cmdClientErr
       );
     } else {
-      remises_appliquees = ((cmdAvecClient || []) as CommandeAvecClientRow[]).map(
+      // Cast via `unknown` : supabase-js infère `client` comme un tableau
+      // `{ nom_complet: any }[]` pour la relation, mais PostgREST renvoie
+      // un objet unique (relation 1-1 commande → client).
+      remises_appliquees = ((cmdAvecClient || []) as unknown as CommandeAvecClientRow[]).map(
         (c) => ({
           id: c.id,
           numero_commande: c.numero_commande,

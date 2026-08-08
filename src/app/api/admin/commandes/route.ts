@@ -19,8 +19,24 @@
  *    `pressing_id` est renvoyé pour permettre au wizard (Étape 4) de
  *    générer le QR Code sans refetch.
  *
- * Format du numero_commande : CMD-YYYYMMDD-XXXX où XXXX = 4 chiffres aléatoires.
- * Évite les race conditions d'une séquence SQL centralisée.
+ * Format du numero_commande : CMD-YYYYMMDD-XXXXXX où XXXXXX = 6 chiffres
+ * aléatoires (900 000 combinaisons/jour). Un retry loop (5 tentatives)
+ * gère les collisions sur la contrainte UNIQUE en régénérant le numéro.
+ *
+ * Idempotence (#15) : si le client fournit un `idempotence_key`, on
+ * vérifie d'abord qu'aucune commande n'existe déjà pour ce
+ * (pressing_id, idempotence_key). Si oui → on renvoie la commande
+ * existante (200) sans recréer. Sinon → création normale avec la clé.
+ *
+ * Priorité express (#2) : un champ optionnel `priorite` ('normal' | 'express')
+ * est stocké sur la commande pour le MVP express.
+ *
+ * Date de retrait (#8) : calculée automatiquement côté serveur comme
+ *   date_pret_prevue + 7 jours (commandes normales) OU + 3 jours (commandes
+ *   'express'). Stockée dans `commandes.date_retrait` (TIMESTAMPTZ nullable,
+ *   cf. migration 002_tables.sql ligne 258). Le client n'a PAS la main sur
+ *   cette date — c'est le serveur qui la calcule pour garantir la cohérence.
+ *   Le client peut l'afficher après réception de la commande créée.
  *
  * 🔒 SÉCURITÉ :
  *   - getSupabaseServer() (client anon + JWT) → RLS `isolation_pressing`
@@ -31,6 +47,12 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import {
+  CAN_CREATE_COMMANDES,
+  getCurrentPersonnel,
+  hasRole,
+  isPersonnelActive,
+} from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -99,19 +121,37 @@ interface AcompteInput {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Génère un numero_commande au format CMD-YYYYMMDD-XXXX (4 chiffres aléatoires).
- * La combinaison date + 4 chiffres aléatoires offre 10 000 codes possibles par
- * jour, ce qui suffit largement pour un pressing. En cas de collision (UNIQUE
- * constraint), l'INSERT échouera et le client recevra une 500 — à corriger en
- * réessayant. La probabilité de collision est négligeable.
+ * Génère un numero_commande au format CMD-YYYYMMDD-XXXXXX (6 chiffres aléatoires).
+ * La combinaison date + 6 chiffres aléatoires offre 900 000 codes possibles par
+ * jour, ce qui rend la probabilité de collision négligeable. En cas de collision
+ * malgré tout (UNIQUE constraint), l'appelant doit réessayer en régénérant le
+ * numéro — voir la boucle de retry dans le POST (Step 9).
  */
 function generateNumeroCommande(): string {
   const now = new Date();
   const y = now.getUTCFullYear();
   const m = String(now.getUTCMonth() + 1).padStart(2, "0");
   const d = String(now.getUTCDate()).padStart(2, "0");
-  const rand = String(Math.floor(1000 + Math.random() * 9000)); // 1000-9999
+  const rand = String(Math.floor(100000 + Math.random() * 900000)); // 100000-999999
   return `CMD-${y}${m}${d}-${rand}`;
+}
+
+/**
+ * Détecte si une erreur Supabase/PostgREST correspond à une violation de
+ * contrainte UNIQUE (code SQLSTATE 23505). Utilisé pour décider si l'on
+ * doit régénérer le numero_commande et réessayer l'INSERT.
+ */
+function isUniqueViolation(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { code?: string; message?: string };
+  if (e.code === "23505") return true;
+  const msg = (e.message ?? "").toLowerCase();
+  return (
+    msg.includes("unique") ||
+    msg.includes("duplicate") ||
+    msg.includes("déjà") ||
+    msg.includes("existe déjà")
+  );
 }
 
 /**
@@ -160,28 +200,14 @@ async function rollbackCommande(
 
 export async function GET(request: NextRequest) {
   const supabase = await getSupabaseServer();
-  const { data: userData, error: userErr } = await supabase.auth.getUser();
-  if (userErr || !userData.user) {
+  const me = await getCurrentPersonnel(supabase);
+  if (!me) {
     return NextResponse.json(
       { success: false, error: "Non authentifié" },
       { status: 401 }
     );
   }
-
-  // Vérifie que l'appelant est un personnel actif
-  const { data: me } = await supabase
-    .from("personnel")
-    .select("id, pressing_id, actif, statut_compte")
-    .eq("user_id", userData.user.id)
-    .maybeSingle();
-
-  if (!me) {
-    return NextResponse.json(
-      { success: false, error: "Accès refusé — personnel introuvable" },
-      { status: 403 }
-    );
-  }
-  if (me.actif !== true || me.statut_compte !== "actif") {
+  if (!isPersonnelActive(me)) {
     return NextResponse.json(
       { success: false, error: "Accès refusé — compte inactif" },
       { status: 403 }
@@ -215,7 +241,7 @@ export async function GET(request: NextRequest) {
   let query = supabase
     .from("commandes")
     .select(
-      "id, numero_commande, statut, statut_paiement, montant_total, montant_paye, date_reception, date_pret_prevue, date_livraison, livraison, adresse_livraison, frais_livraison, created_at, client:clients(id, nom_complet, telephone)",
+      "id, numero_commande, statut, statut_paiement, montant_total, montant_paye, date_reception, date_pret_prevue, date_livraison, livraison, adresse_livraison, frais_livraison, priorite, created_at, client:clients(id, nom_complet, telephone)",
       { count: "exact" }
     );
 
@@ -278,30 +304,26 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const supabase = await getSupabaseServer();
-  const { data: userData, error: userErr } = await supabase.auth.getUser();
-  if (userErr || !userData.user) {
+  const me = await getCurrentPersonnel(supabase);
+  if (!me) {
     return NextResponse.json(
       { success: false, error: "Non authentifié" },
       { status: 401 }
     );
   }
-
-  // Vérifie que l'appelant est un personnel actif (rôle indifférent)
-  const { data: me } = await supabase
-    .from("personnel")
-    .select("id, pressing_id, actif, statut_compte")
-    .eq("user_id", userData.user.id)
-    .maybeSingle();
-
-  if (!me) {
+  if (!isPersonnelActive(me)) {
     return NextResponse.json(
-      { success: false, error: "Accès refusé — personnel introuvable" },
+      { success: false, error: "Accès refusé — compte inactif" },
       { status: 403 }
     );
   }
-  if (me.actif !== true || me.statut_compte !== "actif") {
+  // Rôles autorisés à créer une commande (manager, réceptionniste, caissier, comptable)
+  if (!hasRole(me, CAN_CREATE_COMMANDES)) {
     return NextResponse.json(
-      { success: false, error: "Accès refusé — compte inactif" },
+      {
+        success: false,
+        error: "Accès refusé — rôle insuffisant pour créer une commande",
+      },
       { status: 403 }
     );
   }
@@ -339,11 +361,93 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
+  // Validation défensive : date_pret_prevue doit être une date ISO parsable.
+  // On n'utilise PAS cette valeur directement pour les timestamp serveur —
+  // c'est une date métier fournie par le client (le réceptionniste choisit
+  // la date prévue de prêt dans le wizard). On vérifie juste qu'elle est
+  // parsable pour pouvoir calculer date_retrait ci-dessous.
+  const datePretParsed = new Date(datePretPrevue);
+  if (Number.isNaN(datePretParsed.getTime())) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "date_pret_prevue doit être une date ISO valide",
+      },
+      { status: 400 }
+    );
+  }
 
   const notes =
     typeof body.notes === "string" && body.notes.trim()
       ? body.notes.trim()
       : null;
+
+  // #2 — Priorité (optionnelle, défaut 'normal'). Valide : 'normal' | 'express'.
+  const prioriteRaw =
+    typeof body.priorite === "string" ? body.priorite.trim() : "";
+  const priorite: "normal" | "express" =
+    prioriteRaw === "express" ? "express" : "normal";
+
+  // #8 — Date de retrait calculée côté serveur (le client ne fournit PAS cette
+  // date — c'est le serveur qui la calcule à partir de date_pret_prevue + un
+  // délai selon la priorité). Délai par défaut : 7 jours pour les commandes
+  // normales (le client a une semaine pour récupérer ses vêtements après la
+  // date prévue de prêt). Pour les commandes 'express', on raccourcit à 3
+  // jours (le client express attend une livraison rapide → retrait rapide).
+  // Stockée dans `commandes.date_retrait` (TIMESTAMPTZ, nullable — migration
+  // 002_tables.sql ligne 258). Configurable plus tard via une table de params.
+  const RETRAIT_DELAY_NORMAL_MS = 7 * 24 * 60 * 60 * 1000; // +7 jours
+  const RETRAIT_DELAY_EXPRESS_MS = 3 * 24 * 60 * 60 * 1000; // +3 jours
+  const retraitDelayMs =
+    priorite === "express"
+      ? RETRAIT_DELAY_EXPRESS_MS
+      : RETRAIT_DELAY_NORMAL_MS;
+  const dateRetraitIso = new Date(
+    datePretParsed.getTime() + retraitDelayMs
+  ).toISOString();
+
+  // #15 — Idempotence key (optionnelle). Si fournie, on vérifiera plus loin
+  // si une commande existe déjà pour ce (pressing_id, key) afin de renvoyer
+  // la commande existante au lieu d'en créer une nouvelle (idempotent replay).
+  let idempotenceKey: string | null = null;
+  if (typeof body.idempotence_key === "string" && body.idempotence_key.trim()) {
+    idempotenceKey = body.idempotence_key.trim().slice(0, 100);
+  }
+
+  // #15 — Idempotent replay : si une clé est fournie, vérifie si une commande
+  // existe déjà pour ce (pressing_id, idempotence_key). Si oui, on renvoie
+  // cette commande avec un statut 200 (au lieu de 201) pour indiquer que la
+  // commande a été créée lors d'une requête précédente. Cela protège contre
+  // les doublons en cas de retry réseau ou double-clic côté client.
+  if (idempotenceKey) {
+    const { data: existingCmd, error: existingErr } = await supabase
+      .from("commandes")
+      .select(
+        "id, pressing_id, numero_commande, montant_total, montant_paye, statut, statut_paiement"
+      )
+      .eq("pressing_id", pressingId)
+      .eq("idempotence_key", idempotenceKey)
+      .maybeSingle();
+    if (existingErr) {
+      console.error(
+        "[api/admin/commandes] Erreur SELECT idempotence lookup:",
+        existingErr
+      );
+      // Sécurité (audit #8) : masque le message Supabase au client.
+      return NextResponse.json(
+        { success: false, error: "Erreur interne du serveur" },
+        { status: 500 }
+      );
+    }
+    if (existingCmd) {
+      // Replay idempotent : même payload réponse qu'un 201, mais code 200.
+      return NextResponse.json(
+        { success: true, data: existingCmd },
+        { status: 200 }
+      );
+    }
+    // Sinon, on continue normalement avec la création.
+  }
 
   // Validation des articles
   const rawArticles = Array.isArray(body.articles) ? body.articles : [];
@@ -737,40 +841,85 @@ export async function POST(request: NextRequest) {
     statutPaiement = "partiel";
   }
 
-  // ---------- 9. INSERT commande ----------
-  const numeroCommande = generateNumeroCommande();
+  // ---------- 9. INSERT commande (avec retry sur collision numero_commande) ----------
+  // #1 — La colonne `numero_commande` est UNIQUE. Le format CMD-YYYYMMDD-XXXXXX
+  // (6 chiffres aléatoires) rend la collision très improbable, mais on gère
+  // quand même le cas en régénérant le numéro et en réessayant jusqu'à 5 fois.
+  // On vérifie le code d'erreur PostgREST 23505 (unique_violation) ou un
+  // message contenant "unique" / "duplicate" / "déjà".
+  interface NewCommandeRow {
+    id: string;
+    numero_commande: string;
+    montant_total: number;
+    montant_paye: number;
+    statut: string;
+    statut_paiement: string;
+  }
   const nowIso = new Date().toISOString();
+  const MAX_NUMERO_RETRIES = 5;
+  let newCommande: NewCommandeRow | null = null;
+  let lastInsertCmdErr: unknown = null;
 
-  const { data: newCommande, error: insertCmdErr } = await supabase
-    .from("commandes")
-    .insert({
-      pressing_id: pressingId,
-      client_id: clientId,
-      numero_commande: numeroCommande,
-      statut: "recu",
-      statut_paiement: statutPaiement,
-      montant_total: montantTotal,
-      montant_paye: montantPaye,
-      remise_type: remiseType,
-      remise_valeur: remiseType === "aucune" ? 0 : remiseValeur,
-      montant_total_avant_remise: montantTotalAvantRemise,
-      montant_remise: montantRemise,
-      date_reception: nowIso,
-      date_pret_prevue: datePretPrevue,
-      livraison: false,
-      frais_livraison: 0,
-      notes: notes,
-      cree_par: personnelId,
-    })
-    .select(
-      "id, numero_commande, montant_total, montant_paye, statut, statut_paiement"
-    )
-    .single();
+  for (let attempt = 1; attempt <= MAX_NUMERO_RETRIES; attempt++) {
+    const numeroCommande = generateNumeroCommande();
+    const { data: inserted, error: insertErr } = await supabase
+      .from("commandes")
+      .insert({
+        pressing_id: pressingId,
+        client_id: clientId,
+        numero_commande: numeroCommande,
+        statut: "recu",
+        statut_paiement: statutPaiement,
+        montant_total: montantTotal,
+        montant_paye: montantPaye,
+        remise_type: remiseType,
+        remise_valeur: remiseType === "aucune" ? 0 : remiseValeur,
+        montant_total_avant_remise: montantTotalAvantRemise,
+        montant_remise: montantRemise,
+        // #12 — Server-side timestamp (UTC) — could also rely on DB DEFAULT NOW()
+        // (la colonne date_reception a DEFAULT NOW() dans 002_tables.sql:254).
+        // On garde la valeur explicite pour compatibilité avec l'existant et
+        // pour que le timestamp soit cohérent avec `nowIso` utilisé pour
+        // l'acompte (paiements.date_paiement) ci-dessous.
+        date_reception: nowIso,
+        date_pret_prevue: datePretPrevue,
+        // #8 — date_retrait calculée côté serveur (+7j normal, +3j express).
+        // Voir calcul + haut dans le handler.
+        date_retrait: dateRetraitIso,
+        livraison: false,
+        frais_livraison: 0,
+        notes: notes,
+        priorite: priorite,
+        idempotence_key: idempotenceKey,
+        cree_par: personnelId,
+      })
+      .select(
+        "id, numero_commande, montant_total, montant_paye, statut, statut_paiement"
+      )
+      .single();
 
-  if (insertCmdErr || !newCommande) {
+    if (!insertErr && inserted) {
+      newCommande = inserted as NewCommandeRow;
+      break;
+    }
+
+    lastInsertCmdErr = insertErr;
+    // Si c'est une collision sur numero_commande, on retry avec un nouveau n°.
+    if (isUniqueViolation(insertErr) && attempt < MAX_NUMERO_RETRIES) {
+      console.warn(
+        `[api/admin/commandes] Collision numero_commande (tentative ${attempt}/${MAX_NUMERO_RETRIES}), régénération...`,
+        insertErr
+      );
+      continue;
+    }
+    // Erreur non récupérable ou nombre de tentatives épuisé : on sort.
+    break;
+  }
+
+  if (!newCommande) {
     console.error(
-      "[api/admin/commandes] Erreur INSERT commandes:",
-      insertCmdErr
+      "[api/admin/commandes] Erreur INSERT commandes (après retries):",
+      lastInsertCmdErr
     );
     // Sécurité (audit #8) : on ne renvoie pas err.message au client.
     return NextResponse.json(
@@ -782,7 +931,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const commandeId = newCommande.id as string;
+  const commandeId = newCommande.id;
+  const numeroCommandeFinal = newCommande.numero_commande;
   const shortCommandeId = commandeId.slice(0, 8);
 
   // ---------- 10. INSERT lignes + articles_vetements ----------
@@ -891,6 +1041,9 @@ export async function POST(request: NextRequest) {
         montant: acompte.montant,
         methode: acompte.methode,
         reference: acompte.reference ?? null,
+        // #12 — Server-side timestamp (UTC) — could also rely on DB DEFAULT NOW()
+        // (la colonne date_paiement a DEFAULT NOW() dans 002_tables.sql:325).
+        // On garde la valeur explicite pour cohérence avec date_reception.
         date_paiement: nowIso,
         enregistre_par: personnelId,
         est_acompte: true,
@@ -918,17 +1071,23 @@ export async function POST(request: NextRequest) {
   // puisse générer le QR Code sans avoir à refetch la commande. Le QR encode
   // un payload JSON `{ commande_id, numero_commande, pressing_id }` qui sera
   // utilisé par le scanner de l'application mobile / borne de retrait.
+  // #8 — `date_pret_prevue` et `date_retrait` sont renvoyées pour que le
+  // client puisse les afficher immédiatement (sans refetch) sur le ticket
+  // et l'écran de confirmation.
   return NextResponse.json(
     {
       success: true,
       data: {
         id: commandeId,
         pressing_id: pressingId,
-        numero_commande: numeroCommande,
+        numero_commande: numeroCommandeFinal,
         montant_total: montantTotal,
         montant_paye: montantPaye,
         statut: "recu",
         statut_paiement: statutPaiement,
+        priorite: priorite,
+        date_pret_prevue: datePretPrevue,
+        date_retrait: dateRetraitIso,
       },
     },
     { status: 201 }
