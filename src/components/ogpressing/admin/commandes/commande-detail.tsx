@@ -25,6 +25,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Archive,
   ArchiveRestore,
@@ -93,6 +94,7 @@ import {
   printCommandeTicket,
   type CommandeDetail as CommandeDetailData,
 } from "./commande-print";
+import { EncaisserPaiementDialog } from "./encaisser-paiement-dialog";
 
 interface CommandeDetailProps {
   commande: CommandeDetailData;
@@ -127,6 +129,7 @@ export function CommandeDetail({
   basePath = "/admin",
   role,
 }: CommandeDetailProps) {
+  const router = useRouter();
   // Copie locale des articles pour refléter les mises à jour de statut
   // sans devoir refetch toute la commande.
   const [articles, setArticles] = useState(commande.articles);
@@ -138,6 +141,13 @@ export function CommandeDetail({
     setArticles(commande.articles);
   }, [commande.articles]);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  // État du dialog d'encaissement (FIX-ENCAISSE-ADMIN). Ouvert via le bouton
+  // "Encaisser le solde" visible quand resteAPayer > 0. Après un encaissement
+  // réussi, on appelle router.refresh() pour recharger les données serveur
+  // (montant_paye, statut_paiement, liste des paiements) et le bouton
+  // disparaît si la commande est soldée.
+  const [encaisserOpen, setEncaisserOpen] = useState(false);
 
   // État du dialog de saisie du casier (ouvert quand l'utilisateur
   // sélectionne "pret" dans le Select de statut d'un article). On ne
@@ -403,8 +413,22 @@ export function CommandeDetail({
           </div>
         </div>
 
-        {/* Actions impression */}
+        {/* Actions impression + encaissement */}
         <div className="flex flex-wrap gap-2">
+          {/* FIX-ENCAISSE-ADMIN : bouton "Encaisser le solde" visible
+              seulement quand la commande n'est pas soldée (resteAPayer > 0).
+              Ouvre le dialog EncaisserPaiementDialog qui appelle
+              /api/personnel/caissier/encaisser (manager/réceptionniste/caissier). */}
+          {resteAPayer > 0 && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => setEncaisserOpen(true)}
+            >
+              <Wallet className="size-4" />
+              Encaisser le solde
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -976,6 +1000,22 @@ export function CommandeDetail({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog d'encaissement (FIX-ENCAISSE-ADMIN) — permet au
+          manager/réceptionniste/caissier de régler le solde d'une commande
+          partiellement payée directement depuis la page détail. Après un
+          encaissement réussi, router.refresh() recharge les données serveur
+          (montant_paye, statut_paiement, liste des paiements) et le bouton
+          "Encaisser le solde" disparaît si la commande est soldée. */}
+      <EncaisserPaiementDialog
+        open={encaisserOpen}
+        onOpenChange={setEncaisserOpen}
+        commandeId={commande.id}
+        numeroCommande={commande.numero_commande}
+        montantTotal={commande.montant_total}
+        montantPaye={commande.montant_paye}
+        onSuccess={() => router.refresh()}
+      />
     </div>
   );
 }
