@@ -18,6 +18,7 @@
  */
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { fetchWithTimeout } from "@/lib/supabase/error-handling";
 
 /**
  * Crée un client Supabase côté serveur (Server Component / Route Handler /
@@ -59,5 +60,10 @@ export async function getSupabaseServer() {
         }
       },
     },
+    // Cap la latence d'un appel réseau mort (projet en pause, DNS
+    // injoignable) à 8s — voir src/lib/supabase/error-handling.ts.
+    global: { fetch: fetchWithTimeout(8000) },
+    // Timeout PostgREST (requêtes DB) à 8s également — double sécurité.
+    db: { timeout: 8000 },
   });
 }

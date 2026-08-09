@@ -13,6 +13,7 @@
  *   const { data } = await supabaseBrowser.from("pressing").select();
  */
 import { createBrowserClient } from "@supabase/ssr";
+import { fetchWithTimeout } from "@/lib/supabase/error-handling";
 
 /**
  * Crée un client Supabase côté navigateur. Sync automatique de la session
@@ -23,6 +24,12 @@ import { createBrowserClient } from "@supabase/ssr";
  * ⚠️ Si les vars d'env manquent, on retourne un client avec URL placeholder
  *    pour éviter un crash côté navigateur. Les requêtes Supabase échoueront
  *    en 500 mais l'app restera rendable.
+ *
+ * ⏱️ Timeout : un wrapper fetch avec AbortController cappe la latence d'un
+ *    appel à un serveur injoignable (projet en pause, DNS mort, panne
+ *    réseau) à 10s côté navigateur — sans cela, le fetch navigateur peut
+ *    rester pendant 60s+ avant d'échouer, gelant l'UI. En production
+ *    (Supabase joignable), ce wrapper est transparent.
  */
 export function createSupabaseBrowserClient() {
   const supabaseUrl =
@@ -30,7 +37,9 @@ export function createSupabaseBrowserClient() {
   const supabaseAnonKey =
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder";
-  return createBrowserClient(supabaseUrl, supabaseAnonKey);
+  return createBrowserClient(supabaseUrl, supabaseAnonKey, {
+    global: { fetch: fetchWithTimeout(10000) },
+  });
 }
 
 // Singleton côté navigateur (évite de recréer le client à chaque render)

@@ -33,6 +33,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isValidCIPhone, normalizeCIPhone } from "@/lib/validations/phone";
 import { isEnvConfigured } from "@/lib/env";
+import { isSupabaseNetworkError } from "@/lib/supabase/error-handling";
+import { serviceUnavailableResponse } from "@/lib/supabase/server-error-response";
 import type { ApiResponse } from "@/lib/types";
 
 /* ----------------------- Constantes ----------------------- */
@@ -193,6 +195,10 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
 
   if (codeError) {
+    // Erreur réseau (Supabase injoignable) → 503 clair au lieu d'un 500.
+    if (isSupabaseNetworkError(codeError)) {
+      return serviceUnavailableResponse("api/public/activation", codeError);
+    }
     console.error("[activation] Erreur lookup code :", codeError);
     return NextResponse.json<ApiResponse>(
       { success: false, error: "Erreur lors de la vérification du code." },
@@ -401,6 +407,12 @@ export async function POST(req: NextRequest) {
     }
     if (createdUserId) {
       await supabase.auth.admin.deleteUser(createdUserId);
+    }
+
+    // Erreur réseau (Supabase injoignable en cours de transaction) → 503
+    // clair, plus actionnable pour l'utilisateur qu'un 500 générique.
+    if (isSupabaseNetworkError(err)) {
+      return serviceUnavailableResponse("api/public/activation", err);
     }
 
     // Sécurité (audit #8) : les erreurs métier (email déjà utilisé, code

@@ -30,6 +30,7 @@
 import { createServerClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
+import { fetchWithTimeout } from "@/lib/supabase/error-handling";
 
 /* ========================================================================== */
 /*  CONSTANTES — POLITIQUE DE ROUTING (DENY-BY-DEFAULT)                       */
@@ -700,6 +701,11 @@ export function createMiddlewareClient(
         );
       },
     },
+    // Cap la latence d'un appel réseau mort (projet en pause, DNS
+    // injoignable) à 8s — le middleware tourne sur Edge Runtime et ne
+    // doit pas bloquer la navigation plus de quelques secondes. Voir
+    // src/lib/supabase/error-handling.ts.
+    global: { fetch: fetchWithTimeout(8000) },
   });
 
   return { supabase, responseRef };
