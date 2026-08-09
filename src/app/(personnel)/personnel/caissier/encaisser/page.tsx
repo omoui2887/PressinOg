@@ -28,6 +28,7 @@ import {
   CheckCircle2,
   CreditCard,
   Loader2,
+  Printer,
   Receipt,
   Search,
   Smartphone,
@@ -48,6 +49,8 @@ import {
   statutPaiementVariant,
   type CommandeListItem,
 } from "@/components/ogpressing/admin/commandes/commandes-helpers";
+import { printPaiementReceipt } from "@/components/ogpressing/admin/commandes/commande-print";
+import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { formatFCFA, formatDate } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
 import type { MethodePaiement } from "@/lib/types/database.types";
@@ -74,10 +77,15 @@ interface EncaisserApiResponse {
     montant: number;
     methode: string;
     date_paiement: string;
+    reference: string | null;
     nouveau_montant_paye: number;
     nouveau_statut_paiement: string;
     reste_a_payer: number;
     montant_total: number;
+    /** FIX-HIGH-1 (GAP 2 — PRD §7.5) : points fidélité crédités au client
+     *  (1 point = 100 FCFA payés). 0 si montant < 100 FCFA ou en cas
+     *  d'échec non-bloquant de l'UPDATE. */
+    points_gagnes: number;
   };
 }
 
@@ -373,9 +381,51 @@ function EncaissementForm({
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [printing, setPrinting] = useState(false);
+  const [pressingNom, setPressingNom] = useState<string | null>(null);
   const [success, setSuccess] = useState<EncaisserApiResponse["data"] | null>(
     null
   );
+
+  // FIX-HIGH-1 (GAP 1) : récupère le nom du pressing côté client pour
+  // l'en-tête du reçu imprimable. Fetch unique au montage, non-bloquant
+  // (le reçu utilise "OgPressing" comme fallback si la fetch échoue).
+  // On utilise le client Supabase browser (anon + JWT → RLS isole par
+  // pressing_id, comme pour le layout serveur).
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const supabase = getSupabaseBrowser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data: personnel } = await supabase
+          .from("personnel")
+          .select("pressing_id")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (!active || !personnel?.pressing_id) return;
+        const { data: pressing } = await supabase
+          .from("pressing")
+          .select("nom")
+          .eq("id", personnel.pressing_id)
+          .maybeSingle();
+        if (active && pressing?.nom) {
+          setPressingNom(pressing.nom);
+        }
+      } catch (err) {
+        console.warn(
+          "[caissier/encaisser] Impossible de récupérer le nom du pressing pour le reçu :",
+          err
+        );
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Quand la commande change, on reset le montant au reste à payer.
   // Le parent utilise `key={selected.id}` → le composant est remonté à
@@ -433,6 +483,15 @@ function EncaissementForm({
             : `${formatFCFA(json.data.reste_a_payer)} restant`
         }`,
       });
+      // FIX-HIGH-1 (GAP 2 — PRD §7.5) : notifie séparément les points fidélité
+      // gagnés (1 point = 100 FCFA payés) pour mettre en avant la récompense.
+      if (json.data.points_gagnes > 0) {
+        toast.info("Points fidélité crédités", {
+          description: `Vous avez gagné ${json.data.points_gagnes} point${
+            json.data.points_gagnes > 1 ? "s" : ""
+          } fidélité !`,
+        });
+      }
       onEncaisseSuccess();
     } catch (err) {
       let message: string;
@@ -452,6 +511,37 @@ function EncaissementForm({
 
   function handleNouveauEncaissement() {
     onClear();
+  }
+
+  // FIX-HIGH-1 (GAP 1 — PRD §12.2) : imprime le reçu de paiement après un
+  // encaissement réussi. La fonction `printPaiementReceipt` ouvre une
+  // fenêtre popup dédiée (window.open + window.print), isolée du style de
+  // l'app, et déclenche l'impression automatiquement.
+  function handlePrintRecu() {
+    if (!success) return;
+    setPrinting(true);
+    try {
+      printPaiementReceipt(
+        {
+          numero_commande: commande.numero_commande,
+          client_nom: commande.client?.nom_complet ?? "—",
+          montant_total: success.montant_total,
+          // `nouveau_montant_paye` = cumul payé APRÈS ce paiement
+          montant_paye: success.nouveau_montant_paye,
+        },
+        {
+          montant: success.montant,
+          methode: success.methode,
+          reference: success.reference,
+          created_at: success.date_paiement,
+        },
+        pressingNom ?? undefined
+      );
+    } finally {
+      // `printPaiementReceipt` est synchrone mais window.open/print peut
+      // bloquer un court instant ; on désactive l'état printing juste après.
+      setPrinting(false);
+    }
   }
 
   /* ----- État SUCCÈS : récapitulatif ----- */
@@ -510,7 +600,46 @@ function EncaissementForm({
                 {soldeSoldé ? "Soldé" : formatFCFA(success.reste_a_payer)}
               </span>
             </div>
+            {success.reference && (
+              <div className="flex justify-between border-t pt-2">
+                <span className="text-muted-foreground">Référence</span>
+                <span className="font-mono font-medium text-foreground">
+                  {success.reference}
+                </span>
+              </div>
+            )}
+            {success.points_gagnes > 0 && (
+              <div className="flex justify-between border-t pt-2">
+                <span className="text-muted-foreground">
+                  Points fidélité crédités
+                </span>
+                <span className="font-bold text-secondary">
+                  +{success.points_gagnes} pts
+                </span>
+              </div>
+            )}
           </div>
+
+          {/* FIX-HIGH-1 (GAP 1 — PRD §12.2) : bouton principal d'impression
+              du reçu de paiement. Affiché en premier (CTA principal). */}
+          <Button
+            type="button"
+            className="h-11 w-full"
+            onClick={handlePrintRecu}
+            disabled={printing}
+          >
+            {printing ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                Ouverture…
+              </>
+            ) : (
+              <>
+                <Printer className="size-4" />
+                Imprimer le reçu
+              </>
+            )}
+          </Button>
 
           <div className="flex flex-col gap-2 sm:flex-row">
             <Button
@@ -520,7 +649,7 @@ function EncaissementForm({
             >
               Nouvel encaissement
             </Button>
-            <Button asChild className="flex-1">
+            <Button asChild variant="outline" className="flex-1">
               <Link href={`${BASE_PATH}/clients`}>
                 Voir les clients
               </Link>

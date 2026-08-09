@@ -7,7 +7,7 @@
  *   - Filtres : par produit, par type, par plage de dates
  *   - Liste triée par date décroissante
  *   - Pagination (20/page)
- *   - Bouton Export .xlsx (placeholder LOT 12)
+ *   - Bouton Export .xlsx — rapport Stock mouvements (PRD §14 + §15)
  *
  * Données via GET /api/admin/stock/mouvements + GET /api/admin/stock (pour
  * la liste des produits du filtre).

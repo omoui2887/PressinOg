@@ -23,7 +23,7 @@
  *     à 'especes' + 'mobile_money' uniquement, par exemple.
  *
  * ⚙️ LOGIQUE :
- *   1. Fetch la commande par id (RLS filtre par pressing)
+ *   1. Fetch la commande par id (RLS filtre par pressing) — inclut client_id
  *   2. Valide montant > 0 et montant + montant_paye ≤ montant_total + 1
  *      (tolérance de 1 FCFA pour les arrondis, alignée sur la CHECK
  *      constraint de la table commandes)
@@ -33,9 +33,14 @@
  *      recalcule AUTOMATIQUEMENT commandes.montant_paye et statut_paiement
  *      → on n'a PAS à mettre à jour la commande manuellement
  *   6. Re-fetch la commande pour retourner le nouveau solde
+ *   7. FIX-HIGH-1 (GAP 2 — PRD §7.5) : incrément auto des points fidélité
+ *      du client — `Math.floor(montant / 100)` points crédités sur
+ *      `clients.points_fidelite`. Non-bloquant si l'UPDATE échoue.
  *
- * Réponse : { success: true, data: { paiement_id, commande_id, nouveau_montant_paye,
- *           nouveau_statut_paiement, reste_a_payer, montant_total } }
+ * Réponse : { success: true, data: { paiement_id, commande_id, montant, methode,
+ *           date_paiement, reference, nouveau_montant_paye,
+ *           nouveau_statut_paiement, reste_a_payer, montant_total,
+ *           points_gagnes } }
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
@@ -285,9 +290,13 @@ export async function POST(request: NextRequest) {
       : null;
 
   // --- Fetch de la commande (RLS isole par pressing_id) ---
+  // FIX-HIGH-1 (GAP 2) : on sélectionne aussi `client_id` pour pouvoir
+  // incrémenter les points fidélité du client après l'INSERT du paiement.
   const { data: commande, error: cmdErr } = await supabase
     .from("commandes")
-    .select("id, montant_total, montant_paye, statut_paiement, statut")
+    .select(
+      "id, montant_total, montant_paye, statut_paiement, statut, client_id"
+    )
     .eq("id", commandeId)
     .maybeSingle();
 
@@ -400,7 +409,7 @@ export async function POST(request: NextRequest) {
   const { data: paiement, error: insertErr } = await supabase
     .from("paiements")
     .insert(insertPayload)
-    .select("id, commande_id, montant, methode, date_paiement")
+    .select("id, commande_id, montant, methode, date_paiement, reference")
     .maybeSingle();
 
   if (insertErr || !paiement) {
@@ -433,6 +442,59 @@ export async function POST(request: NextRequest) {
   const nouveauStatut = cmdUpdated?.statut_paiement ?? commande.statut_paiement;
   const nouveauReste = (cmdUpdated?.montant_total ?? commande.montant_total) - nouveauMontantPaye;
 
+  // --- Incrément auto points fidélité (PRD §7.5 — 1 point = 100 FCFA payés) ---
+  // FIX-HIGH-1 (GAP 2) : après l'INSERT du paiement, on crédite les points
+  // fidélité du client. On fetch d'abord la valeur courante (SELECT) puis on
+  // UPDATE — l'atomicité parfaite nécessiterait une RPC SQL, mais le SELECT +
+  // UPDATE reste sûr ici car cette route est la seule à créditer les points
+  // fidélité (pas de concurrence réaliste en pressing). RLS isole par
+  // pressing_id, donc on ne peut créditer qu'un client de son propre pressing.
+  // Si la mise à jour échoue (ex : RLS bloque, colonne absente), on n'échoue
+  // pas le paiement — on logge juste l'erreur et on renvoie points_gagnes=0.
+  let pointsGagnes = 0;
+  const clientId: string | null =
+    typeof commande.client_id === "string" ? commande.client_id : null;
+  if (clientId) {
+    pointsGagnes = Math.floor(montant / 100);
+    if (pointsGagnes > 0) {
+      const { data: clientRow, error: clientErr } = await supabase
+        .from("clients")
+        .select("id, points_fidelite")
+        .eq("id", clientId)
+        .maybeSingle();
+
+      if (clientErr) {
+        console.error(
+          "[api/personnel/caissier/encaisser] Erreur SELECT clients (points_fidelite) — le paiement reste valide mais les points ne sont pas crédités:",
+          clientErr
+        );
+        pointsGagnes = 0;
+      } else if (clientRow) {
+        const pointsActuels = (clientRow.points_fidelite as number) ?? 0;
+        const { error: updateErr } = await supabase
+          .from("clients")
+          .update({
+            points_fidelite: pointsActuels + pointsGagnes,
+          })
+          .eq("id", clientId);
+
+        if (updateErr) {
+          console.error(
+            "[api/personnel/caissier/encaisser] Erreur UPDATE clients.points_fidelite — le paiement reste valide mais les points ne sont pas crédités:",
+            updateErr
+          );
+          pointsGagnes = 0;
+        }
+      } else {
+        // Client introuvable (RLS ou soft delete) — on ne crédite pas.
+        pointsGagnes = 0;
+      }
+    }
+  } else {
+    // commande.client_id null (commande sans client rattaché) — pas de points.
+    pointsGagnes = 0;
+  }
+
   return NextResponse.json(
     {
       success: true,
@@ -442,10 +504,12 @@ export async function POST(request: NextRequest) {
         montant: paiement.montant,
         methode: paiement.methode,
         date_paiement: paiement.date_paiement,
+        reference: paiement.reference ?? null,
         nouveau_montant_paye: nouveauMontantPaye,
         nouveau_statut_paiement: nouveauStatut,
         reste_a_payer: Math.max(0, nouveauReste),
         montant_total: cmdUpdated?.montant_total ?? commande.montant_total,
+        points_gagnes: pointsGagnes,
       },
     },
     { status: 201 }

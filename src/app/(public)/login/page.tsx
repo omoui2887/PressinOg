@@ -137,6 +137,8 @@ export default function LoginPage() {
         "Accès non autorisé à cet espace. Vous avez été redirigé vers votre tableau de bord.",
       pressing_suspendu:
         "Votre pressing est suspendu. Contactez le support OgPressing pour réactiver votre abonnement.",
+      config_incomplete:
+        "Configuration incomplète : les variables d'environnement Supabase ne sont pas configurées. Créez un fichier .env.local avec NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY et SUPABASE_SERVICE_ROLE_KEY pour activer l'authentification.",
     };
     setGlobalError(MESSAGES[code] ?? "Une erreur est survenue. Veuillez réessayer.");
   }, []);

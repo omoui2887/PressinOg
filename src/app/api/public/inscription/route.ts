@@ -30,6 +30,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isValidCIPhone, normalizeCIPhone } from "@/lib/validations/phone";
+import { isEnvConfigured } from "@/lib/env";
 import type { ApiResponse } from "@/lib/types";
 
 /* ----------------------- Constantes ----------------------- */
@@ -223,6 +224,24 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // Garde-fou : si les variables d'environnement Supabase ne sont pas
+    // configurées, on renvoie une erreur explicite (et non un 500 générique)
+    // pour aider l'utilisateur à comprendre que le problème vient de la
+    // configuration serveur, pas de sa saisie.
+    if (!isEnvConfigured()) {
+      console.error(
+        "[api/public/inscription] Variables d'environnement Supabase manquantes — impossible d'enregistrer la demande."
+      );
+      return NextResponse.json<ApiResponse>(
+        {
+          success: false,
+          error:
+            "Le service d'inscription est temporairement indisponible (configuration serveur incomplète). Contactez-nous directement par WhatsApp ou téléphone.",
+        },
+        { status: 503 }
+      );
+    }
+
     const supabase = getSupabaseAdmin();
 
     // Dédoublonnage léger : si une demande identique (même téléphone + même pressing)

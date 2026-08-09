@@ -59,6 +59,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { requirePlanFeature } from "@/lib/auth/plan-gating";
 
 export const dynamic = "force-dynamic";
 
@@ -130,6 +131,15 @@ export async function POST(
       { status: 403 }
     );
   }
+
+  // 🚫 PLAN GATING (PRD §16) — Starter ne peut pas uploader de FDS.
+  // Pro + Business uniquement.
+  const forbidden = await requirePlanFeature(
+    supabase,
+    me.pressing_id,
+    "fds_upload"
+  );
+  if (forbidden) return forbidden;
 
   // ---- 2. SELECT produit (RLS isole par pressing) ----
   // RLS limite automatiquement la lecture au pressing de l'utilisateur.

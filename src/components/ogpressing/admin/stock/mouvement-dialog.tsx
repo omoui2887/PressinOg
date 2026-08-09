@@ -45,7 +45,11 @@ const schema = z.object({
     .default(""),
 });
 
-type FormValues = z.infer<typeof schema>;
+// @hookform/resolvers v5 : `z.coerce.number()` et `.optional().default("")`
+// produisent un type d'entrée différent du type de sortie. On utilise
+// `z.input` pour aligner TFieldValues sur le type d'entrée (champs non
+// transformés), ce qui rend le resolver compatible avec useForm<FormValues>.
+type FormValues = z.input<typeof schema>;
 
 interface MouvementDialogProps {
   produit: ProduitStock | null;

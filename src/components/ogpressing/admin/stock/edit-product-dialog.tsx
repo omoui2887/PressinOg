@@ -72,7 +72,11 @@ const schema = z.object({
   fournisseur: z.string().max(200).optional().default(""),
 });
 
-type FormValues = z.infer<typeof schema>;
+// @hookform/resolvers v5 : `z.coerce.number()` et `.optional().default("")`
+// produisent un type d'entrée différent du type de sortie. On utilise
+// `z.input` pour aligner TFieldValues sur le type d'entrée (champs non
+// transformés), ce qui rend le resolver compatible avec useForm<FormValues>.
+type FormValues = z.input<typeof schema>;
 
 interface EditProductDialogProps {
   produit: ProduitStock | null;
@@ -376,7 +380,7 @@ export function EditProductDialog({
                         step="0.5"
                         min="0"
                         className="h-11"
-                        value={field.value ?? 0}
+                        value={(field.value as number) ?? 0}
                       />
                     </FormControl>
                     <FormMessage />

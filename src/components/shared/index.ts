@@ -38,3 +38,7 @@ export {
   type SidebarUser,
   type SidebarProps,
 } from "./sidebar";
+export {
+  PlanUpgradeBanner,
+  type PlanUpgradeBannerProps,
+} from "./plan-upgrade-banner";

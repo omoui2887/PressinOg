@@ -104,7 +104,11 @@ const schema = z.object({
   actif: z.boolean(),
 });
 
-type FormValues = z.infer<typeof schema>;
+// @hookform/resolvers v5 : `z.coerce.number()` produit un type d'entrée
+// (unknown) différent du type de sortie (number). On utilise `z.input` pour
+// aligner TFieldValues sur le type d'entrée (champs non transformés), ce qui
+// rend le resolver compatible avec useForm<FormValues>.
+type FormValues = z.input<typeof schema>;
 
 // ---------------------------------------------------------------
 // Props
@@ -520,7 +524,7 @@ export function CatalogueForm({
                       max="9999"
                       step="1"
                       className="h-11"
-                      value={field.value ?? 0}
+                      value={(field.value as number) ?? 0}
                     />
                   </FormControl>
                   <p className="text-xs text-muted-foreground">

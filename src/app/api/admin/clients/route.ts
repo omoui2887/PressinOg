@@ -21,6 +21,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { getPressingPlan, getHistoryCutoff } from "@/lib/auth/plan-gating";
 import { isValidCIPhone, normalizeCIPhone } from "@/lib/validations/phone";
 import { createClientSchema } from "@/lib/validations/client";
 
@@ -35,6 +36,31 @@ export async function GET(request: NextRequest) {
       { status: 401 }
     );
   }
+
+  // Récupère le personnel connecté (pour le pressing_id nécessaire au gating
+  // par plan). RLS isole par pressing_id automatiquement.
+  const { data: meRow } = await supabase
+    .from("personnel")
+    .select("id, pressing_id, actif, statut_compte")
+    .eq("user_id", userData.user.id)
+    .maybeSingle();
+  if (
+    !meRow ||
+    meRow.actif !== true ||
+    meRow.statut_compte !== "actif"
+  ) {
+    return NextResponse.json(
+      { success: false, error: "Accès refusé — compte inactif" },
+      { status: 403 }
+    );
+  }
+
+  // 🚫 PLAN GATING (PRD §16) — limitation d'historique selon le plan :
+  //   starter → 3 derniers mois, pro → 12 derniers mois, business → illimité.
+  // Appliqué sur `clients.created_at` (les clients plus anciens ne sont pas
+  // visibles pour Starter/Pro). Business = illimité.
+  const plan = await getPressingPlan(supabase, meRow.pressing_id);
+  const historyCutoff = getHistoryCutoff(plan);
 
   const searchParams = request.nextUrl.searchParams;
   const q = (searchParams.get("q") || "").trim();
@@ -59,6 +85,13 @@ export async function GET(request: NextRequest) {
     clientsQuery = clientsQuery.or(
       `nom_complet.ilike.%${q.replace(/,/g, "")}%,telephone.ilike.%${q.replace(/,/g, "")}%`
     );
+  }
+
+  // 🚫 PLAN GATING (PRD §16) — limitation d'historique selon le plan.
+  // Les clients créés avant `historyCutoff` ne sont pas visibles pour
+  // Starter (3 mois) et Pro (12 mois). Business = illimité.
+  if (historyCutoff) {
+    clientsQuery = clientsQuery.gte("created_at", historyCutoff);
   }
 
   // Tri par nom_complet asc puis pagination

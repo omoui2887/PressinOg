@@ -25,6 +25,7 @@ import type {
   MethodePaiement,
   RemiseType,
 } from "@/lib/types/database.types";
+import { computeFideliteRemisePercent } from "./remise-labels";
 
 // ============================================================
 // Types
@@ -379,10 +380,43 @@ export function wizardReducer(
       return { ...state, step: prevStep };
     }
 
-    case "SET_CLIENT":
+    case "SET_CLIENT": {
       // Lorsqu'on sélectionne un client, on réinitialise le flag
       // appliquerPreferences à true (défaut) pour ce nouveau client.
-      return { ...state, client: action.client, appliquerPreferences: true };
+      //
+      // PRD §7.6 — Remise fidélité auto-appliquée :
+      // Si le nouveau client a points_fidelite >= FIDELITE_SEUIL_MIN
+      // (computeFideliteRemisePercent > 0) ET qu'aucune remise n'a été
+      // explicitement posée par l'utilisateur (!state.remise), on auto-
+      // applique "fidelite" avec le pourcentage correspondant au tier
+      // du client (50 pts → 3 %, 100 pts → 5 %).
+      //
+      // Le `montant` est initialisé à 0 ici : il sera recalculé par le
+      // useEffect de step-recap.tsx (qui regarde `sousTotal` et
+      // `state.articles`) dès que l'utilisateur atteint l'Étape 3.
+      //
+      // Non-bloquant : si l'utilisateur a déjà choisi une remise
+      // (state.remise non null, y compris "aucune" explicite après
+      // handleRemiseTypeChange("aucune") qui SET_REMISE null), on ne
+      // surcharge pas. L'utilisateur peut toujours modifier via le select
+      // de l'Étape 3.
+      const client = action.client;
+      const points = client.points_fidelite ?? 0;
+      const percent = computeFideliteRemisePercent(points);
+      const shouldAutoApplyFidelite = percent > 0 && !state.remise;
+      return {
+        ...state,
+        client,
+        appliquerPreferences: true,
+        remise: shouldAutoApplyFidelite
+          ? {
+              type: "fidelite" as RemiseType,
+              valeur: percent,
+              montant: 0,
+            }
+          : state.remise,
+      };
+    }
 
     case "CLEAR_CLIENT":
       return { ...state, client: null, appliquerPreferences: true };

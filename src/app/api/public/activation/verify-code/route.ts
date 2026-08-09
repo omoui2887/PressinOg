@@ -28,6 +28,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { isEnvConfigured } from "@/lib/env";
 import type { ApiResponse, PlanAbonnement } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -74,6 +75,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json<ApiResponse>(
       { success: false, error: MSG_FORMAT },
       { status: 400 }
+    );
+  }
+
+  // Garde-fou : si les variables d'environnement Supabase ne sont pas
+  // configurées, on renvoie une erreur explicite (503) au lieu d'un 500
+  // générique côté getSupabaseAdmin().
+  if (!isEnvConfigured()) {
+    return NextResponse.json<ApiResponse>(
+      {
+        success: false,
+        error:
+          "Le service d'activation est temporairement indisponible (configuration serveur incomplète). Contactez-nous par WhatsApp au +225 05 76 10 32 77.",
+      },
+      { status: 503 }
     );
   }
 
