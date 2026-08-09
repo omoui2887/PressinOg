@@ -17,7 +17,7 @@
  *    uniquement depuis un Client Component.
  */
 import { toast } from "sonner";
-import { formatDateOnly, formatFCFA } from "@/lib/utils/format";
+import { formatDate, formatDateOnly, formatFCFA } from "@/lib/utils/format";
 import {
   COULEUR_LABELS,
   ETAT_LABELS,
@@ -491,4 +491,198 @@ export function methodePaiementLabel(m: string): string {
   return (
     METHODE_PAIEMENT_LABELS[m as keyof typeof METHODE_PAIEMENT_LABELS] ?? m
   );
+}
+
+// ============================================================
+// Reçu de paiement imprimable — PRD §12.2
+// ============================================================
+
+/**
+ * Shape minimal d'une commande pour l'impression du reçu de paiement.
+ * `montant_paye` correspond au **cumul payé après** le paiement courant
+ * (et non au montant de ce paiement seul).
+ */
+export interface PaiementReceiptCommande {
+  numero_commande: string;
+  client_nom: string;
+  montant_total: number;
+  /** Cumul déjà payé (après ce paiement). */
+  montant_paye: number;
+}
+
+/** Shape minimal d'un paiement pour l'impression du reçu. */
+export interface PaiementReceiptPaiement {
+  montant: number;
+  methode: string;
+  reference: string | null;
+  created_at: string;
+}
+
+/**
+ * Imprime un reçu de paiement (PRD §12.2).
+ *
+ * Format A5 portrait — plus large qu'un ticket de dépôt (80 mm) car le
+ * reçu de paiement est généralement remis au client sur papier A4/A5 et
+ * non sur papier thermique. Inclut :
+ *   - En-tête : nom du pressing + date du jour
+ *   - Titre « REÇU DE PAIEMENT »
+ *   - Numéro de commande + nom du client
+ *   - Méthode de paiement (libellé FR)
+ *   - Montant du paiement (FCFA)
+ *   - Référence (si fournie — ex : TX-MOMO-123456)
+ *   - Total payé à ce jour (cumul)
+ *   - Reste à payer
+ *   - Pied « Merci de votre confiance »
+ *
+ * @example
+ *   printPaiementReceipt(
+ *     { numero_commande: "PRS-2026-00123", client_nom: "Awa KONÉ",
+ *       montant_total: 12500, montant_paye: 12500 },
+ *     { montant: 5000, methode: "especes", reference: null,
+ *       created_at: "2026-07-24T14:30:00Z" },
+ *     "OgPressing Cocody"
+ *   );
+ */
+export function printPaiementReceipt(
+  commande: PaiementReceiptCommande,
+  paiement: PaiementReceiptPaiement,
+  pressingNom?: string
+) {
+  const resteAPayer = Math.max(
+    0,
+    commande.montant_total - commande.montant_paye
+  );
+  const methodeLabel = methodePaiementLabel(paiement.methode);
+  const enTeteNom = pressingNom?.trim() || "OgPressing";
+
+  const headHtml = `
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 16px;
+      color: #000;
+      background: #fff;
+      max-width: 148mm; /* A5 largeur */
+      margin: 0 auto;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 2px solid #000;
+      padding-bottom: 8px;
+      margin-bottom: 12px;
+    }
+    .brand { font-size: 16px; font-weight: 700; }
+    .date { font-size: 11px; color: #444; text-align: right; }
+    .title {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-align: center;
+      margin: 8px 0 16px;
+    }
+    .section { margin-bottom: 12px; }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      font-size: 13px;
+      border-bottom: 1px dotted #ccc;
+    }
+    .row .label { color: #444; }
+    .row .value { font-weight: 600; text-align: right; }
+    .highlight {
+      background: #f5f5f5;
+      padding: 8px 12px;
+      border-radius: 4px;
+      margin: 12px 0;
+    }
+    .highlight .row:last-child { border-bottom: none; }
+    .amount-paid {
+      font-size: 20px;
+      font-weight: 700;
+      text-align: center;
+      padding: 12px;
+      margin: 12px 0;
+      border: 2px solid #000;
+      border-radius: 4px;
+    }
+    .reference {
+      font-family: ui-monospace, "Courier New", monospace;
+      font-size: 12px;
+    }
+    .footer {
+      margin-top: 24px;
+      padding-top: 12px;
+      border-top: 2px solid #000;
+      text-align: center;
+      font-size: 12px;
+      color: #444;
+    }
+    .footer .thanks { font-weight: 600; font-size: 14px; color: #000; margin-bottom: 4px; }
+    @media print {
+      body { max-width: none; padding: 0; }
+      @page { margin: 10mm; }
+    }
+  </style>`;
+
+  const bodyHtml = `
+  <div class="header">
+    <div class="brand">${escapeHtml(enTeteNom)}</div>
+    <div class="date">Émis le ${escapeHtml(formatDate(paiement.created_at))}</div>
+  </div>
+
+  <div class="title">REÇU DE PAIEMENT</div>
+
+  <div class="section">
+    <div class="row">
+      <span class="label">N° commande</span>
+      <span class="value">${escapeHtml(commande.numero_commande)}</span>
+    </div>
+    <div class="row">
+      <span class="label">Client</span>
+      <span class="value">${escapeHtml(commande.client_nom || "—")}</span>
+    </div>
+    <div class="row">
+      <span class="label">Mode de paiement</span>
+      <span class="value">${escapeHtml(methodeLabel)}</span>
+    </div>
+    ${
+      paiement.reference
+        ? `<div class="row">
+            <span class="label">Référence</span>
+            <span class="value reference">${escapeHtml(paiement.reference)}</span>
+          </div>`
+        : ""
+    }
+  </div>
+
+  <div class="amount-paid">
+    Montant payé : ${escapeHtml(formatFCFA(paiement.montant))}
+  </div>
+
+  <div class="highlight">
+    <div class="row">
+      <span class="label">Total payé à ce jour</span>
+      <span class="value">${escapeHtml(formatFCFA(commande.montant_paye))}</span>
+    </div>
+    <div class="row">
+      <span class="label">Montant total commande</span>
+      <span class="value">${escapeHtml(formatFCFA(commande.montant_total))}</span>
+    </div>
+    <div class="row">
+      <span class="label">Reste à payer</span>
+      <span class="value">${escapeHtml(formatFCFA(resteAPayer))}</span>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="thanks">Merci de votre confiance</div>
+    <div>Conservez ce reçu pour le suivi de votre commande.</div>
+  </div>`;
+
+  openPrintWindow(`Reçu ${commande.numero_commande}`, headHtml, bodyHtml);
 }

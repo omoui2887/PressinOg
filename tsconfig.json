@@ -37,6 +37,12 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "dev-keeper.ts",
+    "examples",
+    "skills",
+    "mini-services",
+    "scripts",
+    "supabase"
   ]
 }

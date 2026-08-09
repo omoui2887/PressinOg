@@ -20,6 +20,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { requirePlanFeature } from "@/lib/auth/plan-gating";
 import { formatTime } from "@/lib/utils/format";
 import {
   STATUT_PAIEMENT_LABELS,
@@ -104,7 +105,7 @@ export async function GET(request: NextRequest) {
   // Auth : n'importe quel personnel actif du pressing
   const { data: me } = await supabase
     .from("personnel")
-    .select("id, actif, statut_compte")
+    .select("id, pressing_id, actif, statut_compte")
     .eq("user_id", userData.user.id)
     .maybeSingle();
 
@@ -120,6 +121,14 @@ export async function GET(request: NextRequest) {
       { status: 403 }
     );
   }
+
+  // 🚫 PLAN GATING (PRD §16) — Starter ne peut pas exporter en .xlsx.
+  const forbidden = await requirePlanFeature(
+    supabase,
+    me.pressing_id,
+    "export_xlsx"
+  );
+  if (forbidden) return forbidden;
 
   // Paramètre date ( défaut : aujourd'hui UTC )
   const sp = request.nextUrl.searchParams;

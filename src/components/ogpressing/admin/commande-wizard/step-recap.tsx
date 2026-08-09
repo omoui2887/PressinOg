@@ -27,7 +27,7 @@
  */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { format, isValid, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
 import {
@@ -225,6 +225,60 @@ export function StepRecap({ state, dispatch }: StepProps) {
       });
     }
   }, [montantTotal, state.acompte, dispatch]);
+
+  // --- Auto-application de la remise fidélité (PRD §7.6) ---
+  // PRD : "Remise fidélité — Auto-appliquée quand client a X points
+  // (ex: 100 pts = -5% sur la prochaine commande)".
+  //
+  // L'auto-application elle-même (state.remise ← { type: "fidelite",
+  // valeur, montant }) est réalisée dans le reducer `wizardReducer`
+  // sur l'action `SET_CLIENT` (cf. state.ts) — c'est la forme la plus
+  // pure et la plus prévisible, et elle évite les setState synchrones
+  // dans un useEffect (lint `react-hooks/set-state-in-effect`).
+  //
+  // Ici, on se contente d'afficher un toast info non-bloquant pour
+  // informer l'utilisateur que la remise a été auto-appliquée. Le toast
+  // ne déclenche aucun setState — il est donc sûr à appeler dans un
+  // effect.
+  //
+  // `lastNotifiedClientIdRef` : id du client pour lequel on a déjà
+  // affiché le toast. Évite les notifications en boucle si l'effect
+  // re-tourne (state.remise peut changer pour recalcul du montant).
+  const lastNotifiedClientIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const client = state.client;
+    if (!client) {
+      lastNotifiedClientIdRef.current = null;
+      return;
+    }
+    // On ne notifie qu'une fois par client (le toast se déclenche au
+    // montage de step-recap, i.e. quand l'utilisateur arrive à l'Étape 3
+    // et "voit" la remise auto-appliquée).
+    if (lastNotifiedClientIdRef.current === client.id) return;
+    lastNotifiedClientIdRef.current = client.id;
+
+    const points = client.points_fidelite ?? 0;
+    const percent = computeFideliteRemisePercent(points);
+
+    // On ne notifie que si state.remise correspond bien à l'auto-
+    // application fidelite pour CE client (type + valeur attendus).
+    // Si l'utilisateur a surchargé (autre type, ou fidelite avec une
+    // valeur héritée d'un autre client), on ne toast pas.
+    if (
+      percent > 0 &&
+      state.remise?.type === "fidelite" &&
+      state.remise?.valeur === percent
+    ) {
+      toast.info(
+        `🎁 Remise fidélité de ${percent}% auto-appliquée (client a ${points} points).`,
+        {
+          description:
+            "Vous pouvez la modifier ou la retirer dans la section Remise.",
+        }
+      );
+    }
+  }, [state.client, state.remise]);
 
   // ============================================================
   // Handlers — Remise

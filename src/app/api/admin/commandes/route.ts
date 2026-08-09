@@ -53,6 +53,7 @@ import {
   hasRole,
   isPersonnelActive,
 } from "@/lib/auth/roles";
+import { getPressingPlan, getHistoryCutoff } from "@/lib/auth/plan-gating";
 
 export const dynamic = "force-dynamic";
 
@@ -214,6 +215,11 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // 🚫 PLAN GATING (PRD §16) — limitation d'historique selon le plan :
+  //   starter → 3 derniers mois, pro → 12 derniers mois, business → illimité.
+  const plan = await getPressingPlan(supabase, me.pressing_id);
+  const historyCutoff = getHistoryCutoff(plan);
+
   // Paramètres de requête
   const sp = request.nextUrl.searchParams;
   const q = (sp.get("q") || "").trim();
@@ -252,6 +258,13 @@ export async function GET(request: NextRequest) {
   // Filtre statut_paiement
   if (statutPaiement) {
     query = query.eq("statut_paiement", statutPaiement);
+  }
+
+  // 🚫 PLAN GATING (PRD §16) — limitation d'historique selon le plan.
+  // Les commandes créées avant `historyCutoff` ne sont pas visibles pour
+  // les plans Starter (3 mois) et Pro (12 mois). Business = illimité.
+  if (historyCutoff) {
+    query = query.gte("created_at", historyCutoff);
   }
 
   // Filtre `q` : OR sur numero_commande OU client_id IN matchingClientIds

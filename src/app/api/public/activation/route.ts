@@ -32,6 +32,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isValidCIPhone, normalizeCIPhone } from "@/lib/validations/phone";
+import { isEnvConfigured } from "@/lib/env";
 import type { ApiResponse } from "@/lib/types";
 
 /* ----------------------- Constantes ----------------------- */
@@ -167,6 +168,20 @@ export async function POST(req: NextRequest) {
 
   const { code, nom_complet, email, password, nom_pressing, telephone, ville, commune } =
     validation.data;
+
+  // Garde-fou : si les variables d'environnement Supabase ne sont pas
+  // configurées, on renvoie une erreur explicite (503) au lieu d'un 500
+  // générique côté getSupabaseAdmin().
+  if (!isEnvConfigured()) {
+    return NextResponse.json<ApiResponse>(
+      {
+        success: false,
+        error:
+          "Le service d'activation est temporairement indisponible (configuration serveur incomplète). Contactez-nous par WhatsApp au +225 05 76 10 32 77.",
+      },
+      { status: 503 }
+    );
+  }
 
   const supabase = getSupabaseAdmin();
 

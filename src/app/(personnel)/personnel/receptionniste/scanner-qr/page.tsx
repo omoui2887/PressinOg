@@ -13,13 +13,19 @@
  * La redirection va vers /personnel/receptionniste/commandes/{id} (page détail
  * variante réceptionniste, qui réutilise <CommandeDetail basePath=... />).
  *
+ * 🚫 PLAN GATING (PRD §16) :
+ *   - Plan Starter : scan QR interdit. La page reste accessible mais le
+ *     bouton "Ouvrir le scanner" est désactivé (avec tooltip explicatif) et
+ *     une bannière "Passez au plan Pro" est affichée.
+ *   - Plan Pro / Business : comportement normal.
+ *
  * 🔒 SÉCURITÉ : le layout (personnel)/layout.tsx vérifie déjà l'auth + le
  *    rôle. La RLS isole par pressing_id côté API : une commande étrangère au
  *    pressing renverra 0 résultat → toast "Commande introuvable".
  */
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
@@ -39,6 +45,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { PlanUpgradeBanner } from "@/components/shared";
 import { toast } from "sonner";
 
 // 🚀 PERF : QRScanner importe `html5-qrcode` (~50KB) au niveau module.
@@ -61,9 +69,51 @@ interface CommandesLookupResponse {
   error?: string;
 }
 
+interface PlanResponse {
+  success: boolean;
+  data?: {
+    plan: "starter" | "pro" | "business";
+    features: {
+      export_xlsx: boolean;
+      fds_upload: boolean;
+      qr_scan: boolean;
+    };
+    historyMonths: number | null;
+  };
+  error?: string;
+}
+
 export default function PersonnelReceptionnisteScannerPage() {
   const router = useRouter();
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [qrScanAllowed, setQrScanAllowed] = useState<boolean | null>(null);
+
+  // Récupère le plan du pressing pour le gating de la feature qr_scan.
+  // Non-bloquant : tant que `qrScanAllowed === null`, on affiche le bouton
+  // (état par défaut autorisé) pour ne pas casser l'UX en cas d'erreur réseau.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/personnel/plan", { cache: "no-store" });
+        const json: PlanResponse = await res.json();
+        if (!cancelled && json.success && json.data) {
+          setQrScanAllowed(json.data.features.qr_scan);
+        } else if (!cancelled) {
+          // En cas d'erreur, on autorise par défaut (fail-open) — la route
+          // de lookup derrière le scanner applique RLS de toute façon.
+          setQrScanAllowed(true);
+        }
+      } catch {
+        if (!cancelled) setQrScanAllowed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const isStarter = qrScanAllowed === false;
 
   /**
    * Handler du QR scanner : interprète la chaîne décodée.
@@ -151,6 +201,11 @@ export default function PersonnelReceptionnisteScannerPage() {
         </div>
       </div>
 
+      {/* Bannière d'upgrade si plan Starter (PRD §16) */}
+      {isStarter && (
+        <PlanUpgradeBanner featureLabel="le scan QR Code" />
+      )}
+
       {/* Carte d'action principale */}
       <Card>
         <CardHeader>
@@ -169,15 +224,38 @@ export default function PersonnelReceptionnisteScannerPage() {
             En cas d&apos;échec caméra (permissions, appareil sans caméra), le
             scanner bascule automatiquement en saisie manuelle.
           </p>
-          <Button
-            type="button"
-            size="lg"
-            onClick={() => setScannerOpen(true)}
-            className="shrink-0"
-          >
-            <Camera className="size-5" />
-            Ouvrir le scanner
-          </Button>
+          {isStarter ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {/* span intermédiaire pour permettre le tooltip sur un bouton disabled */}
+                <span tabIndex={0} aria-disabled="true">
+                  <Button
+                    type="button"
+                    size="lg"
+                    disabled
+                    className="shrink-0 cursor-not-allowed opacity-60"
+                  >
+                    <Camera className="size-5" />
+                    Ouvrir le scanner
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                Fonctionnalité non disponible dans votre plan Starter.
+                Passez au plan Pro pour activer le scan QR Code.
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <Button
+              type="button"
+              size="lg"
+              onClick={() => setScannerOpen(true)}
+              className="shrink-0"
+            >
+              <Camera className="size-5" />
+              Ouvrir le scanner
+            </Button>
+          )}
         </CardContent>
       </Card>
 
@@ -245,7 +323,7 @@ export default function PersonnelReceptionnisteScannerPage() {
         </CardContent>
       </Card>
 
-      {/* QR Scanner dialog */}
+      {/* QR Scanner dialog — rendu même en Starter (inerte car bouton bloqué) */}
       <QRScanner
         open={scannerOpen}
         onOpenChange={setScannerOpen}

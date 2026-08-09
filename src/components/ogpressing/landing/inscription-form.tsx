@@ -134,7 +134,11 @@ const inscriptionSchema = z.object({
     .default(""),
 });
 
-type InscriptionFormValues = z.infer<typeof inscriptionSchema>;
+// ⚠️ z.input (et non z.infer/z.output) — nécessaire pour @hookform/resolvers v5 :
+// le resolver attend Resolver<TInput, any, TOutput> où TInput doit matcher
+// exactement le TFormValues de useForm. Or le schema utilise z.coerce.number()
+// et .optional().default() qui produisent TInput ≠ TOutput.
+type InscriptionFormValues = z.input<typeof inscriptionSchema>;
 
 /* ----------------------- Composant ----------------------- */
 
@@ -182,7 +186,7 @@ export function InscriptionForm() {
           ...values,
           // coerce nombre_employes null → undefined (pas envoyé)
           nombre_employes:
-            values.nombre_employes === null || values.nombre_employes === ""
+            values.nombre_employes == null
               ? undefined
               : values.nombre_employes,
         }),
@@ -452,7 +456,7 @@ export function InscriptionForm() {
                     placeholder="Ex : 3"
                     disabled={isSubmitting}
                     className="h-11"
-                    value={field.value ?? ""}
+                    value={(field.value as number | undefined) ?? ""}
                   />
                 </FormControl>
                 <FormMessage />
@@ -479,7 +483,7 @@ export function InscriptionForm() {
                     placeholder="Ex : 2"
                     disabled={isSubmitting}
                     className="h-11"
-                    value={field.value ?? ""}
+                    value={(field.value as number | string | null | undefined) ?? ""}
                   />
                 </FormControl>
                 <FormMessage />

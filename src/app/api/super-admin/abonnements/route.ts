@@ -110,10 +110,11 @@ export async function GET(request: NextRequest) {
     query = query.or(`pressing.nom.ilike.%${safe}%`);
   }
 
-  // Tri : date_fin ASC (NULLS LAST est le défaut Supabase/PostgREST).
-  // Les abonnements qui expirent bientôt apparaissent en haut.
+  // Tri : date_fin ASC (les abonnements qui expirent bientôt apparaissent en haut).
+  // NB: `nulls: 'last'` n'est pas supporté par tous les types Supabase — on se
+  // contente de `ascending: true` (PostgREST trie déjà les NULL en dernier par défaut).
   query = query
-    .order("date_fin", { ascending: true, nulls: "last" })
+    .order("date_fin", { ascending: true })
     .range((page - 1) * pageSize, page * pageSize - 1);
 
   const { data: abonnements, error: abonnementsErr, count: total } =

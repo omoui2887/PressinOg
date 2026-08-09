@@ -387,6 +387,16 @@ export const COLONNES_PERSONNEL: ExportColumn[] = [
   { key: "date_creation", header: "Date de création du compte" },
 ];
 
+// 10. Rapport Stock — Mouvements entrées/sorties (PRD §14 + §15)
+export const COLONNES_STOCK: ExportColumn[] = [
+  { key: "date", header: "Date" },
+  { key: "produit_nom", header: "Produit" },
+  { key: "type_mouvement", header: "Type de mouvement" },
+  { key: "quantite", header: "Quantité" },
+  { key: "motif", header: "Motif" },
+  { key: "utilisateur_nom", header: "Enregistré par" },
+];
+
 /* ========================================================================== */
 /*  CONFIGURATION DES RAPPORTS (mapping type → colonnes + nom de fichier)      */
 /* ========================================================================== */
@@ -400,7 +410,8 @@ export type TypeRapport =
   | "paiements"
   | "impayes"
   | "remises"
-  | "personnel";
+  | "personnel"
+  | "stock";
 
 export interface ConfigRapport {
   type: TypeRapport;
@@ -477,5 +488,12 @@ export const CONFIG_RAPPORTS: Record<TypeRapport, ConfigRapport> = {
     label: "Rapport du personnel",
     fileName: "rapport_personnel",
     columns: COLONNES_PERSONNEL,
+  },
+  stock: {
+    type: "stock",
+    label: "Stock — Mouvements",
+    fileName: "rapport_stock_mouvements",
+    columns: COLONNES_STOCK,
+    withPeriode: true,
   },
 };

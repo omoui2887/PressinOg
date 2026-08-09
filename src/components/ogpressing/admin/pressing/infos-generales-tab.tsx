@@ -86,7 +86,13 @@ const schema = z.object({
     ),
 });
 
-type FormValues = z.infer<typeof schema>;
+// @hookform/resolvers v5 : le schéma utilise `.optional().default("")` qui
+// produit un type d'entrée (input) différent du type de sortie (output).
+// useForm<TFieldValues> attend Resolver<TFieldValues, any, TFieldValues>,
+// or ici TInput ≠ TOutput. On utilise donc `z.input` pour aligner TFieldValues
+// sur le type d'entrée (champs optionnels), et le resolver acceptera le schéma
+// tel quel (Resolver<TInput, any, TOutput>).
+type FormValues = z.input<typeof schema>;
 
 interface InfosGeneralesTabProps {
   pressing: PressingInfo | null;
