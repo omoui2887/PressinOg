@@ -21,6 +21,7 @@
  *      - Exposure de SUPABASE_SERVICE_ROLE_KEY au navigateur
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { fetchWithTimeout } from "@/lib/supabase/error-handling";
 
 let adminClient: SupabaseClient | null = null;
 
@@ -43,6 +44,14 @@ export function getSupabaseAdmin(): SupabaseClient {
       persistSession: false,
       autoRefreshToken: false,
     },
+    // Cap la latence d'un appel réseau mort (projet en pause, DNS
+    // injoignable, firewall) à 8s au lieu du timeout TCP/undici par
+    // défaut (~10-30s). En production (Supabase joignable), ce wrapper
+    // est transparent — l'AbortController est nettoyé dès que la requête
+    // réussit. Voir `src/lib/supabase/error-handling.ts`.
+    global: { fetch: fetchWithTimeout(8000) },
+    // Timeout PostgREST (requêtes DB) à 8s également — double sécurité.
+    db: { timeout: 8000 },
   });
 
   return adminClient;

@@ -31,6 +31,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isValidCIPhone, normalizeCIPhone } from "@/lib/validations/phone";
 import { isEnvConfigured } from "@/lib/env";
+import { isSupabaseNetworkError } from "@/lib/supabase/error-handling";
+import { serviceUnavailableResponse } from "@/lib/supabase/server-error-response";
 import type { ApiResponse } from "@/lib/types";
 
 /* ----------------------- Constantes ----------------------- */
@@ -247,7 +249,7 @@ export async function POST(req: NextRequest) {
     // Dédoublonnage léger : si une demande identique (même téléphone + même pressing)
     // existe déjà dans les 24 dernières heures, on évite le spam.
     const il_y_a_24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { data: existing } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from("demandes_inscription")
       .select("id, created_at")
       .eq("telephone", validation.data.telephone as string)
@@ -255,6 +257,11 @@ export async function POST(req: NextRequest) {
       .gte("created_at", il_y_a_24h)
       .limit(1)
       .maybeSingle();
+
+    // Erreur réseau (Supabase injoignable) → 503 clair au lieu d'un 500.
+    if (existingError && isSupabaseNetworkError(existingError)) {
+      return serviceUnavailableResponse("api/public/inscription", existingError);
+    }
 
     if (existing) {
       return NextResponse.json<ApiResponse>(
@@ -275,6 +282,10 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (error) {
+      // Erreur réseau (Supabase injoignable) → 503 clair.
+      if (isSupabaseNetworkError(error)) {
+        return serviceUnavailableResponse("api/public/inscription", error);
+      }
       console.error("[api/public/inscription] Erreur Supabase :", error);
       return NextResponse.json<ApiResponse>(
         { success: false, error: "Erreur lors de l'enregistrement. Réessayez." },
@@ -287,6 +298,10 @@ export async function POST(req: NextRequest) {
       { status: 200 }
     );
   } catch (err) {
+    // Erreur réseau (Supabase injoignable, throw depuis le client) → 503.
+    if (isSupabaseNetworkError(err)) {
+      return serviceUnavailableResponse("api/public/inscription", err);
+    }
     console.error("[api/public/inscription] Erreur inattendue :", err);
     return NextResponse.json<ApiResponse>(
       { success: false, error: "Erreur serveur. Réessayez plus tard." },

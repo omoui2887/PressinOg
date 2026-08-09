@@ -29,6 +29,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isEnvConfigured } from "@/lib/env";
+import { isSupabaseNetworkError } from "@/lib/supabase/error-handling";
+import { serviceUnavailableResponse } from "@/lib/supabase/server-error-response";
 import type { ApiResponse, PlanAbonnement } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -102,6 +104,10 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
 
   if (codeError) {
+    // Erreur réseau (Supabase injoignable) → 503 clair au lieu d'un 500.
+    if (isSupabaseNetworkError(codeError)) {
+      return serviceUnavailableResponse("api/public/activation/verify-code", codeError);
+    }
     console.error("[verify-code] Erreur lookup code :", codeError);
     return NextResponse.json<ApiResponse>(
       { success: false, error: "Erreur lors de la vérification du code." },

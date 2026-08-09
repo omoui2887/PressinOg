@@ -2010,3 +2010,57 @@ Stage Summary:
 - ✅ Toutes les routes API publiques gèrent proprement l'absence d'env vars avec messages clairs (503)
 - ✅ Application mobile-first responsive (390px → 1440px)
 - ⚠️ Note : pour activer l'authentification et les fonctionnalités backend, l'utilisateur doit créer un fichier .env.local avec NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY (Dashboard Supabase → Settings → API)
+
+---
+Task ID: ENV-NETWORK-HARDENING
+Agent: main (orchestrator)
+Task: Wire up live Supabase credentials + harden graceful degradation when Supabase is unreachable
+
+Work Log:
+- User provided Supabase anon + service_role JWTs for project ref `yqaitaifgfxlrprrouhr` (URL: https://yqaitaifgfxlrprrouhr.supabase.co).
+- Created `.env.local` with NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, NEXT_PUBLIC_SITE_URL, DATABASE_URL.
+- Diagnosed sandbox network: `yqaitaifgfxlrprrouhr.supabase.co` returns NXDOMAIN from sandbox DNS (100.100.2.136) AND from public resolvers 8.8.8.8 / 1.1.1.1 (queries are intercepted). Sandbox CAN resolve `supabase.co` apex + `google.com` but NOT `*.supabase.co` subdomains. Conclusion: from this sandbox, the Next.js server cannot reach the live Supabase backend regardless of whether the project exists. The user (outside the sandbox) CAN reach it.
+- Previous module-resolution error (encaisser-paiement-dialog.tsx) was already resolved in a prior session — the file no longer exists; the only `remise-labels` import uses the correct `@/components/...` path.
+- Restarted dev server via double-fork daemon (`setsid bash dev-watch.sh`) — survives across bash commands with auto-restart. Env vars now loaded: `[env] Variables d'environnement Supabase configurées ✓`.
+- Verified `tsc --noEmit` = 0 errors, `bun run lint` = 0 errors/warnings (clean baseline).
+- GAP: With env vars now configured, the "config_incomplete" short-circuit no longer fires. Public API routes (inscription, activation/verify-code, activation) were returning generic 500 after ~7s (Supabase network timeout) instead of a clear 503. The login page showed "Email ou mot de passe incorrect" for network errors (misleading — credentials may be correct).
+- Created `src/lib/supabase/error-handling.ts` (PURE JS, client+server safe): `isSupabaseNetworkError(error)` detects ENOTFOUND/ECONNREFUSED/ETIMEDOUT/EAI_AGAIN/AbortError/fetch-failed signals; `fetchWithTimeout(ms)` wraps fetch with AbortController + AbortSignal.any fallback; `SERVICE_UNAVAILABLE_MESSAGE` (FR standard with WhatsApp contact).
+- Created `src/lib/supabase/server-error-response.ts` (server-only): `serviceUnavailableResponse(context, error)` returns NextResponse 503 JSON. Split from error-handling.ts to avoid importing `next/server` in client bundles.
+- Updated `src/lib/supabase/admin.ts` + `server.ts` + `middleware.ts` + `client.ts`: all 4 Supabase client factories now use `global: { fetch: fetchWithTimeout(8000) }` (server) / `10000` (browser) + `db: { timeout: 8000 }` to cap latency of dead network calls.
+- Updated 3 public API routes (inscription, activation/verify-code, activation): every Supabase error branch now checks `isSupabaseNetworkError(error)` first → returns `serviceUnavailableResponse(...)` (503 + clear FR message) instead of generic 500. Catch blocks also detect thrown network errors.
+- Updated login page (`src/app/(public)/login/page.tsx`): `authError` from signInWithPassword now checked with `isSupabaseNetworkError` → shows SERVICE_UNAVAILABLE_MESSAGE (not "incorrect credentials"). Role-lookup queries (superAdminRes/personnelRes) also checked → keeps session active + shows service-unavailable instead of signing out with "Compte non reconnu".
+
+Stage Summary:
+- ✅ `.env.local` configured with live Supabase credentials (project yqaitaifgfxlrprrouhr).
+- ✅ Dev server running detached (double-fork daemon, auto-restart), env vars loaded.
+- ✅ `tsc --noEmit` 0 errors, `bun run lint` 0 errors/warnings.
+- ✅ Graceful degradation when Supabase unreachable: public pages render (200, ~200ms via fast-path), protected routes redirect to /login (~5-10ms, DNS failure immediate), public API routes return 503 with clear FR message + WhatsApp contact (was generic 500), login shows "service temporairement indisponible" for network errors (was misleading "incorrect credentials").
+- ⚠️ Sandbox constraint: this environment cannot resolve `*.supabase.co` subdomains (NXDOMAIN), so the live backend is unreachable FROM HERE. The user (outside sandbox) can reach it. All hardening is transparent in production (timeouts never trigger when Supabase is healthy).
+- Files created: `src/lib/supabase/error-handling.ts`, `src/lib/supabase/server-error-response.ts`, `.env.local`.
+- Files modified: `src/lib/supabase/admin.ts`, `src/lib/supabase/server.ts`, `src/lib/supabase/middleware.ts`, `src/lib/supabase/client.ts`, `src/app/api/public/inscription/route.ts`, `src/app/api/public/activation/verify-code/route.ts`, `src/app/api/public/activation/route.ts`, `src/app/(public)/login/page.tsx`.
+
+---
+Task ID: E2E-VERIFICATION
+Agent: main (orchestrator)
+Task: End-to-end browser verification with live Supabase credentials + unreachable backend
+
+Work Log:
+- Verified dev server running (double-fork daemon, auto-restart), env vars loaded.
+- Agent Browser E2E (Playwright) on http://localhost:3000:
+  * Landing `/` → 200, renders Hero + Problem/Solution (#probleme-solution) + Features + Footer. Title "OgPressing — Gestion professionnelle de pressings". Screenshot VERIFY-landing-final.png.
+  * Login `/login` → 200, form renders (Email + Password + "Se connecter" + marketing panel). Filled demo creds + submitted → after ~10s (Supabase unreachable) shows "Le service est temporairement indisponible (serveur injoignable)..." (NOT the misleading "Email ou mot de passe incorrect"). Screenshot VERIFY-login-network-error.png.
+  * Activation `/activation` → 200, stepper renders (Étape 1/2 Vérification du code, Étape 2/2 Création du compte), code input + "Vérifier le code" button. Filled "PRS-TEST-1234" + submitted → after ~7s shows "Le service est temporairement indisponible..." (503 from API, displayed in codeError).
+  * Protected `/admin/dashboard` → 307 redirect to `/login?next=%2Fadmin%2Fdashboard` ✓
+  * Protected `/super-admin/dashboard` → 307 redirect to `/login?next=%2Fsuper-admin%2Fdashboard` ✓
+  * Protected `/personnel/caissier/dashboard` → 307 redirect to `/login?next=%2Fpersonnel%2Fcaissier%2Fdashboard` ✓
+  * Console errors during session: EMPTY (no JS errors, no hydration mismatches).
+  * Responsive: mobile 390x844 → landing renders Hero + Footer ✓; desktop 1440x900 → login renders, footer pushes down naturally on long content (docH=1275 > viewport=900, footer at document bottom).
+- dev.log progression confirms fix: `POST /api/public/inscription 500` (before fix) → `POST /api/public/inscription 503` (after hot-reload). Same for verify-code.
+- Fresh curl tests: inscription with too-short "nom":"X" → 400 (validation correct, runs before Supabase); verify-code with valid format "PRS-AAAA-BBBB" → 503 (network error detected).
+
+Stage Summary:
+- ✅ E2E browser-verified: all public pages render, all protected routes redirect, graceful 503 messages everywhere Supabase is unreachable, no console/hydration errors, responsive mobile+desktop.
+- ✅ The "golden path" that works without a live backend: landing renders, login form works (shows clear error), activation form works (shows clear error), navigation/footer/styling all intact.
+- ⚠️ The backend-dependent flows (actual login success, dashboard data, commandes, etc.) cannot be verified from this sandbox because `*.supabase.co` subdomains don't resolve here (NXDOMAIN). These will work for the user once they access the app from outside the sandbox (where Supabase IS reachable), PROVIDED the Supabase project `yqaitaifgfxlrprrouhr` exists and has the schema migrated (32 migrations in /supabase/migrations).
+- ✅ tsc --noEmit 0 errors, bun run lint 0 errors/warnings.
+- Screenshots: VERIFY-landing-final.png, VERIFY-login-network-error.png, VERIFY-landing-mobile-390.png.

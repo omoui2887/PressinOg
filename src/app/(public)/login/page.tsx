@@ -62,6 +62,10 @@ import {
   OrnateCorner,
 } from "@/components/ogpressing/editorial";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
+import {
+  isSupabaseNetworkError,
+  SERVICE_UNAVAILABLE_MESSAGE,
+} from "@/lib/supabase/error-handling";
 import { toast } from "sonner";
 
 /* ------------------------------------------------------------------ */
@@ -167,6 +171,14 @@ export default function LoginPage() {
       });
 
       if (authError || !data.user) {
+        // Erreur réseau (Supabase injoignable) → message "service indisponible",
+        // et NON "Email ou mot de passe incorrect" qui serait trompeur (les
+        // identifiants peuvent être corrects, c'est le serveur qui est down).
+        if (isSupabaseNetworkError(authError)) {
+          setGlobalError(SERVICE_UNAVAILABLE_MESSAGE);
+          toast.error(SERVICE_UNAVAILABLE_MESSAGE);
+          return;
+        }
         // Message clair, sans jargon technique (ex : ne pas exposer "Invalid login credentials")
         setGlobalError("Email ou mot de passe incorrect.");
         return;
@@ -192,6 +204,19 @@ export default function LoginPage() {
           .eq("user_id", userId)
           .maybeSingle(),
       ]);
+
+      // Erreur réseau sur les requêtes de rôle (Supabase injoignable après
+      // authentification réussie) → message "service indisponible" au lieu
+      // de tomber sur "Compte non reconnu" (qui déconnecterait l'utilisateur
+      // à tort). On garde la session active pour qu'un retry puisse réussir.
+      if (
+        isSupabaseNetworkError(superAdminRes.error) ||
+        isSupabaseNetworkError(personnelRes.error)
+      ) {
+        setGlobalError(SERVICE_UNAVAILABLE_MESSAGE);
+        toast.error(SERVICE_UNAVAILABLE_MESSAGE);
+        return;
+      }
 
       // 2.a Super Admin actif
       if (superAdminRes.data) {
