@@ -468,13 +468,17 @@ function StatCard({ label, value, icon: Icon, tone }: StatCardProps) {
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           {label}
         </p>
-        <p className="mt-0.5 text-2xl font-bold tabular-nums text-foreground">
+        {/* 
+          Block element (<Skeleton> = <div>) cannot be nested inside <p>;
+          using a <div> here avoids the hydration mismatch warning.
+        */}
+        <div className="mt-0.5 text-2xl font-bold tabular-nums text-foreground">
           {value === null ? (
             <Skeleton className="h-7 w-10" />
           ) : (
             value
           )}
-        </p>
+        </div>
       </div>
     </Card>
   );

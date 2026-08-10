@@ -683,7 +683,7 @@ export async function POST(request: NextRequest) {
   const serviceIds = Array.from(new Set(articles.map((a) => a.service_id)));
   const { data: services, error: servicesErr } = await supabase
     .from("services")
-    .select("id, prix, actif")
+    .select("id, type, prix, actif")
     .in("id", serviceIds);
 
   if (servicesErr) {
@@ -697,9 +697,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const serviceMap = new Map<string, { prix: number; actif: boolean }>();
+  const serviceMap = new Map<
+    string,
+    { type: string; prix: number; actif: boolean }
+  >();
   for (const s of services ?? []) {
-    serviceMap.set(s.id, { prix: s.prix, actif: s.actif });
+    serviceMap.set(s.id, { type: s.type, prix: s.prix, actif: s.actif });
   }
 
   // Vérifie que tous les services existent + sont actifs
@@ -778,9 +781,67 @@ export async function POST(request: NextRequest) {
     articles[i].catalogue_article_nom = cat.nom;
   }
 
+  // ---------- 3c. Fetch tarifs spécifiques par article (override prix service) ----------
+  // Pour chaque couple (catalogue_article_id × type_service) présent dans la
+  // commande, on cherche un tarif spécifique dans tarifs_articles. Si présent,
+  // son prix remplace service.prix pour le calcul du montant_total et l'INSERT
+  // de commande_lignes.prix_unitaire. Sinon, fallback sur service.prix.
+  const tarifKeys = new Set<string>();
+  for (const a of articles) {
+    const svc = serviceMap.get(a.service_id);
+    if (svc) {
+      tarifKeys.add(`${a.catalogue_article_id}::${svc.type}`);
+    }
+  }
+  const tarifByArticleType = new Map<string, number>();
+  if (tarifKeys.size > 0) {
+    const catalogueArticleIds = Array.from(
+      new Set(articles.map((a) => a.catalogue_article_id))
+    );
+    const { data: tarifs, error: tarifsErr } = await supabase
+      .from("tarifs_articles")
+      .select("catalogue_article_id, type_service, prix, actif")
+      .eq("pressing_id", pressingId)
+      .in("catalogue_article_id", catalogueArticleIds);
+    if (tarifsErr) {
+      console.error(
+        "[api/admin/commandes] Erreur SELECT tarifs_articles:",
+        tarifsErr
+      );
+      // Non-bloquant : on fallback sur service.prix si tarifs injoignables.
+    } else if (tarifs) {
+      for (const t of tarifs) {
+        if (t.actif === false) continue;
+        tarifByArticleType.set(
+          `${t.catalogue_article_id}::${t.type_service}`,
+          t.prix
+        );
+      }
+    }
+  }
+
+  /**
+   * Résout le prix unitaire d'un article : tarif spécifique si configuré,
+   * sinon fallback sur service.prix. Garantit que le prix facturé correspond
+   * toujours à ce que l'utilisateur a vu dans le POS (data.ts applique la
+   * même logique côté client).
+   */
+  function resolvePrixUnitaire(
+    catalogueArticleId: string,
+    serviceId: string
+  ): number {
+    const svc = serviceMap.get(serviceId);
+    if (!svc) return 0;
+    const tarifPrix = tarifByArticleType.get(
+      `${catalogueArticleId}::${svc.type}`
+    );
+    return Math.trunc(tarifPrix ?? svc.prix ?? 0);
+  }
+
   // ---------- 4. Calcul montant_total_avant_remise ----------
   const montantTotalAvantRemise = articles.reduce(
-    (sum, a) => sum + (serviceMap.get(a.service_id)?.prix ?? 0) * a.quantite,
+    (sum, a) =>
+      sum + resolvePrixUnitaire(a.catalogue_article_id, a.service_id) * a.quantite,
     0
   );
 
@@ -951,8 +1012,10 @@ export async function POST(request: NextRequest) {
   // ---------- 10. INSERT lignes + articles_vetements ----------
   for (let ligneIndex = 0; ligneIndex < articles.length; ligneIndex++) {
     const article = articles[ligneIndex];
-    const svc = serviceMap.get(article.service_id)!;
-    const prixUnitaire = svc.prix;
+    const prixUnitaire = resolvePrixUnitaire(
+      article.catalogue_article_id,
+      article.service_id
+    );
     const montantLigne = prixUnitaire * article.quantite;
 
     // Description lisible : "Costumes & Vêtements de Cérémonie blanc — bon"
