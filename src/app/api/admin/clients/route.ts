@@ -202,11 +202,23 @@ export async function GET(request: NextRequest) {
     // récupérer TOUS les clients du pressing et filtrer. Coûteux si beaucoup
     // de clients. Pour le MVP, on renvoie le count filtré de cette page
     // et on indique un total approximatif.
-    // Approche : on compte tous les clients distincts ayant une commande impayée
-    const { data: impayesClients } = await supabase
+    // Approche : on compte tous les clients distincts ayant une commande impayée.
+    //
+    // Fix (FIX-WAVE1-A #9) : la requête est désormais scopée par `pressing_id`
+    // explicitement (défense en profondeur — la RLS isolait déjà, mais on
+    // ajoute le filtre explicite pour parer à un assouplissement accidentel
+    // d'une policy RLS). On applique aussi le `historyCutoff` pour matcher
+    // la liste filtrée (un Starter ne doit voir que les impayés des 3
+    // derniers mois).
+    let impayesQuery = supabase
       .from("commandes")
       .select("client_id")
+      .eq("pressing_id", meRow.pressing_id)
       .in("statut_paiement", ["non_paye", "partiel"]);
+    if (historyCutoff) {
+      impayesQuery = impayesQuery.gte("created_at", historyCutoff);
+    }
+    const { data: impayesClients } = await impayesQuery;
     if (impayesClients) {
       const uniqueClientIds = new Set(impayesClients.map((c) => c.client_id));
       total = uniqueClientIds.size;
@@ -250,9 +262,14 @@ export async function POST(request: NextRequest) {
   // Récupère le pressing_id du personnel connecté via sa ligne personnel.
   // Le PRD autorise la création de clients par le manager ET le réceptionniste
   // (aligné sur le PATCH /api/admin/clients/[id] qui accepte déjà ces 2 rôles).
+  //
+  // Fix (FIX-WAVE1-A #10) : on sélectionne aussi `id` (manquait avant) pour
+  // permettre de tracer `cree_par` côté commande/audit (et préparer un futur
+  // champ `cree_par` sur la table clients). Sans cet id, l'info du créateur
+  // était perdue.
   const { data: personnel } = await supabase
     .from("personnel")
-    .select("pressing_id, role, actif, statut_compte")
+    .select("id, pressing_id, role, actif, statut_compte")
     .eq("user_id", userData.user.id)
     .maybeSingle();
 

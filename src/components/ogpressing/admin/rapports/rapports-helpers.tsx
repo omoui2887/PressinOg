@@ -8,12 +8,12 @@
  *     méthode paiement, type remise, type service) — alignés sur les helpers
  *     existants (commandes-helpers, remise-labels, services-helpers)
  *   - Couleurs des graphiques Recharts (oklch extraits de globals.css)
- *   - Définitions des colonnes pour les 9 exports .xlsx (clés + en-têtes FR)
+ *   - Définitions des colonnes pour les 10 exports .xlsx (clés + en-têtes FR)
  *
  * Utilisé par :
  *   - `rapports-page.tsx` + sous-composants (period-selector, charts, sections)
  *   - `rapport-export-button.tsx` (bouton générique d'export)
- *   - Les 9 routes API `/api/admin/rapports/{rapport}` (pour aligner les clés)
+ *   - Les 10 routes API `/api/admin/rapports/{rapport}` (pour aligner les clés)
  *
  * ⚠️ Les colonnes définies ici DOIVENT rester synchronisées avec les clés
  *    retournées par chaque route API d'export. Toute modification d'une
@@ -427,7 +427,7 @@ export interface ConfigRapport {
 }
 
 /**
- * Configuration centralisée des 9 rapports. Utilisée par le composant
+ * Configuration centralisée des 10 rapports. Utilisée par le composant
  * `<RapportExportButton>` pour connaître les colonnes et le nom de fichier
  * à utiliser pour chaque type de rapport.
  */

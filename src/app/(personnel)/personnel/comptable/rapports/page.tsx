@@ -7,8 +7,8 @@
  * avec `basePath="/personnel/comptable"`. Le comptable a accès à toutes les
  * fonctionnalités : sélecteur de période, 4 StatCards, graphiques, sections
  * "Clients avec impayés" et "Remises appliquées", et exports Excel (.xlsx)
- * pour les 9 rapports (journalier, hebdomadaire, mensuel, paiements, impayés,
- * clients, commandes, remises, personnel).
+ * pour les 10 rapports (journalier, hebdomadaire, mensuel, paiements, impayés,
+ * clients, commandes, remises, personnel, stock).
  *
  * 🔒 SÉCURITÉ : le layout (personnel)/layout.tsx vérifie déjà l'auth + le
  *    rôle (comptable uniquement sur /personnel/comptable/*). Les endpoints

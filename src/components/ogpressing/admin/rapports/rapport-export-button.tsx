@@ -3,7 +3,7 @@
 /**
  * OgPressing — <RapportExportButton> ( LOT 12.2 + 12.3 )
  * --------------------------------------------------------
- * Bouton générique d'export .xlsx pour les 9 rapports du module Rapports.
+ * Bouton générique d'export .xlsx pour les 10 rapports du module Rapports.
  *
  * Comportement au clic :
  *   1. Active l'état de chargement ( spinner Loader2 )

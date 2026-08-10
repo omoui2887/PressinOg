@@ -66,14 +66,20 @@ const METHODES_VALID: readonly MethodePaiement[] = [
  * On reste permissif par défaut pour ne pas bloquer l'encaissement sur une
  * base non migrée ; la migration 019 remplit explicitement cette valeur
  * pour tous les caissiers existants.
+ *
+ * Fix (FIX-WAVE1-A #8) — PRD §5.2 + §18.5 : seules 3 méthodes de paiement
+ * sont conformes (especes, mobile_money, carte_bancaire). Avant ce fix,
+ * MODES_AUTORISES_DEFAUT contenait aussi "carte", "cheque", "virement"
+ * qui ne pouvaient JAMAIS passer la 1re validation `METHODES_VALID` (3
+ * valeurs PRD) — dead values qui créaient de la confusion (manager pouvait
+ * les proposer dans l'UI, caissier ne pouvait jamais encaisser). On les
+ * retire donc de la valeur par défaut. La DB est nettoyée par la
+ * migration 033_remove_dead_payment_modes.
  */
 const MODES_AUTORISES_DEFAUT: readonly string[] = [
   "especes",
   "mobile_money",
-  "carte",
   "carte_bancaire",
-  "cheque",
-  "virement",
 ];
 
 interface EncaisserBody {

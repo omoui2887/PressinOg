@@ -204,24 +204,24 @@ const ROLES_VALID_SET = new Set([
 
 /**
  * Modes de paiement valides pour le champ JSONB `modes_paiement_autorises`
- * (AUDIT-B #14 — migration 019). On accepte le sur-ensemble de 5 valeurs
- * autorisé par la CHECK constraint SQL (especes, mobile_money, carte, cheque,
- * virement) pour rester cohérent avec le PATCH handler et permettre une
- * extension future de l'enum `methode_paiement`.
+ * (AUDIT-B #14 — migration 019, raffiné par migration 033).
  *
- * Cependant, le DEFAULT appliqué côté API quand le manager ne fournit pas
- * explicitement la liste est restreint aux 3 valeurs réellement utilisables
- * par la route `/api/personnel/caissier/encaisser` (qui valide `methode`
- * contre `MethodePaiement` = especes | mobile_money | carte_bancaire). On
- * évite ainsi de stocker 'carte', 'cheque', 'virement' qui ne seraient
- * jamais utilisables et qui pourraient porter à confusion côté UI.
+ * Fix (FIX-WAVE1-A #8) — PRD §5.2 + §18.5 : seules 3 méthodes sont
+ * conformes (especes, mobile_money, carte_bancaire). Avant ce fix, on
+ * acceptait aussi "carte", "cheque", "virement" (sur-ensemble déclaré
+ * dans la migration 019 en prévision d'une extension future de l'enum
+ * `methode_paiement`). Mais ces 3 valeurs ne peuvent JAMAIS passer la
+ * validation `METHODES_VALID` côté /api/personnel/caissier/encaisser
+ * (qui valide contre l'enum MethodePaiement = 3 valeurs) → dead values,
+ * jamais encaissables, source de confusion côté UI. On les retire donc
+ * de l'ensemble valide. La migration 033_remove_dead_payment_modes
+ * nettoie la DB (CHECK constraint + DEFAULT + backfill des caissiers
+ * existants).
  */
 const MODES_PAIEMENT_VALIDES_SET = new Set([
   "especes",
   "mobile_money",
-  "carte",
-  "cheque",
-  "virement",
+  "carte_bancaire",
 ]);
 
 /** Modes par défaut quand un caissier est créé sans `modes_paiement_autorises`
@@ -449,7 +449,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: `modes_paiement_autorises contient des valeurs invalides : ${invalides.join(", ")}. Valeurs attendues : especes, mobile_money, carte, cheque, virement.`,
+          error: `modes_paiement_autorises contient des valeurs invalides : ${invalides.join(", ")}. Valeurs attendues : especes, mobile_money, carte_bancaire.`,
         },
         { status: 400 }
       );

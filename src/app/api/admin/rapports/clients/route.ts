@@ -19,7 +19,11 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { requirePlanFeature } from "@/lib/auth/plan-gating";
+import {
+  requirePlanFeature,
+  getPressingPlan,
+  getHistoryCutoff,
+} from "@/lib/auth/plan-gating";
 
 export const dynamic = "force-dynamic";
 
@@ -84,6 +88,15 @@ export async function GET(request: NextRequest) {
   );
   if (forbidden) return forbidden;
 
+  // 🚫 PLAN GATING (PRD §16) — limitation d'historique selon le plan :
+  //   starter → 3 derniers mois, pro → 12 derniers mois, business → illimité.
+  // Fix (FIX-WAVE1-A #4) : cutoff appliqué sur les commandes agrégées pour
+  // ne comptabiliser que les commandes dans la fenêtre d'historique du plan.
+  // Les clients master data restent tous visibles (le cutoff ne s'applique
+  // qu'aux transactions, pas au référentiel client).
+  const plan = await getPressingPlan(supabase, me.pressing_id);
+  const historyCutoff = getHistoryCutoff(plan);
+
   // Pas de paramètres de requête pour cette route
   void request;
 
@@ -110,10 +123,16 @@ export async function GET(request: NextRequest) {
   // 2) Récupère toutes les commandes pour agréger par client
   //    ( RLS isole par pressing_id côté commandes également )
   const clientIds = (clients as ClientRow[]).map((c) => c.id);
-  const { data: commandes, error: cmdErr } = await supabase
+  let cmdQuery = supabase
     .from("commandes")
-    .select("client_id, montant_total, montant_paye, statut_paiement")
+    .select("client_id, montant_total, montant_paye, statut_paiement, created_at")
     .in("client_id", clientIds);
+
+  if (historyCutoff) {
+    cmdQuery = cmdQuery.gte("created_at", historyCutoff);
+  }
+
+  const { data: commandes, error: cmdErr } = await cmdQuery;
 
   if (cmdErr) {
     console.error("[api/admin/rapports/clients] Erreur SELECT commandes:", cmdErr);

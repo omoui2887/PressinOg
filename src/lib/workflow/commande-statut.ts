@@ -364,6 +364,10 @@ export const STATUT_COMMANDE_LABELS: Record<string, string> = {
   en_livraison: "En livraison",
   livre: "Livré",
   retire: "Retiré",
+  // Fix (FIX-WAVE1-A #3) : statut `annule` ajouté par migration 024 mais
+  // absent des libellés → tout badge de commande annulée affichait "annule"
+  // brut au lieu de "Annulée".
+  annule: "Annulée",
 };
 
 /* -------------------------------------------------------------------------- */
@@ -428,6 +432,8 @@ export const STATUT_COMMANDE_BADGE_VARIANTS: Record<
   en_livraison: "info",
   livre: "successSolid",
   retire: "neutral",
+  // Fix (FIX-WAVE1-A #3) : badge danger (rouge) pour les commandes annulées.
+  annule: "danger",
 };
 
 /** Mapping statut paiement → variante badge canonique. */

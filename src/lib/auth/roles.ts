@@ -79,16 +79,34 @@ export function hasRole(
 /*  RÔLES AUTORISÉS PAR OPÉRATION                                              */
 /* -------------------------------------------------------------------------- */
 
-/** Rôles autorisés à créer des commandes (tout personnel actif). */
+/**
+ * Rôles autorisés à créer des commandes.
+ *
+ * Fix (FIX-WAVE1-A #6) — PRD §3.4 matrice "Créer commande" : ✅ Admin/Manager/
+ * Réceptionniste, ❌ Caissier, ❌ Comptable. Avant ce fix, le code autorisait
+ * à tort le caissier et le comptable. L'admin pressing a le rôle "manager"
+ * côté `personnel` (cf. trigger de seed) — il n'y a pas de rôle "admin"
+ * distinct dans l'enum `role_personnel`.
+ */
 export const CAN_CREATE_COMMANDES: PersonnelRole[] = [
   "manager",
   "receptionniste",
-  "caissier",
-  "comptable",
 ];
 
 /** Rôles autorisés à annuler une commande. */
 export const CAN_CANCEL_COMMANDES: PersonnelRole[] = [
+  "manager",
+  "receptionniste",
+  "caissier",
+];
+
+/**
+ * Rôles autorisés à marquer une commande comme retirée (PRD §6.4) :
+ * "retire — Récept./Caissier — Client retiré au pressing". Le manager
+ * (admin pressing) est inclus pour override/intervention manuelle.
+ * Fix (FIX-WAVE1-A #2).
+ */
+export const CAN_RETIRER_COMMANDES: PersonnelRole[] = [
   "manager",
   "receptionniste",
   "caissier",

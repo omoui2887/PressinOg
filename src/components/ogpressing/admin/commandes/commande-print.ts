@@ -235,9 +235,14 @@ ${bodyHtml}
  * statut paiement, date de retrait prévue.
  */
 export function printCommandeTicket(detail: CommandeDetail) {
+  // PRD §13.1 : le payload QR contient { commande_id, numero_ticket, pressing_id }.
+  // `numero_ticket` correspond à `commandes.numero_commande` (champ DB, format
+  // CMD-AAAA-NNNNN) — c'est le numéro lisible imprimé sur le ticket. On utilise
+  // le nom de champ `numero_ticket` dans le payload JSON pour se conformer au
+  // contrat PRD (un scanner externe qui s'attend à `numero_ticket` matchera).
   const qrPayload = JSON.stringify({
     commande_id: detail.id,
-    numero_commande: detail.numero_commande,
+    numero_ticket: detail.numero_commande,
     pressing_id: detail.pressing_id,
   });
 
@@ -412,15 +417,20 @@ export function printCommandeLabels(detail: CommandeDetail) {
     .map((a, idx) => {
       const desc = articleDescription(a);
       const etat = etatLabel(a.etat);
+      // PRD §13.2 : code-barres = article_id + commande_id concaténés
+      // (avec séparateur `|` pour faciliter le parsing au scan). On n'utilise
+      // plus `articles_vetements.code_qr` (champ interne court) — un scanner
+      // externe peut désormais reconstruire les FK article + commande.
+      const barcodeValue = `${a.id}|${detail.id}`;
       return `<div class="label-sticker">
         <div class="brand">OgPressing</div>
         <div class="ticket-no">${escapeHtml(detail.numero_commande)}</div>
         <div class="article-info">${escapeHtml(desc)} — ${escapeHtml(etat)}</div>
         <div class="article-index">Article ${idx + 1} / ${articles.length}</div>
         <svg class="barcode-svg" id="barcode-${idx}" data-code="${escapeHtml(
-          a.code_qr ?? ""
+          barcodeValue
         )}"></svg>
-        <div class="code-text">${escapeHtml(a.code_qr ?? "—")}</div>
+        <div class="code-text">${escapeHtml(barcodeValue)}</div>
       </div>`;
     })
     .join("");

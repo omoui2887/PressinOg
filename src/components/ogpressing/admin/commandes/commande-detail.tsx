@@ -33,6 +33,7 @@ import {
   CheckCircle2,
   Clock,
   CreditCard,
+  HandCoins,
   Loader2,
   Mail,
   MapPin,
@@ -70,6 +71,16 @@ import {
 } from "@/components/ui/select";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Separator } from "@/components/ui/separator";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { formatFCFA, formatDate, formatDateOnly } from "@/lib/utils/format";
 import {
@@ -148,6 +159,82 @@ export function CommandeDetail({
   >(null);
   const [casierInputValue, setCasierInputValue] = useState("");
   const [casierSubmitLoading, setCasierSubmitLoading] = useState(false);
+
+  // ---- Quick actions : Encaisser / Marquer comme retirée ----
+  // Rôle effectif dérivé du `basePath` (toujours présent) — surcharge par
+  // la prop `role` si fournie. Utilisé pour conditionner l'affichage des
+  // boutons d'action rapide conformément à la matrice PRD §3.4.
+  const effectiveRole =
+    role ??
+    (basePath.startsWith("/personnel/")
+      ? basePath.split("/")[2] // ex: "manager", "receptionniste", ...
+      : "admin");
+
+  const canEncaisser = ["admin", "manager", "caissier", "super_admin"].includes(
+    effectiveRole
+  );
+  const canRetirer = [
+    "admin",
+    "manager",
+    "receptionniste",
+    "caissier",
+    "super_admin",
+  ].includes(effectiveRole);
+
+  // La commande peut être marquée comme « retirée » uniquement si elle est
+  // `pret` (le client vient la chercher au pressing) ou `en_livraison` (le
+  // client change d'avis et vient la chercher au pressing au lieu de se la
+  // faire livrer — cf. PRD §6.4).
+  const canMarquerRetire =
+    canRetirer &&
+    (commande.statut === "pret" || commande.statut === "en_livraison");
+
+  // Le bouton « Encaisser » n'a de sens que si la commande n'est pas
+  // entièrement payée.
+  const canShowEncaisser =
+    canEncaisser && commande.statut_paiement !== "paye";
+
+  const [retirerDialogOpen, setRetirerDialogOpen] = useState(false);
+  const [retirerLoading, setRetirerLoading] = useState(false);
+
+  /**
+   * POST /api/admin/commandes/[id]/retirer — marque la commande comme
+   * « retirée » (tous les articles passent à `retire`, `commande.statut`
+   * devient `retire`, `date_retrait` est renseignée). Endpoint ajouté par
+   * l'Agent A (FIX-WAVE1-A).
+   */
+  async function handleRetirerCommande() {
+    setRetirerLoading(true);
+    try {
+      const res = await fetch(
+        `/api/admin/commandes/${commande.id}/retirer`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        throw new Error(
+          data.error ||
+            `Échec du retrait (HTTP ${res.status}). Réessayez ou marquez les articles individuellement.`
+        );
+      }
+      toast.success("Commande marquée comme retirée", {
+        description: `Le client a récupéré ses articles — n° ${commande.numero_commande}.`,
+      });
+      setRetirerDialogOpen(false);
+      // Recharge la page pour refléter le nouveau statut + date_retrait.
+      if (typeof window !== "undefined") {
+        window.location.reload();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erreur inconnue";
+      toast.error("Échec du retrait", { description: msg });
+    } finally {
+      setRetirerLoading(false);
+    }
+  }
 
   // Article actuellement ciblé par le dialog casier (null si dialog fermé).
   const casierDialogArticle = useMemo(
@@ -423,6 +510,44 @@ export function CommandeDetail({
           </Button>
         </div>
       </div>
+
+      {/* Quick actions — Encaisser / Marquer comme retirée (PRD §3.4 + §6.4) */}
+      {(canShowEncaisser || canMarquerRetire) && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="flex flex-wrap items-center gap-2 py-3">
+            <span className="mr-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Actions rapides
+            </span>
+            {canShowEncaisser && (
+              <Button asChild size="sm" variant="default">
+                <Link
+                  href={`/personnel/caissier/encaisser?commande=${encodeURIComponent(
+                    commande.id
+                  )}`}
+                >
+                  <HandCoins className="size-4" />
+                  Encaisser
+                  {resteAPayer > 0 && (
+                    <span className="ml-1 font-semibold">
+                      ({formatFCFA(resteAPayer)})
+                    </span>
+                  )}
+                </Link>
+              </Button>
+            )}
+            {canMarquerRetire && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => setRetirerDialogOpen(true)}
+              >
+                <CheckCircle2 className="size-4" />
+                Marquer comme retirée
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Client + Stats */}
       <div className="grid gap-4 md:grid-cols-2">
@@ -976,6 +1101,60 @@ export function CommandeDetail({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* AlertDialog de confirmation : « Marquer comme retirée »
+          (action irréversible — passe tous les articles à `retire`
+          et fige la commande dans le statut `retire`). */}
+      <AlertDialog
+        open={retirerDialogOpen}
+        onOpenChange={(open) => {
+          if (retirerLoading) return; // pas de fermeture pendant l'envoi
+          setRetirerDialogOpen(open);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="size-5 text-secondary" />
+              Marquer cette commande comme retirée ?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Vous confirmez que le client a récupéré ses articles pour la
+              commande <span className="font-mono">{commande.numero_commande}</span>.
+              Cette action est <strong>irréversible</strong> : tous les
+              articles passeront au statut « Retiré » et la commande sera
+              archivée. Assurez-vous que le solde restant à payer
+              ({formatFCFA(resteAPayer)}) a bien été encaissé avant de
+              confirmer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={retirerLoading}>
+              Annuler
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={retirerLoading}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleRetirerCommande();
+              }}
+              className="bg-secondary text-secondary-foreground hover:bg-secondary/90"
+            >
+              {retirerLoading ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Marquage…
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="size-4" />
+                  Confirmer le retrait
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
