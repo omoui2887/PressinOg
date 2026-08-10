@@ -122,8 +122,8 @@ function ProductGridImpl({
         <SearchX className="h-8 w-8" />
         <p className="text-sm">Aucun article trouvé</p>
         <p className="text-xs">
-          Modifiez la recherche ou la catégorie, ou configurez des services
-          dans <strong>Tarifs par article</strong>.
+          Modifiez la recherche ou la catégorie, ou vérifiez que des services
+          sont bien configurés dans <strong>Services et tarifs</strong>.
         </p>
       </div>
     );

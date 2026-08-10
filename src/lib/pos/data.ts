@@ -8,13 +8,20 @@
  *   - searchClients()           → recherche client (nom + téléphone)
  *   - createCommande()          → POST /api/admin/commandes
  *
- * STRATÉGIE — SYNERGIE AVEC « TARIFS PAR ARTICLE » :
- *   Le catalogue POS est construit à partir des TARIFS configurés par
- *   l'administrateur dans /admin/tarifs. Seuls les articles qui ont au moins
- *   un tarif spécifique apparaissent dans « Nouvelle Commande ».
+ * STRATÉGIE — PRODUIT CARTÉSIEN CATALOGUE × SERVICES :
+ *   Le catalogue POS est construit à partir du PRODUIT CARTÉSIEN des
+ *   articles du catalogue global (33 articles) × des services actifs du
+ *   pressing (ex : 5 services). Chaque combinaison (article × service)
+ *   devient une variante PosArticle — le composant <ProductGrid /> regroupe
+ *   ces variantes par article pour n'afficher qu'une carte par article
+ *   (33 max) et ouvrir un dialogue d'action au clic.
  *
- *   Pour chaque article configuré, on crée une variante par type_service
- *   qui possède un tarif. Les 6 types possibles sont :
+ *   PRIX — RÉSOLUTION :
+ *     1. Si un tarif spécifique existe pour (article × type_service) dans
+ *        /admin/tarifs → utiliser `tarif.prix` (et `tarif.duree_estimee`).
+ *     2. Sinon → fallback sur `service.prix` (et `service.duree_estimee`).
+ *
+ *   Les 6 types possibles sont :
  *     1. Lavage
  *     2. Repassage
  *     3. Laver-Repasser  (nécessite la migration DB 021)
@@ -22,9 +29,8 @@
  *     5. Détachage
  *     6. Blanchisserie
  *
- *   Les prix affichés dans le dialogue d'action proviennent exclusivement
- *   des tarifs — il n'y a plus de fallback sur le prix générique du service.
- *   Si une action n'a pas de tarif, elle s'affiche « Non configuré ».
+ *   Ainsi, un pressing peut utiliser le POS immédiatement après avoir
+ *   configuré ses services — sans avoir à définir 165 tarifs spécifiques.
  *
  * Si les API Supabase échouent ou renvoient un catalogue/tarifs vide,
  * on bascule sur les données fictives de `mock-data.ts`.
@@ -172,8 +178,14 @@ export async function getArticles(): Promise<{
             | undefined) ?? []
         : [];
 
-    // Bascule mock si le catalogue OU les tarifs sont vides.
-    if (!catalogue.length || !tarifs.length) {
+    // Bascule mock si le catalogue est vide (les tarifs sont optionnels :
+    // en leur absence, on fallback sur service.prix pour toutes les variantes).
+    if (!catalogue.length) {
+      return { articles: MOCK_ARTICLES, source: "mock" };
+    }
+    // Bascule mock si aucun service actif n'est configuré pour le pressing
+    // (sans service, impossible de créer une commande — service_id obligatoire).
+    if (!services.length) {
       return { articles: MOCK_ARTICLES, source: "mock" };
     }
 
@@ -210,35 +222,32 @@ export async function getArticles(): Promise<{
       inner.set(t.type_service, t);
     }
 
-    // Construction des PosArticle : 1 par (article × type_service tarifé).
-    // Seuls les articles avec au moins un tarif sont inclus.
+    // Construction des PosArticle : produit cartésien (article × service).
+    // Pour chaque article du catalogue et chaque service actif du pressing,
+    // on crée une variante. Le prix est résolu depuis le tarif spécifique si
+    // présent, sinon depuis service.prix (fallback).
     const articles: PosArticle[] = [];
-    for (const [articleId, tarifsForArticle] of tarifsByArticle) {
-      const art = catalogueById.get(articleId);
-      if (!art) continue; // tarif orphelin (article supprimé du catalogue)
+    for (const [articleId, art] of catalogueById) {
+      const tarifsForArticle =
+        tarifsByArticle.get(articleId) ?? new Map<string, TarifRow>();
 
       for (const typeService of ACTION_TYPES) {
-        const tarif = tarifsForArticle.get(typeService);
-        if (!tarif) continue; // pas de tarif pour ce type → action non proposée
-
         const svc = serviceByType.get(typeService);
 
-        // ⚠️ Si un tarif existe mais qu'aucun service de ce type n'existe
-        // dans le pressing, on NE PEUT PAS créer de commande : la table
-        // commande_lignes.service_id est une FK vers services.id, et l'API
-        // POST /api/admin/commandes valide `service_id est requis`.
-        // On saute donc cette variante — l'action ne s'affichera pas dans
-        // le dialogue. L'admin doit créer le service dans /admin/services.
+        // Si le pressing n'offre pas ce type de service, on saute la variante.
+        // L'action ne s'affichera pas dans le dialogue. L'admin doit créer
+        // le service dans /admin/services.
         if (!svc) {
-          if (typeof console !== "undefined" && console.warn) {
-            console.warn(
-              `[pos/data] Tarif trouvé pour « ${art.nom} × ${typeService} » ` +
-                `mais aucun service de type "${typeService}" n'existe dans ce pressing. ` +
-                `Action masquée. Créez le service dans /admin/services.`
-            );
-          }
           continue;
         }
+
+        const tarif = tarifsForArticle.get(typeService);
+        const prix = tarif
+          ? Math.trunc(tarif.prix ?? 0)
+          : Math.trunc(svc.prix ?? 0);
+        const duree = tarif
+          ? dureeToHours(tarif.duree_estimee)
+          : dureeToHours(svc.duree_estimee);
 
         const cat = typeToCategorie(typeService);
         articles.push({
@@ -254,19 +263,23 @@ export async function getArticles(): Promise<{
               ? art.categorie
               : "Articles spéciaux",
           icone_url: art.icone_url ?? iconeUrlForSlug(art.slug),
-          prix: Math.trunc(tarif.prix ?? 0),
-          duree_estimee_h: dureeToHours(tarif.duree_estimee),
-          tarifConfigure: true,
+          prix,
+          duree_estimee_h: duree,
+          tarifConfigure: !!tarif,
         });
       }
     }
 
-    // Si aucun article n'a de tarif configuré, bascule mock.
+    // Si aucun article n'a pu être construit (catalogue vide ou aucun service
+    // actif), bascule mock.
     if (!articles.length) {
       return { articles: MOCK_ARTICLES, source: "mock" };
     }
 
-    return { articles, source: "api" };
+    return {
+      articles,
+      source: tarifs.length ? "api" : "mixed",
+    };
   } catch {
     return { articles: MOCK_ARTICLES, source: "mock" };
   }
