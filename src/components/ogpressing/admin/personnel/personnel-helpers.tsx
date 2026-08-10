@@ -59,13 +59,17 @@ export interface Employe {
  * Modes de paiement autorisés dans le champ `modes_paiement_autorises`
  * (AUDIT 9.7 — migration 019). L'ordre est utilisé pour l'affichage
  * des checkboxes dans la dialog d'édition.
+ *
+ * Fix (FIX-WAVE1-A #8) — PRD §5.2 + §18.5 : seules 3 méthodes de paiement
+ * sont conformes (especes, mobile_money, carte_bancaire). Avant ce fix,
+ * on avait aussi "carte", "cheque", "virement" qui ne pouvaient JAMAIS
+ * passer la validation `METHODES_VALID` côté API (3 valeurs PRD) → dead
+ * values, jamais encaissables. On les retire donc de l'enum.
  */
 export const MODES_PAIEMENT_CAISSIER = [
   "especes",
   "mobile_money",
-  "carte",
-  "cheque",
-  "virement",
+  "carte_bancaire",
 ] as const;
 
 export type ModePaiementCaissier = (typeof MODES_PAIEMENT_CAISSIER)[number];
@@ -73,9 +77,7 @@ export type ModePaiementCaissier = (typeof MODES_PAIEMENT_CAISSIER)[number];
 export const MODE_PAIEMENT_LABELS: Record<ModePaiementCaissier, string> = {
   especes: "Espèces",
   mobile_money: "Mobile Money",
-  carte: "Carte bancaire",
-  cheque: "Chèque",
-  virement: "Virement",
+  carte_bancaire: "Carte bancaire",
 };
 
 /** Seuil par défaut si la colonne seuil_alerte_impaye est absente/null. */

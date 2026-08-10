@@ -8,7 +8,7 @@
  * production : validation serveur, anti-spam, pas de structure DB exposée
  * au navigateur, et robuste face aux éventuels soucis de cache RLS.
  *
- * Champs supportés (spec LOT 4 prompt 4.2 — 11 champs) :
+ * Champs supportés (spec LOT 4 prompt 4.2 — PRD §4.2 liste 10 champs) :
  *   - nom           (requis, 2-50)        → concaténé avec prenom dans nom_gerant
  *   - prenom        (requis, 2-50)        → concaténé avec nom dans nom_gerant
  *   - telephone     (requis, format ivoirien : 0XXXXXXXX ou +225XXXXXXXX)
@@ -18,8 +18,14 @@
  *   - adresse       (requis, min 5)        → stocké dans commune (équivalent spec)
  *   - nombre_machines  (requis, integer >= 1)
  *   - nombre_employes  (optionnel, integer >= 0)
- *   - plan_souhaite (requis, enum : starter | pro | business | indecis)
  *   - message       (optionnel, max 500)
+ *
+ * Champ extra non-PRD (toléré, default 'starter') :
+ *   - plan_souhaite (optionnel, enum : starter | pro | business | indecis)
+ *     Fix (FIX-WAVE1-A #12) : PRD §4.2 ne liste pas `plan_souhaite` parmi
+ *     les 10 champs du formulaire. Avant ce fix, le route renvoyait 400 si
+ *     le champ était manquant. Désormais, il default à 'starter' si absent
+ *     ou invalide — jamais de 400 sur ce champ.
  *
  * Réponse :
  *   200 { success: true, data: { id } }
@@ -155,13 +161,15 @@ function validate(input: InscriptionInput): {
     }
   }
 
-  // Plan souhaité : enum
-  const plan = String(input.plan_souhaite ?? "").trim().toLowerCase();
-  if (!plan) {
-    errors.push("Le plan souhaité est obligatoire.");
-  } else if (!PLANS_VALIDES.includes(plan as (typeof PLANS_VALIDES)[number])) {
-    errors.push("Le plan souhaité n'est pas valide.");
-  }
+  // Plan souhaité : optionnel (champ extra non-PRD §4.2).
+  // Fix (FIX-WAVE1-A #12) : PRD §4.2 ne liste pas `plan_souhaite` parmi les
+  // 10 champs du formulaire. On tolère le champ (utile pour le marketing)
+  // mais on ne renvoie JAMAIS 400 si absent ou invalide — on default à
+  // 'starter' (le plan d'entrée de gamme).
+  const planRaw = String(input.plan_souhaite ?? "").trim().toLowerCase();
+  const plan = (PLANS_VALIDES as readonly string[]).includes(planRaw)
+    ? planRaw
+    : "starter";
 
   // Message : optionnel, max 500 caractères
   if (message.length > 500) {

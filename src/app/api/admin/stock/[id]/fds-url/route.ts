@@ -40,6 +40,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { requirePlanFeature } from "@/lib/auth/plan-gating";
 
 export const dynamic = "force-dynamic";
 
@@ -120,6 +121,20 @@ export async function GET(
       { status: 403 }
     );
   }
+
+  // 🚫 PLAN GATING (PRD §16) — Fix (FIX-WAVE1-A #5) : la route fds-upload
+  // bloque Starter (403), mais fds-url (récupération de la signed URL)
+  // n'avait AUCUN check de plan → un Starter user pouvait télécharger une
+  // FDS uploadée précédemment (alors qu'il était Pro, ou par un manager Pro).
+  // PRD §16 : "FDS upload Pro et Business only" — le download suit la même
+  // règle. On applique `requirePlanFeature(fds_upload)` pour mirror la
+  // logique de fds-upload.
+  const forbidden = await requirePlanFeature(
+    supabase,
+    me.pressing_id,
+    "fds_upload"
+  );
+  if (forbidden) return forbidden;
 
   // ---- 2. SELECT du produit_stock (RLS isole par pressing) ----
   // La RLS sur produits_stock limite automatiquement la lecture au

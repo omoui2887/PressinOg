@@ -16,7 +16,8 @@
  * Données via GET /api/admin/rapports?periode=...&start=...&end=...
  * (RLS isole par pressing_id automatiquement).
  *
- * ⚠️ Les boutons d'export .xlsx seront intégrés par le main agent (Task 3).
+ * 10 exports .xlsx sont exposés dans la section « Exports Excel » (regroupés
+ * par catégorie : Période / Commandes & Clients / Personnel).
  *
  * Mobile-first : cards empilées sur mobile, grilles 2/4 colonnes sur sm/lg.
  */
@@ -195,7 +196,7 @@ export function RapportsPage({
             </div>
             {/* Exports liés à la période courante */}
             <p className="mb-2 text-xs text-muted-foreground">
-              Liés à la période sélectionnée
+              Période — liés à la sélection courante
             </p>
             <div className="mb-4 flex flex-wrap gap-2">
               <RapportExportButton
@@ -223,12 +224,19 @@ export function RapportsPage({
                 end={periodeCfg.end}
                 label="Remises (période)"
               />
+              <RapportExportButton
+                type="stock"
+                size="sm"
+                start={periodeCfg.start}
+                end={periodeCfg.end}
+                label="Stock (mouvements)"
+              />
             </div>
-            {/* Exports globaux (toutes données) */}
+            {/* Exports globaux Commandes / Clients */}
             <p className="mb-2 text-xs text-muted-foreground">
-              Exports globaux (toutes données)
+              Commandes &amp; Clients — exports globaux
             </p>
-            <div className="flex flex-wrap gap-2">
+            <div className="mb-4 flex flex-wrap gap-2">
               <RapportExportButton
                 type="commandes"
                 size="sm"
@@ -238,6 +246,27 @@ export function RapportsPage({
                 type="paiements"
                 size="sm"
                 label="Tous les paiements"
+              />
+              <RapportExportButton
+                type="impayes"
+                size="sm"
+                label="Impayés (clients)"
+              />
+              <RapportExportButton
+                type="clients"
+                size="sm"
+                label="Tous les clients"
+              />
+            </div>
+            {/* Exports Personnel */}
+            <p className="mb-2 text-xs text-muted-foreground">
+              Personnel — exports globaux
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <RapportExportButton
+                type="personnel"
+                size="sm"
+                label="Tous les employés"
               />
             </div>
           </Card>

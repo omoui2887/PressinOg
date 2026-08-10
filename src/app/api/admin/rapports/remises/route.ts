@@ -28,7 +28,11 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { requirePlanFeature } from "@/lib/auth/plan-gating";
+import {
+  requirePlanFeature,
+  getPressingPlan,
+  getHistoryCutoff,
+} from "@/lib/auth/plan-gating";
 import { formatDateOnly } from "@/lib/utils/format";
 import {
   REMISE_TYPE_LABELS,
@@ -93,6 +97,14 @@ export async function GET(request: NextRequest) {
   );
   if (forbidden) return forbidden;
 
+  // 🚫 PLAN GATING (PRD §16) — limitation d'historique selon le plan :
+  //   starter → 3 derniers mois, pro → 12 derniers mois, business → illimité.
+  // Fix (FIX-WAVE1-A #4) : cutoff appliqué sur `created_at` des commandes
+  // ayant bénéficié d'une remise. Si l'utilisateur fournit un `start` plus
+  // récent que le cutoff, le filtre le plus restrictif gagne.
+  const plan = await getPressingPlan(supabase, me.pressing_id);
+  const historyCutoff = getHistoryCutoff(plan);
+
   const sp = request.nextUrl.searchParams;
   const start = sp.get("start") || null;
   const end = sp.get("end") || null;
@@ -118,6 +130,9 @@ export async function GET(request: NextRequest) {
     )
     .neq("remise_type", "aucune");
 
+  if (historyCutoff) {
+    query = query.gte("created_at", historyCutoff);
+  }
   if (start) {
     query = query.gte("created_at", start);
   }

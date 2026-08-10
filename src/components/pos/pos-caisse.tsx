@@ -39,7 +39,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
 import {
   CheckCircle2,
   Printer,
@@ -47,6 +46,7 @@ import {
   ShoppingCart,
   Eye,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { usePosStore } from "@/lib/pos/store";
 import {
@@ -81,7 +81,6 @@ interface PosCaisseProps {
 }
 
 export function PosCaisse({ basePath }: PosCaisseProps) {
-  const { toast } = useToast();
   const s = usePosStore();
 
   // Refs pour les raccourcis clavier (focus).
@@ -148,13 +147,12 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
     store.setArticles(articles, source);
     setCatalogueCategories(catalogueCats);
     if (source === "mock") {
-      toast({
-        title: "Mode démonstration",
+      toast.info("Mode démonstration", {
         description:
           "Catalogue fictif affiché (aucun service configuré sur ce pressing).",
       });
     }
-  }, [toast]);
+  }, []);
 
   // ---------- Ouvre le dialogue de choix d'action ----------
   // Appelé quand l'utilisateur clique sur une carte article du catalogue.
@@ -313,8 +311,7 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
 
   async function handleValider() {
     if (!canValidate) {
-      toast({
-        title: "Validation impossible",
+      toast.error("Validation impossible", {
         description: linesWithoutService.length > 0
           ? "Un ou plusieurs articles n'ont pas de service associé. " +
             "Créez le service manquant dans la page Services, puis réessayez."
@@ -323,7 +320,6 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
             : s.cartLines.length === 0
               ? "Ajoutez au moins un article."
               : "Veuillez compléter les informations manquantes.",
-        variant: "destructive",
       });
       return;
     }
@@ -344,13 +340,11 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
       const names = invalidLines
         .map(({ line }) => line.article.catalogue_nom)
         .join(", ");
-      toast({
-        title: "Validation impossible",
+      toast.error("Validation impossible", {
         description:
           `Article(s) sans service associé : ${names}. ` +
           "Rechargez la page (les services sont synchronisés au chargement), " +
           "ou créez le service manquant dans la page Services.",
-        variant: "destructive",
       });
       return;
     }
@@ -403,18 +397,15 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
 
       const created = await createCommande(payload);
       s.setCommandeCree(created);
-      toast({
-        title: "Commande créée",
+      toast.success("Commande créée", {
         description: `${created.numero_commande} — ${formatFcfa(created.montant_total)}`,
       });
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "Échec de la création.";
       s.setSubmitError(msg);
-      toast({
-        title: "Échec de la validation",
+      toast.error("Échec de la validation", {
         description: msg + " Le panier a été conservé.",
-        variant: "destructive",
       });
     } finally {
       s.setSubmitting(false);
@@ -453,10 +444,8 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
   // ---------- Nouveau client ----------
   async function handleCreateClient() {
     if (!newClient.nom.trim() || !newClient.telephone.trim()) {
-      toast({
-        title: "Champs requis",
+      toast.error("Champs requis", {
         description: "Le nom et le téléphone sont obligatoires.",
-        variant: "destructive",
       });
       return;
     }
@@ -488,12 +477,10 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
       });
       setNewClientOpen(false);
       setNewClient({ nom: "", telephone: "", commune: "" });
-      toast({ title: "Client créé", description: c.nom_complet });
+      toast.success("Client créé", { description: c.nom_complet });
     } catch (err) {
-      toast({
-        title: "Échec création client",
+      toast.error("Échec création client", {
         description: err instanceof Error ? err.message : "Erreur inconnue.",
-        variant: "destructive",
       });
     } finally {
       setNewClientLoading(false);
@@ -507,7 +494,7 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
     setPassageTelephone("");
     s.setClientPassage(false);
     setConfirmAnnuler(false);
-    toast({ title: "Commande annulée", description: "Le panier a été vidé." });
+    toast.info("Commande annulée", { description: "Le panier a été vidé." });
   }
 
   // ---------- Après succès : nouvelle commande ----------
@@ -610,8 +597,7 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
             onPassageTelephone={setPassageTelephone}
             onNewClient={() => setNewClientOpen(true)}
             onViewClient={() => {
-              toast({
-                title: "Fiche client",
+              toast.info("Fiche client", {
                 description: "Ouverture de la fiche client (à venir).",
               });
             }}

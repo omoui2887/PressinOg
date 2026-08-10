@@ -129,7 +129,12 @@ export default function ManagerScannerPage() {
       const parsed = JSON.parse(decoded) as Record<string, unknown>;
       if (typeof parsed.commande_id === "string") {
         commandeId = parsed.commande_id;
+      } else if (typeof parsed.numero_ticket === "string") {
+        // PRD §13.1 : `numero_ticket` est le nom du champ dans le payload QR.
+        searchQuery = parsed.numero_ticket;
       } else if (typeof parsed.numero_commande === "string") {
+        // Rétro-compat : anciens tickets imprimés avant FIX-WAVE1-B
+        // utilisaient `numero_commande` comme clé JSON.
         searchQuery = parsed.numero_commande;
       }
     } catch {

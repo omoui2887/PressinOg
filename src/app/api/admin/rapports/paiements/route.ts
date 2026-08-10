@@ -33,7 +33,11 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { requirePlanFeature } from "@/lib/auth/plan-gating";
+import {
+  requirePlanFeature,
+  getPressingPlan,
+  getHistoryCutoff,
+} from "@/lib/auth/plan-gating";
 import { formatDateOnly } from "@/lib/utils/format";
 import {
   METHODE_PAIEMENT_LABELS,
@@ -108,6 +112,15 @@ export async function GET(request: NextRequest) {
   );
   if (forbidden) return forbidden;
 
+  // 🚫 PLAN GATING (PRD §16) — limitation d'historique selon le plan :
+  //   starter → 3 derniers mois, pro → 12 derniers mois, business → illimité.
+  // Fix (FIX-WAVE1-A #4) : cutoff appliqué sur la colonne `date_paiement`
+  // (ou `created_at` si date_paiement est null) pour ne pas exporter de
+  // paiements au-delà de la limite du plan. Si l'utilisateur fournit un
+  // `start` plus récent que le cutoff, le filtre le plus restrictif gagne.
+  const plan = await getPressingPlan(supabase, me.pressing_id);
+  const historyCutoff = getHistoryCutoff(plan);
+
   const sp = request.nextUrl.searchParams;
   const start = sp.get("start") || null;
   const end = sp.get("end") || null;
@@ -131,6 +144,12 @@ export async function GET(request: NextRequest) {
       `
     );
 
+  // Cutoff d'historique (PRD §16) — appliqué sur `date_paiement`. Les
+  // paiements sans `date_paiement` (cas anormal) ne seront pas filtrés
+  // par ce critère, mais le filtre `start` user s'applique aussi.
+  if (historyCutoff) {
+    query = query.gte("date_paiement", historyCutoff);
+  }
   if (start) {
     query = query.gte("date_paiement", start);
   }

@@ -879,9 +879,17 @@ export async function POST(request: NextRequest) {
           );
         }
         const freeArticle = articles[idx];
+        // Fix (FIX-WAVE1-A #1) : on doit utiliser le prix résolu (tarif override
+        // si configuré, sinon service.prix) pour rester cohérent avec le prix
+        // réellement facturé au client. Sinon, si un tarif override inférieur
+        // à service.prix est configuré, la remise "article offert" serait
+        // calculée sur service.prix (trop élevé) et la commande pourrait être
+        // gratuite à tort (montant_total = 0).
         montantRemise =
-          (serviceMap.get(freeArticle.service_id)?.prix ?? 0) *
-          freeArticle.quantite;
+          resolvePrixUnitaire(
+            freeArticle.catalogue_article_id,
+            freeArticle.service_id
+          ) * freeArticle.quantite;
         break;
       }
       default:

@@ -21,7 +21,11 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { requirePlanFeature } from "@/lib/auth/plan-gating";
+import {
+  requirePlanFeature,
+  getPressingPlan,
+  getHistoryCutoff,
+} from "@/lib/auth/plan-gating";
 import { formatDateOnly } from "@/lib/utils/format";
 
 export const dynamic = "force-dynamic";
@@ -85,6 +89,15 @@ export async function GET(request: NextRequest) {
   );
   if (forbidden) return forbidden;
 
+  // 🚫 PLAN GATING (PRD §16) — limitation d'historique selon le plan :
+  //   starter → 3 derniers mois, pro → 12 derniers mois, business → illimité.
+  // Fix (FIX-WAVE1-A #4) : cutoff appliqué sur la colonne `created_at` des
+  // commandes non soldées. NB : un impayé de plus de 3/12 mois ne sera pas
+  // visible pour un Starter/Pro — c'est conforme à la limitation d'historique
+  // du plan, même si la dette existe toujours en DB.
+  const plan = await getPressingPlan(supabase, me.pressing_id);
+  const historyCutoff = getHistoryCutoff(plan);
+
   // Pas de paramètres de requête pour cette route
   void request;
 
@@ -108,11 +121,17 @@ export async function GET(request: NextRequest) {
 
   // 2) Récupère uniquement les commandes non soldées ( non_paye ou partiel )
   const clientIds = (clients as ClientRow[]).map((c) => c.id);
-  const { data: commandes, error: cmdErr } = await supabase
+  let cmdQuery = supabase
     .from("commandes")
     .select("client_id, montant_total, montant_paye, statut_paiement, created_at")
     .in("client_id", clientIds)
     .in("statut_paiement", ["non_paye", "partiel"]);
+
+  if (historyCutoff) {
+    cmdQuery = cmdQuery.gte("created_at", historyCutoff);
+  }
+
+  const { data: commandes, error: cmdErr } = await cmdQuery;
 
   if (cmdErr) {
     console.error("[api/admin/rapports/impayes] Erreur SELECT commandes:", cmdErr);

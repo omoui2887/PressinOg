@@ -18,9 +18,13 @@
  * 🔒 SÉCURITÉ : getSupabaseServer() (anon + JWT) → RLS isole par pressing_id.
  *   Auth : n'importe quel personnel actif du pressing.
  */
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { requirePlanFeature } from "@/lib/auth/plan-gating";
+import {
+  requirePlanFeature,
+  getPressingPlan,
+  getHistoryCutoff,
+} from "@/lib/auth/plan-gating";
 import { formatDateOnly } from "@/lib/utils/format";
 import {
   STATUT_COMMANDE_LABELS,
@@ -72,7 +76,7 @@ function buildRemiseLabel(cmd: CommandeRow): string {
 /*  GET                                                                        */
 /* -------------------------------------------------------------------------- */
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   const supabase = await getSupabaseServer();
   const { data: userData, error: userErr } = await supabase.auth.getUser();
   if (userErr || !userData.user) {
@@ -109,10 +113,16 @@ export async function GET(request: NextRequest) {
   );
   if (forbidden) return forbidden;
 
-  // Pas de paramètre de requête pour cette route — on ignore request.nextUrl
-  void request;
+  // 🚫 PLAN GATING (PRD §16) — limitation d'historique selon le plan :
+  //   starter → 3 derniers mois, pro → 12 derniers mois, business → illimité.
+  // Fix (FIX-WAVE1-A #4) : cutoff appliqué sur la colonne `created_at` pour
+  // ne pas exporter de commandes au-delà de la limite du plan.
+  const plan = await getPressingPlan(supabase, me.pressing_id);
+  const historyCutoff = getHistoryCutoff(plan);
 
-  const { data: commandes, error: cmdErr } = await supabase
+  // Cette route ne lit aucun paramètre de requête.
+
+  let query = supabase
     .from("commandes")
     .select(
       `
@@ -131,6 +141,12 @@ export async function GET(request: NextRequest) {
     )
     .order("created_at", { ascending: false })
     .limit(1000);
+
+  if (historyCutoff) {
+    query = query.gte("created_at", historyCutoff);
+  }
+
+  const { data: commandes, error: cmdErr } = await query;
 
   if (cmdErr) {
     console.error("[api/admin/rapports/commandes] Erreur SELECT:", cmdErr);

@@ -22,10 +22,13 @@
  *     voir/updater que les commandes de son pressing). Si l'article
  *     n'existe pas ou n'appartient pas à une commande du pressing, la
  *     clause WHERE ne matche aucune ligne → 404.
- *   - Auth : n'importe quel personnel actif (manager, réceptionniste,
- *     laveur, repassage, livreur, caissier, comptable).
- *   - 401 si non authentifié, 403 si personnel inactif, 404 si article
- *     introuvable.
+ *   - Auth : uniquement Admin/Manager/Laveur/Repassage/Livreur peuvent
+ *     modifier le statut d'un article (PRD §3.4 — matrice "Modifier statut").
+ *     Fix (FIX-WAVE1-A #7) : avant ce fix, n'importe quel personnel actif
+ *     pouvait modifier le statut. Désormais les rôles Receptionniste,
+ *     Caissier et Comptable sont exclus.
+ *   - 401 si non authentifié, 403 si personnel inactif ou rôle insuffisant,
+ *     404 si article introuvable.
  *
  * 🛡️ GUARD WORKFLOW (WORKFLOW-FIX-V1) :
  *   - La transition `from → to` doit être autorisée par la matrice
@@ -65,6 +68,19 @@ export const dynamic = "force-dynamic";
 const STATUT_ARTICLE_VALID = STATUTS_ARTICLE;
 
 type StatutArticleValid = (typeof STATUT_ARTICLE_VALID)[number];
+
+/**
+ * Rôles autorisés à modifier le statut d'un article (PRD §3.4 — matrice
+ * "Modifier statut" : ✅ Admin/Manager/Laveur/Repassage/Livreur ;
+ * ❌ Receptionniste/Caissier/Comptable). L'admin pressing a le rôle
+ * "manager" côté `personnel`. Fix (FIX-WAVE1-A #7).
+ */
+const ROLES_AUTORISES_MODIFIER_STATUT_ARTICLE = new Set<string>([
+  "manager",
+  "laveur",
+  "repassage",
+  "livreur",
+]);
 
 interface RouteParams {
   params: Promise<{ id: string; articleId: string }>;
@@ -107,6 +123,22 @@ export async function PATCH(
   if (me.actif !== true || me.statut_compte !== "actif") {
     return NextResponse.json(
       { success: false, error: "Accès refusé — compte inactif" },
+      { status: 403 }
+    );
+  }
+
+  // Fix (FIX-WAVE1-A #7) — Role guard PRD §3.4 : seuls Admin/Manager/Laveur/
+  // Repassage/Livreur peuvent modifier le statut d'un article. Les rôles
+  // Receptionniste, Caissier et Comptable sont refusés (403) avant tout
+  // accès DB. Le check `me.role` se fait après isPersonnelActive pour
+  // éviter de leak l'existence d'un compte inactif.
+  if (!ROLES_AUTORISES_MODIFIER_STATUT_ARTICLE.has(me.role)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          "Accès refusé — rôle insuffisant pour modifier le statut d'un article (Admin/Manager/Laveur/Repassage/Livreur requis).",
+      },
       { status: 403 }
     );
   }
