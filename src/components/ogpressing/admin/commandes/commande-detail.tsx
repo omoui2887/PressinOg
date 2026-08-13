@@ -25,6 +25,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Archive,
   ArchiveRestore,
@@ -104,6 +105,7 @@ import {
   printCommandeTicket,
   type CommandeDetail as CommandeDetailData,
 } from "./commande-print";
+import { EncaisserPaiementDialog } from "./encaisser-paiement-dialog";
 
 interface CommandeDetailProps {
   commande: CommandeDetailData;
@@ -138,6 +140,7 @@ export function CommandeDetail({
   basePath = "/admin",
   role,
 }: CommandeDetailProps) {
+  const router = useRouter();
   // Copie locale des articles pour refléter les mises à jour de statut
   // sans devoir refetch toute la commande.
   const [articles, setArticles] = useState(commande.articles);
@@ -149,6 +152,13 @@ export function CommandeDetail({
     setArticles(commande.articles);
   }, [commande.articles]);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  // État du dialog d'encaissement (FIX-ENCAISSE-ADMIN). Ouvert via le bouton
+  // "Encaisser le solde" visible quand resteAPayer > 0. Après un encaissement
+  // réussi, on appelle router.refresh() pour recharger les données serveur
+  // (montant_paye, statut_paiement, liste des paiements) et le bouton
+  // disparaît si la commande est soldée.
+  const [encaisserOpen, setEncaisserOpen] = useState(false);
 
   // État du dialog de saisie du casier (ouvert quand l'utilisateur
   // sélectionne "pret" dans le Select de statut d'un article). On ne
@@ -490,8 +500,22 @@ export function CommandeDetail({
           </div>
         </div>
 
-        {/* Actions impression */}
+        {/* Actions impression + encaissement */}
         <div className="flex flex-wrap gap-2">
+          {/* FIX-ENCAISSE-ADMIN : bouton "Encaisser le solde" visible
+              seulement quand la commande n'est pas soldée (resteAPayer > 0).
+              Ouvre le dialog EncaisserPaiementDialog qui appelle
+              /api/personnel/caissier/encaisser (manager/réceptionniste/caissier). */}
+          {resteAPayer > 0 && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => setEncaisserOpen(true)}
+            >
+              <Wallet className="size-4" />
+              Encaisser le solde
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -1102,59 +1126,21 @@ export function CommandeDetail({
         </DialogContent>
       </Dialog>
 
-      {/* AlertDialog de confirmation : « Marquer comme retirée »
-          (action irréversible — passe tous les articles à `retire`
-          et fige la commande dans le statut `retire`). */}
-      <AlertDialog
-        open={retirerDialogOpen}
-        onOpenChange={(open) => {
-          if (retirerLoading) return; // pas de fermeture pendant l'envoi
-          setRetirerDialogOpen(open);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <CheckCircle2 className="size-5 text-secondary" />
-              Marquer cette commande comme retirée ?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Vous confirmez que le client a récupéré ses articles pour la
-              commande <span className="font-mono">{commande.numero_commande}</span>.
-              Cette action est <strong>irréversible</strong> : tous les
-              articles passeront au statut « Retiré » et la commande sera
-              archivée. Assurez-vous que le solde restant à payer
-              ({formatFCFA(resteAPayer)}) a bien été encaissé avant de
-              confirmer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={retirerLoading}>
-              Annuler
-            </AlertDialogCancel>
-            <AlertDialogAction
-              disabled={retirerLoading}
-              onClick={(e) => {
-                e.preventDefault();
-                void handleRetirerCommande();
-              }}
-              className="bg-secondary text-secondary-foreground hover:bg-secondary/90"
-            >
-              {retirerLoading ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Marquage…
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="size-4" />
-                  Confirmer le retrait
-                </>
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Dialog d'encaissement (FIX-ENCAISSE-ADMIN) — permet au
+          manager/réceptionniste/caissier de régler le solde d'une commande
+          partiellement payée directement depuis la page détail. Après un
+          encaissement réussi, router.refresh() recharge les données serveur
+          (montant_paye, statut_paiement, liste des paiements) et le bouton
+          "Encaisser le solde" disparaît si la commande est soldée. */}
+      <EncaisserPaiementDialog
+        open={encaisserOpen}
+        onOpenChange={setEncaisserOpen}
+        commandeId={commande.id}
+        numeroCommande={commande.numero_commande}
+        montantTotal={commande.montant_total}
+        montantPaye={commande.montant_paye}
+        onSuccess={() => router.refresh()}
+      />
     </div>
   );
 }

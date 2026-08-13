@@ -83,9 +83,13 @@ BEGIN
 END;
 $$;
 
+-- ⚠️  CORRECTIF : le COMMENT ON FUNCTION DOIT se terminer par un ';'
+--     (le point-virgule manquant provoquait l'erreur 42601
+--     "syntax error at or near DROP" au niveau du DROP TRIGGER
+--     suivant — le parseur SQL ne voyait pas la fin du COMMENT).
 COMMENT ON FUNCTION public.cascade_desactivation_personnel() IS
     'AUDIT-B-10: cascade désactivation personnel when pressing.statut becomes suspendu. '
-    'Défense en profondeur côté DB (le complément de la cascade applicative côté API, agent P4-D). '
+    'Défense en profondeur côté DB (le complément de la cascade applicative côté API, agent P4-D).';
 
 
 -- ============================================================

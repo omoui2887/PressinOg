@@ -368,14 +368,15 @@ export interface Database {
           date_desactivation: string | null;
           actif: boolean;
           cree_par: string | null;
-          // Champs dédiés aux caissiers (AUDIT 9.7 — migration 019).
+          // Champs dédiés aux caissiers (AUDIT 9.7 — migration 019 + 030).
           // modes_paiement_autorises : JSONB array non-vide d'éléments
           //   parmi ['especes','mobile_money','carte','cheque','virement'].
-          //   Default = tous les modes. Contrainte CHECK côté DB.
+          //   ⚠️  Migration 030 : NULLABLE (NULL pour les non-caissiers,
+          //       array pour les caissiers). DEFAULT NULL.
           // nom_affiche_recu : nom à imprimer sur les reçus (nullable,
           //   fallback sur nom_complet côté application).
           // seuil_alerte_impaye : entier 0..1 000 000 FCFA, default 5000.
-          modes_paiement_autorises: string[];
+          modes_paiement_autorises: string[] | null;
           nom_affiche_recu: string | null;
           seuil_alerte_impaye: number;
           created_at: string;
@@ -398,9 +399,10 @@ export interface Database {
           date_desactivation?: string | null;
           actif?: boolean;
           cree_par?: string | null;
-          // Champs caissier (migration 019) — optionnels à l'insert,
-          // des DEFAULT sont définis côté DB.
-          modes_paiement_autorises?: string[];
+          // Champs caissier (migration 019 + 030) — optionnels à l'insert.
+          // modes_paiement_autorises : NULL pour non-caissiers (DEFAULT NULL depuis 030),
+          //   array pour les caissiers. Peut être null explicitement.
+          modes_paiement_autorises?: string[] | null;
           nom_affiche_recu?: string | null;
           seuil_alerte_impaye?: number;
           created_at?: string;
@@ -423,8 +425,10 @@ export interface Database {
           date_desactivation?: string | null;
           actif?: boolean;
           cree_par?: string | null;
-          // Champs caissier (migration 019).
-          modes_paiement_autorises?: string[];
+          // Champs caissier (migration 019 + 030).
+          // modes_paiement_autorises : pour passer à NULL (non-caissier),
+          //   mettre explicitement null ici.
+          modes_paiement_autorises?: string[] | null;
           nom_affiche_recu?: string | null;
           seuil_alerte_impaye?: number;
           created_at?: string;

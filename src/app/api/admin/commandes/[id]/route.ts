@@ -51,6 +51,11 @@ import {
   isPersonnelActive,
 } from "@/lib/auth/roles";
 import { canTransitionCommande } from "@/lib/workflow/commande-statut";
+import { logAudit } from "@/lib/audit";
+import {
+  isPostgrestSchemaCacheError,
+  reloadPostgrestSchema,
+} from "@/lib/supabase/reload-schema";
 
 export const dynamic = "force-dynamic";
 
@@ -287,13 +292,28 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const wantCancel = statutRaw === "annule";
 
   // Validation notes (si fournie) : string <= 2000 chars ou null.
+  // AUDIT #19 + migration 031 — Avant ce fix, le code faisait `.slice(0, 2000)`
+  // (troncation silencieuse) → perte de données côté client sans warning.
+  // On renvoie désormais un 400 propre pour que le client sache qu'il doit
+  // raccourcir ses notes. Le CHECK DB `check_notes_max_length` (migration 031)
+  // ferait de toute façon échouer l'UPDATE avec une 23514 → 500 générique.
   let notesValue: string | null | undefined = undefined;
   if (notesProvided) {
     if (body.notes === null) {
       notesValue = null;
     } else if (typeof body.notes === "string") {
       const trimmed = body.notes.trim();
-      notesValue = trimmed ? trimmed.slice(0, 2000) : null;
+      if (trimmed.length > 2000) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: "NOTES_TOO_LONG",
+            error: "Les notes ne peuvent pas dépasser 2000 caractères.",
+          },
+          { status: 400 }
+        );
+      }
+      notesValue = trimmed ? trimmed : null;
     } else {
       return NextResponse.json(
         { success: false, error: "notes doit être une chaîne ou null" },
@@ -493,15 +513,99 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     updatePayload.notes = notesValue;
   }
 
-  // ---------- 7. UPDATE ----------
-  const { data: updated, error: updateErr } = await supabase
-    .from("commandes")
-    .update(updatePayload)
-    .eq("id", commandeId)
-    .select("id, statut, priorite, notes, updated_at")
-    .single();
+  // ---------- 7. UPDATE (avec auto-retry sur cache PostgREST stale) ----------
+  // PostgREST met en cache le schéma DB. Après une migration qui ajoute une
+  // valeur d'enum (ex: 024 → 'annule') ou une colonne, le cache reste stale
+  // pendant la fenêtre de refresh (~5 min). Durant cette fenêtre, l'UPDATE
+  // échoue avec 22P02 ("invalid input value for enum"). On tente alors un
+  // reload du cache (NOTIFY pgrst) + un retry unique avant de renvoyer une
+  // erreur au client. Voir migration 033 + src/lib/supabase/reload-schema.ts.
+  let updated: Record<string, unknown> | null = null;
+  let updateErr: unknown = null;
+  let retried = false;
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await supabase
+      .from("commandes")
+      .update(updatePayload)
+      .eq("id", commandeId)
+      .select("id, statut, priorite, notes, updated_at")
+      .single();
+    updated = res.data;
+    updateErr = res.error;
+
+    // Succès → on sort.
+    if (!res.error && res.data) break;
+
+    // Si l'erreur est due à un cache PostgREST stale (22P02 sur un enum
+    // connu, ou PGRST204 sur une colonne connue), on tente un reload +
+    // retry unique.
+    if (
+      attempt === 0 &&
+      isPostgrestSchemaCacheError(res.error)
+    ) {
+      console.warn(
+        "[api/admin/commandes/[id]] Erreur cache PostgREST détectée, " +
+          "reload + retry...",
+        res.error
+      );
+      await reloadPostgrestSchema();
+      retried = true;
+      continue; // retry
+    }
+
+    // Erreur non récupérable ou retry déjà fait → on sort.
+    break;
+  }
 
   if (updateErr || !updated) {
+    // 23514 = check_violation (ex: trigger workflow migration 029).
+    // Le guard TS `canTransitionCommande` (étape 5) capture la plupart des
+    // transitions invalides AVANT l'UPDATE, mais une race condition (statut
+    // changé entre le SELECT cmd et l'UPDATE) ferait lever le trigger DB
+    // `trg_check_commande_statut_transition` (migration 029) avec ERRCODE
+    // 'check_violation' (SQLSTATE 23514). On renvoie un 409 propre au lieu
+    // d'un 500 générique.
+    if (
+      updateErr &&
+      typeof updateErr === "object" &&
+      "code" in updateErr &&
+      (updateErr as { code?: string }).code === "23514"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "INVALID_TRANSITION",
+          error:
+            "Transition de statut refusée par la base de données (peut être due à une modification concurrente).",
+        },
+        { status: 409 }
+      );
+    }
+    // 22P02 = invalid_input_value_for_enum. Si on arrive ici, c'est que le
+    // retry après reload du cache a aussi échoué → la valeur d'enum est
+    // VRAIMENT absente de la DB (migration 024 non appliquée). On renvoie
+    // un 501 clair invitant à appliquer la migration.
+    if (
+      updateErr &&
+      typeof updateErr === "object" &&
+      "code" in updateErr &&
+      (updateErr as { code?: string }).code === "22P02"
+    ) {
+      const hint = retried
+        ? "Le reload du cache PostgREST n'a pas résolu le problème. "
+        : "";
+      return NextResponse.json(
+        {
+          success: false,
+          code: "ENUM_VALUE_MISSING",
+          error:
+            hint +
+            "Valeur de statut non supportée par la base de données. Vérifiez que la migration 024 (ajout de la valeur 'annule' à l'enum statut_commande) a été appliquée.",
+        },
+        { status: 501 }
+      );
+    }
     console.error(
       "[api/admin/commandes/[id]] Erreur UPDATE commandes:",
       updateErr
@@ -513,6 +617,41 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     );
   }
 
-  // ---------- 8. Réponse succès ----------
+  // ---------- 8. AUDIT-B-13 — Journalisation (cancel_commande | update_commande) ----------
+  // Best-effort : ne bloque jamais le flux. logAudit catch toutes les erreurs.
+  //
+  // Récupère l'auth.users.id pour audit_log.user_id (FK → auth.users(id)).
+  // `getCurrentPersonnel` ne l'expose pas dans AuthPersonnel (seulement
+  // personnel.id), on le récupère ici via getUser(). On le fait EN FIN de
+  // handler pour éviter l'appel réseau sur les chemins d'erreur (400/404/409).
+  let authUserId: string | null = null;
+  try {
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser();
+    authUserId = authUser?.id ?? null;
+  } catch {
+    authUserId = null;
+  }
+
+  await logAudit({
+    pressing_id: me.pressing_id,
+    user_id: authUserId,
+    action: wantCancel ? "cancel_commande" : "update_commande",
+    entity_type: "commande",
+    entity_id: commandeId,
+    before_state: cmd
+      ? {
+          id: cmd.id,
+          statut: cmd.statut,
+          priorite: cmd.priorite,
+          updated_at: cmd.updated_at,
+        }
+      : null,
+    after_state: updated as Record<string, unknown>,
+    req: request,
+  });
+
+  // ---------- 9. Réponse succès ----------
   return NextResponse.json({ success: true, data: updated });
 }

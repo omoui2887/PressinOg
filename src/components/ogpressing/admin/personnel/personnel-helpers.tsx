@@ -47,10 +47,12 @@ export interface Employe {
   date_desactivation: string | null;
   actif: boolean;
   created_at: string;
-  // Champs caissier (AUDIT 9.7 — migration 019).
+  // Champs caissier (AUDIT 9.7 — migration 019 + 030).
+  // ⚠️  Depuis la migration 030, modes_paiement_autorises est NULLABLE :
+  //     NULL pour les non-caissiers, array pour les caissiers.
   // Optionnels car la liste des employés peut provenir d'un SELECT qui
   // ne projette pas ces colonnes (rétro-compatibilité).
-  modes_paiement_autorises?: string[];
+  modes_paiement_autorises?: string[] | null;
   nom_affiche_recu?: string | null;
   seuil_alerte_impaye?: number;
 }
