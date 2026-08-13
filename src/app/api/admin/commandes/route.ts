@@ -58,6 +58,7 @@ import {
   isPostgrestSchemaCacheError,
   reloadPostgrestSchema,
 } from "@/lib/supabase/reload-schema";
+import { getPressingPlan, getHistoryCutoff } from "@/lib/auth/plan-gating";
 
 export const dynamic = "force-dynamic";
 
