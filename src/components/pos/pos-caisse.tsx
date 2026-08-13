@@ -45,6 +45,7 @@ import {
   Plus,
   ShoppingCart,
   Eye,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -652,6 +653,7 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
           />
 
           <CustomerPanel
+            key={s.client?.id ?? (s.clientPassage ? "passage" : "none")}
             client={s.client}
             clientPassage={s.clientPassage}
             passageTelephone={passageTelephone}
@@ -697,10 +699,20 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
             onReference={s.setReferencePaiement}
           />
 
-          {/* Erreur réseau (panier conservé) */}
+          {/* Erreur réseau (panier conservé) — affichée juste au-dessus des
+              boutons pour être vue au moment de valider. On ajoute un icône
+              et une invite à corriger, pour lever la contradiction avec le
+              badge « PAYÉ » (qui reflète l'aperçu local, pas l'état final). */}
           {s.submitError && (
-            <div className="rounded border border-[var(--pos-danger)] bg-[#FDECEC] px-2 py-1.5 text-[11px] text-[var(--pos-danger)]">
-              {s.submitError}
+            <div className="flex items-start gap-2 rounded border border-[var(--pos-danger)] bg-[#FDECEC] px-2.5 py-2 text-[11px] text-[var(--pos-danger)]">
+              <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+              <div className="min-w-0">
+                <p className="font-semibold">Impossible de valider la commande</p>
+                <p className="text-[10px] opacity-90">{s.submitError}</p>
+                <p className="mt-0.5 text-[10px] font-medium">
+                  Corrigez puis revalidez.
+                </p>
+              </div>
             </div>
           )}
 

@@ -46,6 +46,16 @@ export function isoFromDateTime(date: string, time: string): string {
   return d.toISOString();
 }
 
+/** Formate une date ISO en JJ/MM/AAAA lisible (sans l'heure). */
+export function formatDateFr(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const da = String(d.getDate()).padStart(2, "0");
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const y = d.getFullYear();
+  return `${da}/${mo}/${y}`;
+}
+
 /** Formate une date ISO en JJ/MM/AAAA HH:mm lisible. */
 export function formatDateTime(iso: string): string {
   const d = new Date(iso);

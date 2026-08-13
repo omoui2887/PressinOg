@@ -1,7 +1,13 @@
 /**
- * <CustomerPanel /> — Zone client.
+ * <CustomerPanel /> — Zone client (carte repliable).
  * Avatar + recherche client (nom + téléphone) + contact (tel:/WhatsApp) +
  * bouton "Nouveau client" + badge impayé + option "client de passage".
+ *
+ * Repliable via <CollapsibleSection/> : l'en-tête affiche le nom du client
+ * (ou "Rechercher…") en résumé. `defaultOpen` s'adapte au state client :
+ * ouvert tant qu'aucun client n'est sélectionné, replié une fois choisi.
+ * Le parent passe un `key={client?.id ?? "none"}` pour forcer le remontage
+ * quand le client change (réouverture auto si on vide le client).
  */
 "use client";
 import { memo, useState, useRef, useEffect, useCallback } from "react";
@@ -17,6 +23,7 @@ import {
 import type { PosClient } from "@/lib/pos/types";
 import { searchClients } from "@/lib/pos/data";
 import { formatFcfa } from "@/lib/pos/format";
+import { CollapsibleSection } from "./collapsible-section";
 
 interface CustomerPanelProps {
   client: PosClient | null;
@@ -87,13 +94,34 @@ function CustomerPanelImpl({
   const tel = client?.telephone ?? passageTelephone ?? "";
   const telDigits = tel.replace(/\D/g, "");
 
+  // Résumé d'en-tête : nom du client ou invite.
+  const summary = client
+    ? client.nom
+    : clientPassage
+      ? "Client de passage"
+      : "Rechercher…";
+
+  // Badge d'en-tête : impayé éventuel.
+  const badge = client && client.solde_impaye > 0 ? (
+    <span className="rounded bg-[#FDECEC] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--pos-danger)]">
+      impayé {formatFcfa(client.solde_impaye)}
+    </span>
+  ) : undefined;
+
   return (
-    <div className="pos-panel-blue p-2.5">
+    <CollapsibleSection
+      title="Client"
+      icon={<User className="h-4 w-4" />}
+      summary={summary}
+      badge={badge}
+      defaultOpen={!client && !clientPassage}
+      variant="blue"
+    >
       <div className="flex items-start gap-2.5">
         {/* Avatar */}
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[var(--pos-border)] bg-[var(--pos-primary-light)]">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[var(--pos-border)] bg-[var(--pos-primary-light)]">
           {client ? (
-            <span className="pos-mono text-[15px] font-bold text-[var(--pos-primary-dark)]">
+            <span className="pos-mono text-[13px] font-bold text-[var(--pos-primary-dark)]">
               {client.nom
                 .split(" ")
                 .map((p) => p[0])
@@ -102,16 +130,16 @@ function CustomerPanelImpl({
                 .toUpperCase()}
             </span>
           ) : (
-            <User className="h-6 w-6 text-[var(--pos-primary)]" />
+            <User className="h-5 w-5 text-[var(--pos-primary)]" />
           )}
         </div>
 
-        {/* Droite : sélection + contact */}
+        {/* Sélection + contact */}
         <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between">
-            <label className="text-[11px] font-medium text-[var(--pos-text-muted)]">
-              Nom du Client
-            </label>
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] font-medium text-[var(--pos-text-muted)]">
+              {client ? "Client sélectionné" : "Nom ou téléphone"}
+            </span>
             <div className="flex items-center gap-1">
               <button
                 type="button"
@@ -146,7 +174,7 @@ function CustomerPanelImpl({
               />
               <div className="mt-1 flex items-center justify-between">
                 <span className="text-[10px] text-[var(--pos-text-muted)]">
-                  Client de passage — nom facultatif, téléphone obligatoire.
+                  Client de passage — téléphone obligatoire.
                 </span>
                 <button
                   type="button"
@@ -246,9 +274,6 @@ function CustomerPanelImpl({
           {/* Contact du client */}
           {tel && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] text-[var(--pos-text-muted)]">
-                Contact du Client :
-              </span>
               <a
                 href={`tel:${telDigits}`}
                 className="flex items-center gap-0.5 text-[11px] font-medium text-[var(--pos-primary)] hover:underline"
@@ -256,6 +281,7 @@ function CustomerPanelImpl({
                 <Phone className="h-3 w-3" />
                 {tel}
               </a>
+              <span className="text-[var(--pos-border)]">·</span>
               <a
                 href={`https://wa.me/${telDigits}`}
                 target="_blank"
@@ -265,14 +291,6 @@ function CustomerPanelImpl({
                 <MessageCircle className="h-3 w-3" />
                 WhatsApp
               </a>
-            </div>
-          )}
-
-          {/* Badge impayé */}
-          {client && client.solde_impaye > 0 && (
-            <div className="mt-1.5 flex items-center gap-1 rounded bg-[#FDECEC] px-1.5 py-1 text-[10px] font-semibold text-[var(--pos-danger)]">
-              <AlertTriangle className="h-3 w-3" />
-              Impayé : {formatFcfa(client.solde_impaye)}
             </div>
           )}
 
@@ -288,7 +306,7 @@ function CustomerPanelImpl({
           )}
         </div>
       </div>
-    </div>
+    </CollapsibleSection>
   );
 }
 
