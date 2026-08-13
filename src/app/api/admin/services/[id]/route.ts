@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/services/[id] (PATCH + DELETE) — LOT 11.1
+ * e-pressing — API /api/admin/services/[id] (PATCH + DELETE) — LOT 11.1
  * --------------------------------------------------------------------
  * Modification d'un service : nom, prix, actif, duree_estimee.
  * Le `type` n'est PAS modifiable ici (l'UI ne l'édite pas — spec LOT 11.1).

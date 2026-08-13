@@ -8,7 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 
 /**
- * OgPressing — Page 404 (EMBELLISSEMENT §28)
+ * e-pressing — Page 404 (EMBELLISSEMENT §28)
  * ------------------------------------------
  * Affichée automatiquement par Next.js quand une route n'existe pas.
  * Server Component (pas de "use client").
@@ -136,7 +136,7 @@ export default function NotFound() {
         {/* Pied : petite référence textile */}
         <p className="mt-10 flex items-center justify-center gap-1.5 text-xs text-muted-foreground/70">
           <Shirt className="size-3.5" />
-          OgPressing — gestion professionnelle de pressings
+          e-pressing — gestion professionnelle de pressings
         </p>
       </div>
     </main>

@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 021 : Ajout du type 'laver_repasser'
+-- e-pressing — Migration 021 : Ajout du type 'laver_repasser'
 -- ============================================================
 -- Fichier    : 021_add_laver_repasser_enum.sql
 -- Version    : 1.0

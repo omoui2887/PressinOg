@@ -1,5 +1,5 @@
 /**
- * OgPressing — ClientsPage (client)
+ * e-pressing — ClientsPage (client)
  * ----------------------------------
  * Page /admin/clients : liste des clients du pressing connecté avec
  * recherche, filtre impayés, pagination, bouton Nouveau client + Export.

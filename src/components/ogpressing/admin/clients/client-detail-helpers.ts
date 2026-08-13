@@ -1,5 +1,5 @@
 /**
- * OgPressing — Helpers pour la fiche client détaillée (LOT 8.2)
+ * e-pressing — Helpers pour la fiche client détaillée (LOT 8.2)
  * -------------------------------------------------------------
  * Centralise :
  *   - Les types TypeScript pour le client, ses commandes et ses paiements

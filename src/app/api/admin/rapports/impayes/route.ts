@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/rapports/impayes (GET) — LOT 12.2
+ * e-pressing — API /api/admin/rapports/impayes (GET) — LOT 12.2
  * --------------------------------------------------------------
  * Export .xlsx — Rapport Impayés : clients avec solde_impaye > 0 uniquement.
  *

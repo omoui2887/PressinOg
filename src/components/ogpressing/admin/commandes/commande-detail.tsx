@@ -1,5 +1,5 @@
 /**
- * OgPressing — CommandeDetail (client component, LOT 7.6 + CASIER-FIX-V1)
+ * e-pressing — CommandeDetail (client component, LOT 7.6 + CASIER-FIX-V1)
  * ----------------------------------------------------------------------
  * Composant interactif de la page /admin/commandes/[id]. Reçoit le détail
  * complet de la commande (fetch côté Server Component via Supabase) et

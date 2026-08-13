@@ -1,5 +1,5 @@
 /**
- * OgPressing — Next.js Instrumentation Hook
+ * e-pressing — Next.js Instrumentation Hook
  * ------------------------------------------
  * Issue #17 — Phase 4 security hardening.
  *

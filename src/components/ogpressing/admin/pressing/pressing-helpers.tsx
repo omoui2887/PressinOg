@@ -1,5 +1,5 @@
 /**
- * OgPressing — Helpers partagés module Pressing config (LOT 11.2)
+ * e-pressing — Helpers partagés module Pressing config (LOT 11.2)
  * ----------------------------------------------------------------
  * Constantes (jours semaine, plans & statuts d'abonnement), types
  * partagés, et helpers de conversion entre le format DB (jsonb horaires)

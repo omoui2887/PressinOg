@@ -1,5 +1,5 @@
 /**
- * OgPressing — RenouvellementDialog
+ * e-pressing — RenouvellementDialog
  * ----------------------------------
  * Dialog (modal) pour enregistrer un nouveau paiement d'échéance (renouvellement)
  * pour un abonnement. Le Super Admin peut attribuer un plan de 1, 3, 6 ou 12 mois.

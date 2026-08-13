@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/personnel/livreur/livrer (POST) — LIV-1
+ * e-pressing — API /api/personnel/livreur/livrer (POST) — LIV-1
  * ----------------------------------------------------------------
  * Permet au livreur de faire évoluer une commande dans son workflow
  * de livraison :

@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/tarifs-articles (GET + POST)
+ * e-pressing — API /api/admin/tarifs-articles (GET + POST)
  * ---------------------------------------------------------
  * Tarifs spécifiques par article du catalogue × type de service.
  *

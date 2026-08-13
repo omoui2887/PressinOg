@@ -1,5 +1,5 @@
 /**
- * OgPressing — Helpers d'impression pour la fiche commande (LOT 7.6)
+ * e-pressing — Helpers d'impression pour la fiche commande (LOT 7.6)
  * ------------------------------------------------------------------
  * Fonctions d'impression du ticket client et des étiquettes articles,
  * réutilisées depuis la page de détail commande (/admin/commandes/[id]).
@@ -230,7 +230,7 @@ ${bodyHtml}
 }
 
 /**
- * Imprime le ticket client : en-tête OgPressing, numéro de ticket (mono),
+ * Imprime le ticket client : en-tête e-pressing, numéro de ticket (mono),
  * QR Code (rendu via CDN `qrcode` sur `<canvas>`), récap articles, total,
  * statut paiement, date de retrait prévue.
  */
@@ -313,7 +313,7 @@ export function printCommandeTicket(detail: CommandeDetail) {
 
   const bodyHtml = `
   <div class="header center">
-    <div class="brand">OgPressing</div>
+    <div class="brand">e-pressing</div>
     <div class="label">Ticket de dépôt</div>
   </div>
 
@@ -423,7 +423,7 @@ export function printCommandeLabels(detail: CommandeDetail) {
       // externe peut désormais reconstruire les FK article + commande.
       const barcodeValue = `${a.id}|${detail.id}`;
       return `<div class="label-sticker">
-        <div class="brand">OgPressing</div>
+        <div class="brand">e-pressing</div>
         <div class="ticket-no">${escapeHtml(detail.numero_commande)}</div>
         <div class="article-info">${escapeHtml(desc)} — ${escapeHtml(etat)}</div>
         <div class="article-index">Article ${idx + 1} / ${articles.length}</div>
@@ -550,7 +550,7 @@ export interface PaiementReceiptPaiement {
  *       montant_total: 12500, montant_paye: 12500 },
  *     { montant: 5000, methode: "especes", reference: null,
  *       created_at: "2026-07-24T14:30:00Z" },
- *     "OgPressing Cocody"
+ *     "e-pressing Cocody"
  *   );
  */
 export function printPaiementReceipt(
@@ -563,7 +563,7 @@ export function printPaiementReceipt(
     commande.montant_total - commande.montant_paye
   );
   const methodeLabel = methodePaiementLabel(paiement.methode);
-  const enTeteNom = pressingNom?.trim() || "OgPressing";
+  const enTeteNom = pressingNom?.trim() || "e-pressing";
 
   const headHtml = `
   <style>

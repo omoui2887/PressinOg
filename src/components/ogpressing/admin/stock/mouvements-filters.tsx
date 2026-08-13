@@ -1,5 +1,5 @@
 /**
- * OgPressing — MouvementsFilters (LOT 10.2 + PRD §14/§15)
+ * e-pressing — MouvementsFilters (LOT 10.2 + PRD §14/§15)
  * ------------------------------------------------------
  * Filtres pour l'historique des mouvements :
  *   - par produit (dropdown)

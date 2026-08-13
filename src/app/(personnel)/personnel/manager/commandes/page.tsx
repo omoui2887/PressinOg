@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/manager/commandes (MGR-1)
+ * e-pressing — /personnel/manager/commandes (MGR-1)
  * ------------------------------------------------
  * Liste des commandes du pressing connecté — variante "manager" de la page
  * admin /admin/commandes.

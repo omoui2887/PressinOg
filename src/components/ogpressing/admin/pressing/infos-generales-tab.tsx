@@ -1,5 +1,5 @@
 /**
- * OgPressing — InfosGeneralesTab (LOT 11.2 — onglet 1)
+ * e-pressing — InfosGeneralesTab (LOT 11.2 — onglet 1)
  * -----------------------------------------------------
  * Formulaire d'édition des informations générales du pressing :
  *   - Nom (obligatoire, 2-200)
@@ -334,7 +334,7 @@ export function InfosGeneralesTab({
                   <FormControl>
                     <Input
                       {...field}
-                      placeholder="Ex : OgPressing Cocody"
+                      placeholder="Ex : e-pressing Cocody"
                       className="h-11"
                     />
                   </FormControl>

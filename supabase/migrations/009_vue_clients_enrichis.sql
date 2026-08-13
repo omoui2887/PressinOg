@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 009 : vue vue_clients_enrichis
+-- e-pressing — Migration 009 : vue vue_clients_enrichis
 -- ============================================================
 -- Vue consolidant pour chaque client :
 --   - solde_impaye     : SUM(commandes.montant_total - commandes.montant_paye)

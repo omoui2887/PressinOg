@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/rapports/paiements (GET) — LOT 12.2
+ * e-pressing — API /api/admin/rapports/paiements (GET) — LOT 12.2
  * ---------------------------------------------------------------
  * Export .xlsx — Rapport Paiements : historique complet des paiements.
  *

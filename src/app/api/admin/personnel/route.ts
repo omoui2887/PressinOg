@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/personnel (GET + POST)
+ * e-pressing — API /api/admin/personnel (GET + POST)
  * ---------------------------------------------------
  *
  * GET — Liste des employés du pressing connecté avec :
@@ -631,7 +631,7 @@ export async function POST(request: NextRequest) {
   // Le `redirectTo` passé à Supabase pointe vers /auth/callback (et NON
   // plus directement vers /personnel/changer-mot-de-passe). Supabase
   // génèrera un email contenant un lien de la forme :
-  //   https://app.ogpressing.com/auth/callback?code=<PKCE>&next=/personnel/changer-mot-de-passe
+  //   https://app.e-pressing.com/auth/callback?code=<PKCE>&next=/personnel/changer-mot-de-passe
   // La route /auth/callback se charge alors :
   //   1. d'échanger le code PKCE contre une session (cookie httpOnly),
   //   2. de valider `next` contre une whitelist stricte (anti open redirect),

@@ -1,5 +1,5 @@
 /**
- * OgPressing — Changement de mot de passe obligatoire (1ère connexion)
+ * e-pressing — Changement de mot de passe obligatoire (1ère connexion)
  * --------------------------------------------------------------------
  * Route : /personnel/changer-mot-de-passe
  *

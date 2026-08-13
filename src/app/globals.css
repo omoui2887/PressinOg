@@ -4,7 +4,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ============================================================
-   OgPressing — Design System
+   e-pressing — Design System
    Palette : Primary #2563EB · Secondary #10B981
              Warning #F59E0B · Danger #EF4444
    Editorial overlay : Navy #080F1F · Gold #C5A03D · Ivory #F5F0E6
@@ -189,7 +189,7 @@
 
   /* ============================================================
      LOT 17 — Landing Page Cinématographique : tokens dédiés
-     Palette "OgPressing : Précision Textile"
+     Palette "e-pressing : Précision Textile"
      Ces tokens sont ADDITIONNELS (ne modifient PAS les tokens
      existants primary/secondary/warning/danger utilisés par les
      dashboards). Ils génèrent les utilities Tailwind :
@@ -302,7 +302,7 @@
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
 
-  /* Primary = #2563EB (bleu OgPressing) → boutons, liens, éléments actifs */
+  /* Primary = #2563EB (bleu e-pressing) → boutons, liens, éléments actifs */
   --primary: oklch(0.546 0.215 262.88);
   --primary-foreground: oklch(0.985 0 0);
   /* Échelle primary (LOT 16) : nuances pour dégradés, hover, états */
@@ -385,7 +385,7 @@
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
 
-  /* Primary reste le bleu OgPressing même en dark */
+  /* Primary reste le bleu e-pressing même en dark */
   --primary: oklch(0.6 0.2 262.88);
   --primary-foreground: oklch(0.985 0 0);
   --primary-50: oklch(0.2 0.03 262.88);

@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 022 : Fix services manquants par pressing
+-- e-pressing — Migration 022 : Fix services manquants par pressing
 -- ============================================================
 -- Fichier    : 022_fix_services_manquants.sql
 -- Version    : 1.0

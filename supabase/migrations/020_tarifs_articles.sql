@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 020 : Tarifs par article (par pressing)
+-- e-pressing — Migration 020 : Tarifs par article (par pressing)
 -- ============================================================
 -- Fichier    : 020_tarifs_articles.sql
 -- Version    : 1.0

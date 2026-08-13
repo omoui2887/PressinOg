@@ -1,5 +1,5 @@
 /**
- * OgPressing — Validation des numéros de téléphone ivoiriens (Côte d'Ivoire).
+ * e-pressing — Validation des numéros de téléphone ivoiriens (Côte d'Ivoire).
  * --------------------------------------------------------------------------
  * Centralise la validation + normalisation des téléphones pour toutes les
  * routes API (activation, inscription, personnel, clients). Avant ce module,

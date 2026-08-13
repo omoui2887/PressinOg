@@ -1,5 +1,5 @@
 /**
- * OgPressing — Schémas Zod pour /api/admin/commandes (AUDIT_SECURITE.md #9).
+ * e-pressing — Schémas Zod pour /api/admin/commandes (AUDIT_SECURITE.md #9).
  * --------------------------------------------------------------------------
  * Validation défense-en-profondeur pour les routes POST (création) et PATCH
  * (mise à jour partielle) des commandes. Ces schémas sont appliqués en PREMIER

@@ -1,7 +1,7 @@
 /**
- * OgPressing — Tarification (LOT 17 — Section F)
+ * e-pressing — Tarification (LOT 17 — Section F)
  * ----------------------------------------------
- * Grille tarifaire 3 tiers avec les VRAIS plans OgPressing :
+ * Grille tarifaire 3 tiers avec les VRAIS plans e-pressing :
  *   - STARTER — 9 900 FCFA/mois
  *   - PRO — 24 900 FCFA/mois (badge "Populaire", carte mise en avant,
  *     fond landing-primary, CTA Or, anneau Or)
@@ -240,7 +240,7 @@ export function Pricing() {
       id="tarifs"
       ref={rootRef}
       className="landing-section relative scroll-mt-24 bg-landing-bg"
-      aria-label="Tarifs OgPressing"
+      aria-label="Tarifs e-pressing"
     >
       <div className="mx-auto max-w-7xl px-5 sm:px-6 lg:px-8">
         {/* En-tête */}

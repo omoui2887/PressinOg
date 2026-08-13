@@ -1,5 +1,5 @@
 /**
- * OgPressing — /admin/commandes
+ * e-pressing — /admin/commandes
  * ------------------------------
  * Liste des commandes du pressing connecté :
  *   - Recherche instantanée par n° ticket ou nom du client

@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/receptionniste/dashboard (REC-1)
+ * e-pressing — /personnel/receptionniste/dashboard (REC-1)
  * --------------------------------------------------------
  * Tableau de bord du réceptionniste :
  *   1. Header (titre "Tableau de bord" + sous-titre "Réceptionniste")

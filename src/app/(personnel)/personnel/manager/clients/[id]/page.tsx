@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/manager/clients/{id} (MGR-1)
+ * e-pressing — /personnel/manager/clients/{id} (MGR-1)
  * ----------------------------------------------------
  * Page de détail d'un client — variante "manager" de la page
  * admin /admin/clients/{id}.

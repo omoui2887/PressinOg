@@ -1,5 +1,5 @@
 /**
- * OgPressing — StockList (LOT 10.1)
+ * e-pressing — StockList (LOT 10.1)
  * ----------------------------------
  * Liste des produits de stock.
  *

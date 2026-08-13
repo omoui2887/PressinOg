@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/tarifs-articles/[id] (PATCH + DELETE)
+ * e-pressing — API /api/admin/tarifs-articles/[id] (PATCH + DELETE)
  * -----------------------------------------------------------------
  * Modification / suppression d'un tarif article spécifique.
  *

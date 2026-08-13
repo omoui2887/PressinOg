@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de la fiche client /personnel/manager/clients/[id]
+ * e-pressing — Loading state de la fiche client /personnel/manager/clients/[id]
  * ----------------------------------------------------------------------------
  * Squelette affiché pendant que le Server Component fetch le client +
  * 50 commandes + paiements via Supabase (RLS isole par pressing).

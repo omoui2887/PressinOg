@@ -1,5 +1,5 @@
 /**
- * Barrel file — composants partagés OgPressing (P4-F / AUDIT-C-03).
+ * Barrel file — composants partagés e-pressing (P4-F / AUDIT-C-03).
  * ------------------------------------------------------------------
  * Centralise les exports des composants réutilisables transverses pour un
  * import propre : `import { StatusBadge, EmptyState } from "@/components/shared";`.
@@ -13,7 +13,7 @@
  *   - Sidebar (+ types SidebarItem, SidebarBrand, SidebarUser, SidebarProps) → sidebar desktop (générique standalone).
  *
  * Note : BottomNav et Sidebar sont des composants "standalone" (la majorité des
- * layouts OgPressing intègrent leur propre sidebar/nav). Ils sont maintenus
+ * layouts e-pressing intègrent leur propre sidebar/nav). Ils sont maintenus
  * ici comme API publique pour les cas d'usage hors DashboardLayout.
  */
 export { StatusBadge, type StatusVariant } from "./status-badge";

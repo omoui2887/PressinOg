@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/clients/[id] (GET detail + PATCH update)
+ * e-pressing — API /api/admin/clients/[id] (GET detail + PATCH update)
  * --------------------------------------------------------------------
  * LOT 7 — fondations pour le wizard POS et la fiche client :
  *

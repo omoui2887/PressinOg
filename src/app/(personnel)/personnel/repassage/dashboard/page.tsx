@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/repassage/dashboard (REP-1)
+ * e-pressing — /personnel/repassage/dashboard (REP-1)
  * ----------------------------------------------------
  * Tableau de bord du poste repassage :
  *   1. Header (titre "Tableau de bord" + sous-titre "Repassage")

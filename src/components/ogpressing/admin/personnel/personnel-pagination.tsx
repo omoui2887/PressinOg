@@ -1,5 +1,5 @@
 /**
- * OgPressing — PersonnelPagination
+ * e-pressing — PersonnelPagination
  * ---------------------------------
  * Pagination simple pour la liste du personnel : Précédent / page X / Suivant.
  * Affiche aussi le nombre total d'employés (selon les filtres actifs).

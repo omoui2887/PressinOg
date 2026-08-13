@@ -1,5 +1,5 @@
 /**
- * OgPressing — CommandesPagination
+ * e-pressing — CommandesPagination
  * ---------------------------------
  * Pagination simple pour la liste des commandes : Précédent / page X / Suivant.
  * Affiche aussi le nombre total de commandes et le range affiché.

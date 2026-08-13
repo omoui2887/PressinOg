@@ -1,5 +1,5 @@
 /**
- * OgPressing — NoiseOverlay (LOT 17)
+ * e-pressing — NoiseOverlay (LOT 17)
  * ----------------------------------
  * Overlay de bruit SVG global pour la landing page cinématographique.
  *

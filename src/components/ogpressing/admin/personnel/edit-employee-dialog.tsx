@@ -1,5 +1,5 @@
 /**
- * OgPressing — EditEmployeeDialog (LOT 9.3)
+ * e-pressing — EditEmployeeDialog (LOT 9.3)
  * ------------------------------------------
  * Dialog de modification d'un employé existant.
  *

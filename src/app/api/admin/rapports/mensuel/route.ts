@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/rapports/mensuel (GET) — LOT 12.2
+ * e-pressing — API /api/admin/rapports/mensuel (GET) — LOT 12.2
  * --------------------------------------------------------------
  * Export .xlsx — Rapport Mensuel : CA et répartition par service du mois.
  *

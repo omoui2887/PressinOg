@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 033 : Remove dead payment modes
+-- e-pressing — Migration 033 : Remove dead payment modes
 -- ============================================================
 -- Fichier    : 033_remove_dead_payment_modes.sql
 -- Version    : 1.1

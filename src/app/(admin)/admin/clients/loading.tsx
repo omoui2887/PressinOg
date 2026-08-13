@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de la liste des clients (P4-F / AUDIT-C-06).
+ * e-pressing — Loading state de la liste des clients (P4-F / AUDIT-C-06).
  * ------------------------------------------------------------------------
  * Squelette de la page /admin/clients affiché pendant que le Client
  * Component `ClientsPage` charge son bundle et récupère la 1re page de

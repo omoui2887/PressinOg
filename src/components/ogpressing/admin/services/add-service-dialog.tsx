@@ -1,5 +1,5 @@
 /**
- * OgPressing — AddServiceDialog (LOT 11.1)
+ * e-pressing — AddServiceDialog (LOT 11.1)
  * -----------------------------------------
  * Formulaire de création d'un service : Nom, Type, Prix unitaire.
  *

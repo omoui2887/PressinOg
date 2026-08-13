@@ -1,5 +1,5 @@
 /**
- * OgPressing — Helpers d'affichage pour les articles (LOT 7.3)
+ * e-pressing — Helpers d'affichage pour les articles (LOT 7.3)
  * ------------------------------------------------------------
  * Centralise les libellés FR, pastilles de couleur et variantes de
  * badge pour les 3 enums DB liés aux articles :
@@ -14,7 +14,7 @@
  *   - `step-confirmation.tsx` (étiquettes — Task 26-e)
  *
  * ⚠️ Les types `TypeVetement | CouleurVetement | EtatVetement` sont
- * importés depuis `database.types.ts` (enums SQL du schéma OgPressing).
+ * importés depuis `database.types.ts` (enums SQL du schéma e-pressing).
  * Ne PAS modifier ces mappings sans vérifier la cohérence avec le
  * schéma DB applicatif (migrations 010+).
  */

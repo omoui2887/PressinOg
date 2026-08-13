@@ -1,7 +1,7 @@
 /**
- * Barrel file — composants métier OgPressing.
+ * Barrel file — composants métier e-pressing.
  * ------------------------------------------------------------------
- * Centralise les exports des composants OgPressing racines pour un import
+ * Centralise les exports des composants e-pressing racines pour un import
  * propre : `import { PublicHeader, Reveal, StatCard } from "@/components/ogpressing";`.
  *
  * Catalogue des exports (chaque export pointe vers un fichier existant) :

@@ -1,5 +1,5 @@
 /**
- * OgPressing — Client Supabase côté navigateur
+ * e-pressing — Client Supabase côté navigateur
  * ---------------------------------------------
  * Utilise createBrowserClient (@supabase/ssr) qui synchronise automatiquement
  * la session dans les cookies Next.js.

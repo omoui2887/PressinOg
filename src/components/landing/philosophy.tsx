@@ -1,5 +1,5 @@
 /**
- * OgPressing — Philosophie "Le Manifeste" (LOT 17 — Section D)
+ * e-pressing — Philosophie "Le Manifeste" (LOT 17 — Section D)
  * ------------------------------------------------------------
  * Section plein-cadre, fond Bleu Nuit Pressing (landing-primary).
  * Une texture organique (tissu / fibre de coton en gros plan) en
@@ -84,7 +84,7 @@ export function Philosophy() {
     <section
       ref={rootRef}
       className="relative overflow-hidden bg-landing-primary py-24 sm:py-32 md:py-40"
-      aria-label="Manifeste OgPressing"
+      aria-label="Manifeste e-pressing"
     >
       {/* Texture organique en parallax */}
       <div
@@ -153,7 +153,7 @@ export function Philosophy() {
           data-philosophy-line
           className="mt-12 text-center font-plex-mono text-[11px] uppercase tracking-[0.25em] text-white/40 sm:mt-16"
         >
-          — OgPressing, conçu en Côte d&apos;Ivoire
+          — e-pressing, conçu en Côte d&apos;Ivoire
         </p>
       </div>
     </section>

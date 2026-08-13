@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de la configuration du pressing (P4-F / AUDIT-C-06).
+ * e-pressing — Loading state de la configuration du pressing (P4-F / AUDIT-C-06).
  * --------------------------------------------------------------------------------
  * Squelette de la page /admin/pressing affiché pendant que le Client
  * Component `PressingConfigPage` charge son bundle et récupère les infos

@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state du stock (P4-F / AUDIT-C-06).
+ * e-pressing — Loading state du stock (P4-F / AUDIT-C-06).
  * ---------------------------------------------------------
  * Squelette de la page /admin/stock affiché pendant que le Client
  * Component `StockPage` charge son bundle et récupère la liste des

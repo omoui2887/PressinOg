@@ -1,5 +1,5 @@
 /**
- * OgPressing — Personnel helpers (librairie partagée)
+ * e-pressing — Personnel helpers (librairie partagée)
  * ----------------------------------------------------
  * Définitions de types + libellés + badges pour le module Personnel.
  * Centralise la logique de couleur des rôles et statuts afin d'assurer

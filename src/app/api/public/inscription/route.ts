@@ -1,5 +1,5 @@
 /**
- * OgPressing — API publique : Inscription prospect (LOT 4 — formulaire landing)
+ * e-pressing — API publique : Inscription prospect (LOT 4 — formulaire landing)
  * --------------------------------------------------------------------------
  * POST /api/public/inscription
  *

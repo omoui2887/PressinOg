@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/pressing (GET + PATCH) — LOT 11.2
+ * e-pressing — API /api/admin/pressing (GET + PATCH) — LOT 11.2
  * -------------------------------------------------------------
  * Page /admin/pressing — configuration générale du pressing :
  *   - Onglet 1 "Informations générales" : nom, ville, adresse, téléphone,

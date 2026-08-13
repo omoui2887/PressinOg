@@ -1,5 +1,5 @@
 /**
- * OgPressing — PressingConfigPage (client orchestrator) — LOT 11.2
+ * e-pressing — PressingConfigPage (client orchestrator) — LOT 11.2
  * ----------------------------------------------------------------
  * Page /admin/pressing — configuration générale du pressing, organisée
  * en 3 onglets shadcn/ui (Tabs) :

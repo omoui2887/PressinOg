@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/super-admin/demandes (GET)
+ * e-pressing — API /api/super-admin/demandes (GET)
  * -------------------------------------------------
  * Récupère la liste des demandes d'inscription (table `demandes_inscription`)
  * pour le Super Admin, avec :

@@ -1,5 +1,5 @@
 /**
- * OgPressing — DemandesPage (client orchestrator)
+ * e-pressing — DemandesPage (client orchestrator)
  * ------------------------------------------------
  * Page /super-admin/demandes : gestion des demandes d'inscription.
  *

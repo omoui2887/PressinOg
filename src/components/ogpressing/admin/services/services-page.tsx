@@ -1,5 +1,5 @@
 /**
- * OgPressing — ServicesPage (client orchestrator) — LOT 11.1
+ * e-pressing — ServicesPage (client orchestrator) — LOT 11.1
  * ----------------------------------------------------------
  * Page /admin/services : gestion des tarifs par catégorie de service.
  *

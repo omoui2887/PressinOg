@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 007 : GRANTs & policies publics (patch 006)
+-- e-pressing — Migration 007 : GRANTs & policies publics (patch 006)
 -- ============================================================
 -- Fichier    : 007_grants_public.sql
 -- Version    : 1.0

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * OgPressing — Error Boundary du route group (public)
+ * e-pressing — Error Boundary du route group (public)
  * ----------------------------------------------------
  * AUDIT-C-05 — Une error boundary par route group pour isoler les erreurs
  * de rendering côté public (landing, /login, /activation).
@@ -59,7 +59,7 @@ export default function PublicError({
           </CardTitle>
           <CardDescription className="mt-2 text-base text-muted-foreground">
             Veuillez réessayer. Si le problème persiste, contactez le support
-            OgPressing.
+            e-pressing.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2 sm:flex-row sm:justify-center">

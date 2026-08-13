@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de /personnel/manager/casiers
+ * e-pressing — Loading state de /personnel/manager/casiers
  * --------------------------------------------------------
  * Squelette affiché pendant le chargement de la page casiers (gestion
  * des casiers de stockage des articles propres). Reproduit la structure :

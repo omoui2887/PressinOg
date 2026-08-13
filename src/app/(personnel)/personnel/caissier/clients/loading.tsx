@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de /personnel/caissier/clients
+ * e-pressing — Loading state de /personnel/caissier/clients
  * ----------------------------------------------------------
  * Squelette affiché pendant le chargement de la liste des clients
  * (vue caissier).

@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de /personnel/manager/clients
+ * e-pressing — Loading state de /personnel/manager/clients
  * --------------------------------------------------------
  * Squelette affiché pendant que le bundle `ClientsPage` se charge +
  * récupère la 1re page de clients via GET /api/admin/clients.

@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/super-admin/catalogue/[id] (PATCH + DELETE)
+ * e-pressing — API /api/super-admin/catalogue/[id] (PATCH + DELETE)
  * -----------------------------------------------------------------
  * LOT 15.4 — Gestion d'un article individuel du catalogue.
  *

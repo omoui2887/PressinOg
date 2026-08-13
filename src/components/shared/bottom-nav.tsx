@@ -1,5 +1,5 @@
 /**
- * OgPressing — BottomNav (générique)
+ * e-pressing — BottomNav (générique)
  * -----------------------------------
  * Barre de navigation fixée en bas de l'écran, visible UNIQUEMENT sur mobile
  * (cachée sur desktop via le breakpoint `md`). Conçue pour être réutilisée

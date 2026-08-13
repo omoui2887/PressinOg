@@ -1,5 +1,5 @@
 /**
- * OgPressing — Validation des variables d'environnement au boot
+ * e-pressing — Validation des variables d'environnement au boot
  * -------------------------------------------------------------
  * Issue #17 — Phase 4 security hardening.
  *

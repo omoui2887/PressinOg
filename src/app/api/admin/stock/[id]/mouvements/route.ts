@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/stock/[id]/mouvements (POST) — LOT 10.1
+ * e-pressing — API /api/admin/stock/[id]/mouvements (POST) — LOT 10.1
  * -------------------------------------------------------------------
  * Enregistre un mouvement de stock (entrée ou sortie) pour un produit.
  *

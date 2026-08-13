@@ -1,5 +1,5 @@
 /**
- * OgPressing — PressingsFilters
+ * e-pressing — PressingsFilters
  * --------------------------------
  * Barre de recherche pour la liste des pressings (Super Admin).
  *

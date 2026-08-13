@@ -1,5 +1,5 @@
 /**
- * OgPressing — POS / Caisse : fonctions de calcul pures
+ * e-pressing — POS / Caisse : fonctions de calcul pures
  * =====================================================
  * Toute la logique financière (sous-total, remise, net, reste, statut) est
  * isolée ici dans des fonctions pures testables — jamais dispersée dans le JSX.

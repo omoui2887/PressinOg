@@ -1,5 +1,5 @@
 /**
- * OgPressing — CatalogueForm (LOT 15.4)
+ * e-pressing — CatalogueForm (LOT 15.4)
  * --------------------------------------
  * Formulaire d'ajout / édition d'un article du catalogue global.
  * Utilisé dans un Dialog depuis `CataloguePage`.

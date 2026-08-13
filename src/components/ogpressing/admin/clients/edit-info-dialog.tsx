@@ -1,5 +1,5 @@
 /**
- * OgPressing — EditInfoDialog (LOT 8.2)
+ * e-pressing — EditInfoDialog (LOT 8.2)
  * --------------------------------------
  * Dialog d'édition des coordonnées d'un client : nom_complet, telephone,
  * email, adresse. Pré-rempli avec les valeurs courantes, submit via

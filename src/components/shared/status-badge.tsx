@@ -1,5 +1,5 @@
 /**
- * OgPressing — Composant StatusBadge (EMBELLISSEMENT §14)
+ * e-pressing — Composant StatusBadge (EMBELLISSEMENT §14)
  * -------------------------------------------------------
  * Badge de statut générique réutilisable dans toute l'app.
  *

@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 012 : Gap-fill LOT 4 (Landing Page)
+-- e-pressing — Migration 012 : Gap-fill LOT 4 (Landing Page)
 -- ============================================================
 -- Fichier    : 012_lot4_gap_fill.sql
 -- Version    : 1.0

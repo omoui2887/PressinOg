@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/caissier/clients/{id} (CAIS-1)
+ * e-pressing — /personnel/caissier/clients/{id} (CAIS-1)
  * -------------------------------------------------------
  * Page de détail d'un client — variante "caissier" en lecture seule.
  *

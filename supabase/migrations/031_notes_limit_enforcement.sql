@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 031 : Notes length limit (Phase 4 #19)
+-- e-pressing — Migration 031 : Notes length limit (Phase 4 #19)
 -- ============================================================
 -- Fichier    : 031_notes_limit_enforcement.sql
 -- Version    : 1.0

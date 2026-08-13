@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state des rapports (P4-F / AUDIT-C-06).
+ * e-pressing — Loading state des rapports (P4-F / AUDIT-C-06).
  * -------------------------------------------------------------
  * Squelette de la page /admin/rapports affiché pendant que le Client
  * Component `RapportsPage` charge son bundle (incluant les 3 charts

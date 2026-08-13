@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/commandes/[id]/retirer (POST) — FIX-WAVE1-A #2
+ * e-pressing — API /api/admin/commandes/[id]/retirer (POST) — FIX-WAVE1-A #2
  * -----------------------------------------------------------------------
  * Marque une commande comme "retire" (client a récupéré sa commande au
  * pressing). Action en masse (bulk) : tous les articles_vetements de la

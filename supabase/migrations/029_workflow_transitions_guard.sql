@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 029 : Workflow transitions guard (AUDIT-B-08)
+-- e-pressing — Migration 029 : Workflow transitions guard (AUDIT-B-08)
 -- ============================================================
 -- Fichier    : 029_workflow_transitions_guard.sql
 -- Version    : 1.0

@@ -1,5 +1,5 @@
 /**
- * OgPressing — AdminShell
+ * e-pressing — AdminShell
  * ------------------------
  * Wrapper CLIENT pour l'espace Admin pressing. Détient la définition des
  * éléments de navigation latérale desktop (icônes lucide-react) et rend le
@@ -117,7 +117,7 @@ interface AdminShellProps {
 export function AdminShell({ user, brand, children }: AdminShellProps) {
   // Phase 4-b — Activer le logo brand doré (variante "editorial") quand un
   // brand est fourni par le layout serveur. Si brand est absent, le DashboardLayout
-  // retombe sur le logo OgPressing par défaut (bg-primary text-primary-foreground).
+  // retombe sur le logo e-pressing par défaut (bg-primary text-primary-foreground).
   const brandedWithAccent = brand
     ? { ...brand, variant: "editorial" as const }
     : undefined;

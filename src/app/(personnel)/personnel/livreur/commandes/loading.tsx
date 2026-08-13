@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de /personnel/livreur/commandes
+ * e-pressing — Loading state de /personnel/livreur/commandes
  * ----------------------------------------------------------
  * Squelette affiché pendant le chargement de la liste des commandes
  * à livrer (vue livreur).

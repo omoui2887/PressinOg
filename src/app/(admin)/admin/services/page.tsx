@@ -1,5 +1,5 @@
 /**
- * OgPressing — /admin/services (page wrapper) — LOT 11.1
+ * e-pressing — /admin/services (page wrapper) — LOT 11.1
  * -------------------------------------------------------
  * Page d'administration des services et tarifs du pressing.
  *

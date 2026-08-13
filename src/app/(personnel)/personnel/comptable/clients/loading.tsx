@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de /personnel/comptable/clients
+ * e-pressing — Loading state de /personnel/comptable/clients
  * ----------------------------------------------------------
  * Squelette affiché pendant le chargement de la liste des clients
  * (vue comptable — focus sur les impayés).

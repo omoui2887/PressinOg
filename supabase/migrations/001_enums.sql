@@ -1,11 +1,11 @@
 -- ============================================================
--- OgPressing — Migration 001 : Types ENUM PostgreSQL
+-- e-pressing — Migration 001 : Types ENUM PostgreSQL
 -- ============================================================
 -- Fichier    : 001_enums.sql
 -- Version    : 1.0
 -- Date       : 24/07/2026
 -- Description : Création de tous les types ENUM personnalisés
---               utilisés dans le schéma de données OgPressing
+--               utilisés dans le schéma de données e-pressing
 --               (PRD V1.2 §18.5 + extensions additionnelles).
 --
 -- Convention :

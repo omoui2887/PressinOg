@@ -1,5 +1,5 @@
 /**
- * OgPressing — Reveal (fade-in au scroll)
+ * e-pressing — Reveal (fade-in au scroll)
  * ---------------------------------------
  * Wrapper client qui révèle ses enfants avec une animation fade-in / slide-up
  * légère lorsqu'ils entrent dans le viewport (IntersectionObserver).

@@ -1,5 +1,5 @@
 /**
- * OgPressing — Helpers d'affichage pour la remise et l'acompte (LOT 7.4)
+ * e-pressing — Helpers d'affichage pour la remise et l'acompte (LOT 7.4)
  * --------------------------------------------------------------------------
  * Centralise les libellés FR pour les enums DB liés à la remise et à
  * l'acompte de la commande :
@@ -13,7 +13,7 @@
  *   - tout composant amené à afficher une remise ou un acompte
  *
  * ⚠️ Les types `RemiseType | MethodePaiement` sont importés depuis
- * `database.types.ts` (enums SQL du schéma OgPressing). Ne PAS modifier
+ * `database.types.ts` (enums SQL du schéma e-pressing). Ne PAS modifier
  * ces mappings sans vérifier la cohérence avec le schéma DB applicatif.
  */
 import type {

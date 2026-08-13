@@ -1,5 +1,5 @@
 /**
- * OgPressing — /admin/clients
+ * e-pressing — /admin/clients
  * ----------------------------
  * Liste des clients du pressing connecté :
  *   - Recherche instantanée par nom ou téléphone

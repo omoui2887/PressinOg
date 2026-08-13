@@ -1,5 +1,5 @@
 /**
- * OgPressing — Fonctionnalités "Artefacts Fonctionnels Interactifs" (LOT 17 — Section C)
+ * e-pressing — Fonctionnalités "Artefacts Fonctionnels Interactifs" (LOT 17 — Section C)
  * ----------------------------------------------------------------------------------------
  * 3 cartes qui ressemblent à des micro-interfaces fonctionnelles (pas des
  * cartes marketing statiques). Chacune implémente un pattern d'animation
@@ -647,7 +647,7 @@ export function Features() {
       id="fonctionnalites"
       ref={rootRef}
       className="landing-section relative bg-landing-bg scroll-mt-24"
-      aria-label="Fonctionnalités OgPressing"
+      aria-label="Fonctionnalités e-pressing"
     >
       <div className="mx-auto max-w-7xl px-5 sm:px-6 lg:px-8">
         {/* En-tête */}

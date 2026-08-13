@@ -1,5 +1,5 @@
 /**
- * OgPressing — AbonnementTab (LOT 11.2 — onglet 3)
+ * e-pressing — AbonnementTab (LOT 11.2 — onglet 3)
  * --------------------------------------------------
  * Affichage en lecture seule de l'abonnement courant du pressing.
  *
@@ -181,13 +181,13 @@ function ContactCard() {
           Changer de plan ou renouveler
         </CardTitle>
         <CardDescription>
-          Pour modifier votre abonnement, contactez le Super Admin OgPressing.
+          Pour modifier votre abonnement, contactez le Super Admin e-pressing.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
-            <p className="text-sm text-muted-foreground">Super Admin OgPressing</p>
+            <p className="text-sm text-muted-foreground">Super Admin e-pressing</p>
             <p className="text-lg font-bold text-foreground">
               {SUPER_ADMIN_PHONE}
             </p>

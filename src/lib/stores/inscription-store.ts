@@ -1,5 +1,5 @@
 /**
- * OgPressing — Store d'inscription (Zustand)
+ * e-pressing — Store d'inscription (Zustand)
  * ------------------------------------------
  * Partage l'état "plan sélectionné" entre la section Tarifs de la landing
  * et le formulaire d'inscription (#inscription).

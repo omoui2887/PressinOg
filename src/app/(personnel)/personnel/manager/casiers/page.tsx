@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/manager/casiers (CASIER-FIX-V1)
+ * e-pressing — /personnel/manager/casiers (CASIER-FIX-V1)
  * -------------------------------------------------------
  * Vue grille des casiers de stockage du pressing pour le Manager.
  * Affiche tous les casiers du plan (A1-A20, B1-B20, C1-C20, D1-D20 = 80)

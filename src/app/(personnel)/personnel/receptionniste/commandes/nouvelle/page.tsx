@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/receptionniste/commandes/nouvelle (REC-1)
+ * e-pressing — /personnel/receptionniste/commandes/nouvelle (REC-1)
  * ----------------------------------------------------------------
  * Wizard de création d'une nouvelle commande pressing — variante
  * "réceptionniste" du wizard admin.

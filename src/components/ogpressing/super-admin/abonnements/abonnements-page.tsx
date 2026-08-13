@@ -1,8 +1,8 @@
 /**
- * OgPressing — AbonnementsPage (client orchestrator)
+ * e-pressing — AbonnementsPage (client orchestrator)
  * ----------------------------------------------------
  * Page /super-admin/abonnements : gestion de tous les abonnements SaaS de la
- * plateforme OgPressing.
+ * plateforme e-pressing.
  *
  * Fonctionnalités (LOT 5.4) :
  *   - 3 StatCards en haut : nombre d'abonnements ACTIFS par plan

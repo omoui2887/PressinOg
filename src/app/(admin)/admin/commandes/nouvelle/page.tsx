@@ -1,5 +1,5 @@
 /**
- * OgPressing — /admin/commandes/nouvelle
+ * e-pressing — /admin/commandes/nouvelle
  * --------------------------------------
  * Wizard de création d'une nouvelle commande pressing (4 étapes).
  *

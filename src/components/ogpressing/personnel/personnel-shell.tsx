@@ -1,5 +1,5 @@
 /**
- * OgPressing — PersonnelShell (LOT 13)
+ * e-pressing — PersonnelShell (LOT 13)
  * ------------------------------------
  * Wrapper CLIENT pour l'espace Personnel. Miroir de `AdminShell` mais
  * adapté aux 7 rôles du personnel. Recoit le `role` du layout serveur
@@ -54,7 +54,7 @@ export function PersonnelShell({
 
   // Phase 4-b — Activer le logo brand doré (variante "editorial") quand un
   // brand est fourni par le layout serveur. Si brand est absent, le DashboardLayout
-  // retombe sur le logo OgPressing par défaut (bg-primary text-primary-foreground).
+  // retombe sur le logo e-pressing par défaut (bg-primary text-primary-foreground).
   const brandedWithAccent = brand
     ? { ...brand, variant: "editorial" as const }
     : undefined;

@@ -1,5 +1,5 @@
 /**
- * Layout racine des pages PUBLIQUES OgPressing (LOT 17 — Cinématographique)
+ * Layout racine des pages PUBLIQUES e-pressing (LOT 17 — Cinématographique)
  * --------------------------------------------------------------------------
  * Route group `(public)` → landing, login, activation.
  * Aucune authentification requise.

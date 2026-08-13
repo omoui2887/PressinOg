@@ -1,5 +1,5 @@
 /**
- * OgPressing — ArticleCatalogPicker (LOT 15.2)
+ * e-pressing — ArticleCatalogPicker (LOT 15.2)
  * --------------------------------------------
  * Sélecteur visuel d'article du catalogue global, destiné à remplacer le
  * dropdown "Type de vêtement" dans l'Étape 2 du wizard "Nouvelle commande".

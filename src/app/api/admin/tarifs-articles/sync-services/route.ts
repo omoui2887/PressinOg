@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/tarifs-articles/sync-services (POST)
+ * e-pressing — API /api/admin/tarifs-articles/sync-services (POST)
  * ----------------------------------------------------------------
  * Synchronise les services avec les tarifs : pour chaque tarif actif dont
  * le type_service n'a pas de service correspondant dans le pressing, crée

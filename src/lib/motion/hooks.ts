@@ -1,5 +1,5 @@
 /**
- * OgPressing — Hook usePrefersReducedMotion (LOT 17)
+ * e-pressing — Hook usePrefersReducedMotion (LOT 17)
  * --------------------------------------------------
  * Détecte la préférence "prefers-reduced-motion" de l'utilisateur.
  *

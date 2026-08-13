@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/rapports/journalier (GET) — LOT 12.2
+ * e-pressing — API /api/admin/rapports/journalier (GET) — LOT 12.2
  * ----------------------------------------------------------------
  * Export .xlsx — Rapport Journalier : commandes et paiements du jour.
  *

@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/super-admin/pressings (GET)
+ * e-pressing — API /api/super-admin/pressings (GET)
  * ----------------------------------------------------
  * Liste des pressings clients (vue Super Admin).
  *

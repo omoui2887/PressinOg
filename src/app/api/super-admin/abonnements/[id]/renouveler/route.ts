@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/super-admin/abonnements/[id]/renouveler (POST)
+ * e-pressing — API /api/super-admin/abonnements/[id]/renouveler (POST)
  * --------------------------------------------------------------------
  * Enregistre un NOUVEAU paiement d'échéance pour un abonnement (renouvellement).
  *

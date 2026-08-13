@@ -1,5 +1,5 @@
 /**
- * OgPressing — CodeGenereDialog
+ * e-pressing — CodeGenereDialog
  * ------------------------------
  * Dialog affiché après génération d'un code d'activation pour une demande.
  * Présente :

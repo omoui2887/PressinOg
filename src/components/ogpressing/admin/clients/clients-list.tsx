@@ -1,5 +1,5 @@
 /**
- * OgPressing — ClientsList
+ * e-pressing — ClientsList
  * -------------------------
  * Affiche la liste des clients enrichis (avec solde_impaye, total_depense,
  * nombre_commandes) sous forme de :

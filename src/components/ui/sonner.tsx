@@ -4,7 +4,7 @@ import { useTheme } from "next-themes"
 import { Toaster as Sonner, ToasterProps } from "sonner"
 
 /**
- * OgPressing — Sonner Toaster (LOT 16.6 — embellissement)
+ * e-pressing — Sonner Toaster (LOT 16.6 — embellissement)
  * =========================================================
  *
  * 4 variantes de toast distinctes visuellement, réutilisées de façon

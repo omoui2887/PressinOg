@@ -1,5 +1,5 @@
 /**
- * OgPressing — RapportsPage (client orchestrator) — LOT 12.1
+ * e-pressing — RapportsPage (client orchestrator) — LOT 12.1
  * ------------------------------------------------------------
  * Page /admin/rapports : vue d'ensemble des statistiques du pressing sur
  * la période sélectionnée.

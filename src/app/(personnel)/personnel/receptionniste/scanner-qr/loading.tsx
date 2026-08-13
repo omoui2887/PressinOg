@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de /personnel/receptionniste/scanner-qr
+ * e-pressing — Loading state de /personnel/receptionniste/scanner-qr
  * ------------------------------------------------------------------
  * Squelette affiché pendant le chargement de la page scanner-qr
  * (vue réceptionniste).

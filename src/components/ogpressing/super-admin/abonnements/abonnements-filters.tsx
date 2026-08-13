@@ -1,5 +1,5 @@
 /**
- * OgPressing — AbonnementsFilters
+ * e-pressing — AbonnementsFilters
  * --------------------------------
  * Barre de filtres pour la liste des abonnements :
  *   - Recherche par nom du pressing (input contrôlé, debounce 300ms côté parent)

@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/livreur/commandes (LIV-1)
+ * e-pressing — /personnel/livreur/commandes (LIV-1)
  * -------------------------------------------------
  * Liste des commandes à livrer, avec 2 onglets :
  *

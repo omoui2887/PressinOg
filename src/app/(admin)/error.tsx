@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * OgPressing — Error Boundary du route group (admin)
+ * e-pressing — Error Boundary du route group (admin)
  * ---------------------------------------------------
  * AUDIT-C-05 — Une error boundary par route group pour isoler les erreurs
  * de rendering côté /admin/* (manager) sans crasher toute l'application.
@@ -68,7 +68,7 @@ export default function AdminError({ error, reset }: AdminErrorBoundaryProps) {
           <CardDescription className="mt-2 text-base text-muted-foreground">
             Une erreur inattendue s&rsquo;est produite dans l&rsquo;espace
             d&rsquo;administration. Veuillez réessayer. Si le problème persiste,
-            contactez le support OgPressing.
+            contactez le support e-pressing.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2 sm:flex-row sm:justify-center">

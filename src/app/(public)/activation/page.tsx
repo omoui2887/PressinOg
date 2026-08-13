@@ -1,5 +1,5 @@
 /**
- * OgPressing — Page d'activation (PROMPT 3.3 — version 2 étapes)
+ * e-pressing — Page d'activation (PROMPT 3.3 — version 2 étapes)
  * --------------------------------------------------------------
  * Route : /activation  (groupe (public))
  *
@@ -89,7 +89,7 @@ const VILLES_CI = [
 /** Regex du format de code d'activation PRS-XXXX-XXXX. */
 const CODE_REGEX = /^PRS-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
 
-/** Numéro WhatsApp support OgPressing (renvoyé dans les messages d'erreur). */
+/** Numéro WhatsApp support e-pressing (renvoyé dans les messages d'erreur). */
 const WHATSAPP_SUPPORT = "+225 05 76 10 32 77";
 
 /* -------------------------------------------------------------------------- */
@@ -543,7 +543,7 @@ export default function ActivationPage() {
       }
 
       toast.success(
-        "Bienvenue sur OgPressing ! Votre essai gratuit de 7 jours commence maintenant."
+        "Bienvenue sur e-pressing ! Votre essai gratuit de 7 jours commence maintenant."
       );
 
       // window.location.href (et non router.push) pour forcer le rechargement
@@ -643,7 +643,7 @@ export default function ActivationPage() {
                     disabled={codeLoading}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Code fourni par OgPressing après règlement. Usage unique,
+                    Code fourni par e-pressing après règlement. Usage unique,
                     valide 7 jours.
                   </p>
                 </div>
@@ -672,7 +672,7 @@ export default function ActivationPage() {
                 </Button>
 
                 <p className="text-center text-xs text-muted-foreground">
-                  Pas de code ? Contactez OgPressing au{" "}
+                  Pas de code ? Contactez e-pressing au{" "}
                   <a
                     href={`https://wa.me/${WHATSAPP_SUPPORT.replace(/[^0-9]/g, "")}`}
                     target="_blank"
@@ -1027,7 +1027,7 @@ export default function ActivationPage() {
 
                 <p className="text-center text-xs text-muted-foreground">
                   En activant votre compte, vous acceptez les conditions
-                  d&apos;utilisation d&apos;OgPressing. La période d&apos;essai
+                  d&apos;utilisation d&apos;e-pressing. La période d&apos;essai
                   de 7 jours débute à l&apos;activation.
                 </p>
               </form>

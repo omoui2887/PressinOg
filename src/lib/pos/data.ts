@@ -1,5 +1,5 @@
 /**
- * OgPressing — POS / Caisse : couche d'accès aux données
+ * e-pressing — POS / Caisse : couche d'accès aux données
  * ======================================================
  * Fonctions d'accès aux données derrière une interface stable :
  *   - getArticles()             → catalogue de prestations (articles × tarifs)

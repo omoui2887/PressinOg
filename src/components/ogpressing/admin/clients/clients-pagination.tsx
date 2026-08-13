@@ -1,5 +1,5 @@
 /**
- * OgPressing — ClientsPagination
+ * e-pressing — ClientsPagination
  * -------------------------------
  * Pagination simple pour la liste des clients : Précédent / page X / Suivant.
  * Affiche aussi le nombre total de clients.

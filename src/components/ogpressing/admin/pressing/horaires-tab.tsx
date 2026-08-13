@@ -1,5 +1,5 @@
 /**
- * OgPressing — HorairesTab (LOT 11.2 — onglet 2)
+ * e-pressing — HorairesTab (LOT 11.2 — onglet 2)
  * ------------------------------------------------
  * Formulaire d'édition des horaires d'ouverture du pressing (7 jours).
  *

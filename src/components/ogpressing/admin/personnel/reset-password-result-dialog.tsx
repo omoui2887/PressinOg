@@ -1,5 +1,5 @@
 /**
- * OgPressing — ResetPasswordResultDialog (LOT 9.3)
+ * e-pressing — ResetPasswordResultDialog (LOT 9.3)
  * -------------------------------------------------
  * Dialog affichant les nouveaux identifiants après une réinitialisation
  * de mot de passe (action "reset_password" sur /api/admin/personnel/[id]).
@@ -53,7 +53,7 @@ export function ResetPasswordResultDialog({
 
   function copyAll() {
     if (!credentials) return;
-    const text = `Identifiants OgPressing\nEmail: ${credentials.email}\nMot de passe: ${credentials.password}`;
+    const text = `Identifiants e-pressing\nEmail: ${credentials.email}\nMot de passe: ${credentials.password}`;
     navigator.clipboard.writeText(text).then(
       () => toast.success("Identifiants copiés"),
       () => toast.error("Impossible de copier")
@@ -66,7 +66,7 @@ export function ResetPasswordResultDialog({
     const waPhone = phoneDigits.startsWith("0")
       ? "225" + phoneDigits.slice(1)
       : phoneDigits;
-    const message = `Bonjour ${credentials.nom_complet}, votre mot de passe OgPressing a été réinitialisé.\n\nEmail: ${credentials.email}\nNouveau mot de passe: ${credentials.password}\n\nConnectez-vous et changez ce mot de passe à la première connexion.`;
+    const message = `Bonjour ${credentials.nom_complet}, votre mot de passe e-pressing a été réinitialisé.\n\nEmail: ${credentials.email}\nNouveau mot de passe: ${credentials.password}\n\nConnectez-vous et changez ce mot de passe à la première connexion.`;
     return `https://wa.me/${waPhone}?text=${encodeURIComponent(message)}`;
   }
 

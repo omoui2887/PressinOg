@@ -1,5 +1,5 @@
 /**
- * OgPressing — Helpers partagés pour la page Abonnements
+ * e-pressing — Helpers partagés pour la page Abonnements
  * ------------------------------------------------------
  * Libellés français + helpers de mapping pour les statuts, plans et méthodes
  * de paiement des abonnements.

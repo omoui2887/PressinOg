@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/stock/[id]/fds-upload (POST)
+ * e-pressing — API /api/admin/stock/[id]/fds-upload (POST)
  * --------------------------------------------------------
  * Upload serveur d'une Fiche de Données de Sécurité (FDS) pour un
  * produit_stock donné. Le client ne dispose PLUS de la clé anon pour

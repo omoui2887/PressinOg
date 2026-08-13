@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/manager/dashboard (MGR-1)
+ * e-pressing — /personnel/manager/dashboard (MGR-1)
  * -------------------------------------------------
  * Tableau de bord agrégé du Manager — vue "admin allégé".
  *

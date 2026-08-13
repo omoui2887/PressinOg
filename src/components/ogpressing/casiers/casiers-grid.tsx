@@ -1,5 +1,5 @@
 /**
- * OgPressing — CasiersGrid (CASIER-FIX-V1)
+ * e-pressing — CasiersGrid (CASIER-FIX-V1)
  * ----------------------------------------
  * Composant partagé affichant une grille visuelle des casiers de stockage
  * (lockers) du pressing. Permet au manager (et autres rôles) de voir en un

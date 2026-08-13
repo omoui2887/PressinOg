@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de /personnel/comptable/rapports
+ * e-pressing — Loading state de /personnel/comptable/rapports
  * -----------------------------------------------------------
  * Squelette affiché pendant le chargement de la page Rapports (vue
  * comptable). Reproduit la structure : header + sélecteur de période +

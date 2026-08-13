@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/receptionniste/clients (REC-1)
+ * e-pressing — /personnel/receptionniste/clients (REC-1)
  * ------------------------------------------------------
  * Liste des clients du pressing connecté — variante "réceptionniste" de la
  * page admin /admin/clients.

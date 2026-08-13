@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/repassage/commandes (REP-1)
+ * e-pressing — /personnel/repassage/commandes (REP-1)
  * ----------------------------------------------------
  * Liste des commandes à repasser (commandes ayant des articles au statut
  * "lave"). Filtres par statut (lave, repasse, pret) + recherche texte

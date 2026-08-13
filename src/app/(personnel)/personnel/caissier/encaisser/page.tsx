@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/caissier/encaisser (CAIS-1)
+ * e-pressing — /personnel/caissier/encaisser (CAIS-1)
  * ---------------------------------------------------
  * Page d'encaissement d'un paiement par le caissier.
  *
@@ -389,7 +389,7 @@ function EncaissementForm({
 
   // FIX-HIGH-1 (GAP 1) : récupère le nom du pressing côté client pour
   // l'en-tête du reçu imprimable. Fetch unique au montage, non-bloquant
-  // (le reçu utilise "OgPressing" comme fallback si la fetch échoue).
+  // (le reçu utilise "e-pressing" comme fallback si la fetch échoue).
   // On utilise le client Supabase browser (anon + JWT → RLS isole par
   // pressing_id, comme pour le layout serveur).
   useEffect(() => {

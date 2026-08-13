@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state du détail commande
+ * e-pressing — Loading state du détail commande
  * ------------------------------------------------
  * Squelette de la page /admin/commandes/{id} affiché pendant que le
  * Server Component résout `fetchCommandeDetail()` (requête PostgREST

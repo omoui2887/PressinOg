@@ -1,5 +1,5 @@
 /**
- * OgPressing — Schémas Zod pour /api/admin/personnel (AUDIT_SECURITE.md #9).
+ * e-pressing — Schémas Zod pour /api/admin/personnel (AUDIT_SECURITE.md #9).
  * --------------------------------------------------------------------------
  * Validation défense-en-profondeur pour les routes POST (création employé)
  * et PATCH (cycle de vie : modifier / desactiver / reactiver) du personnel.

@@ -1,5 +1,5 @@
 /**
- * OgPressing — PersonnelFilters
+ * e-pressing — PersonnelFilters
  * ------------------------------
  * Filtres pour la liste du personnel :
  *   - Recherche par nom ou téléphone (input contrôlé, debounce côté parent)

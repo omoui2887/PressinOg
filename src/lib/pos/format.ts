@@ -1,5 +1,5 @@
 /**
- * OgPressing — POS / Caisse : formatage
+ * e-pressing — POS / Caisse : formatage
  * =====================================
  * Formatage FCFA / dates adapté à l'écran POS. Le suffixe "Fcfa" (casse
  * mixte) correspond à l'interface de référence.

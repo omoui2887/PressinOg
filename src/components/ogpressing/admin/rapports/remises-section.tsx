@@ -1,5 +1,5 @@
 /**
- * OgPressing — RemisesSection (LOT 12.1)
+ * e-pressing — RemisesSection (LOT 12.1)
  * ----------------------------------------
  * Section "Remises appliquées" de la page /admin/rapports.
  *

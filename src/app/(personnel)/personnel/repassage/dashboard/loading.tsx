@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state du dashboard repassage (personnel)
+ * e-pressing — Loading state du dashboard repassage (personnel)
  *
  * AUDIT-C-06: skeleton cohérent avec les autres dashboards.
  */

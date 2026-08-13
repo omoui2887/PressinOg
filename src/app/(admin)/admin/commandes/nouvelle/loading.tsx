@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de /admin/commandes/nouvelle (wizard 4 étapes).
+ * e-pressing — Loading state de /admin/commandes/nouvelle (wizard 4 étapes).
  * --------------------------------------------------------------------------
  * Squelette affiché pendant que le bundle du wizard (lourd — Recharts +
  * React Hook Form + commande-pos + step-* components) se charge.

@@ -1,5 +1,5 @@
 /**
- * OgPressing — Types TypeScript partagés
+ * e-pressing — Types TypeScript partagés
  * --------------------------------------
  *
  * Ce fichier sera enrichi au fur et à mesure des prompts de développement.

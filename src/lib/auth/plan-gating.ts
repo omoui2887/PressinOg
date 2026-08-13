@@ -1,5 +1,5 @@
 /**
- * OgPressing — Gating des fonctionnalités par plan d'abonnement (PRD §16)
+ * e-pressing — Gating des fonctionnalités par plan d'abonnement (PRD §16)
  * ====================================================================
  * Centralise la vérification des features plan-gated :
  *

@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 002 : Création des 17 tables
+-- e-pressing — Migration 002 : Création des 17 tables
 -- ============================================================
 -- Fichier    : 002_tables.sql
 -- Version    : 1.2
@@ -11,7 +11,7 @@
 --              Permet de re-exécuter 002 sans erreur si des tables ont été
 --              créées partiellement lors d'une exécution précédente qui a
 --              échoué (cas SQL Editor Supabase en mode autocommit).
--- Description : Création des 17 tables du schéma OgPressing
+-- Description : Création des 17 tables du schéma e-pressing
 --               (PRD V1.2 §18.3).
 --
 -- Convention :
@@ -55,7 +55,7 @@
 
 -- ============================================================
 -- 1. super_admins
---    Comptes Super Admin OgPressing (gestion SaaS multi-tenant).
+--    Comptes Super Admin e-pressing (gestion SaaS multi-tenant).
 --    Liés 1-1 à auth.users (Supabase Auth). RLS réservée au Super Admin.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.super_admins (

@@ -4,7 +4,7 @@ import "./globals.css";
 import { Toasters } from "@/components/ogpressing/toasters";
 
 /**
- * Polices globales OgPressing (EMBELLISSEMENT — section 3 du prompt)
+ * Polices globales e-pressing (EMBELLISSEMENT — section 3 du prompt)
  * --------------------------------------------------------------------
  *  - Geist + Geist_Mono : conservées pour rétro-compat (utilisées par
  *    certains composants shadcn/ui qui pointent sur --font-geist-*).
@@ -77,13 +77,13 @@ const playfair = Playfair_Display({
 
 export const metadata: Metadata = {
   title: {
-    default: "OgPressing — Gestion professionnelle de pressings",
-    template: "%s · OgPressing",
+    default: "e-pressing — Gestion professionnelle de pressings",
+    template: "%s · e-pressing",
   },
   description:
     "SaaS de gestion de pressings pour la Côte d'Ivoire : Point de Vente, suivi de production, CRM, gestion du personnel et des biodétergents.",
   keywords: [
-    "OgPressing",
+    "e-pressing",
     "pressing",
     "blanchisserie",
     "laverie",
@@ -91,15 +91,15 @@ export const metadata: Metadata = {
     "FCFA",
     "SaaS",
   ],
-  authors: [{ name: "OgPressing" }],
+  authors: [{ name: "e-pressing" }],
   icons: {
     icon: "/favicon.ico",
   },
   openGraph: {
-    title: "OgPressing — Gestion professionnelle de pressings",
+    title: "e-pressing — Gestion professionnelle de pressings",
     description:
       "Digitalisez votre pressing en Côte d'Ivoire : POS, suivi de production, CRM, personnel.",
-    siteName: "OgPressing",
+    siteName: "e-pressing",
     type: "website",
     locale: "fr_FR",
   },

@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/commandes/[id]/articles/[articleId] (PATCH)
+ * e-pressing — API /api/admin/commandes/[id]/articles/[articleId] (PATCH)
  * -----------------------------------------------------------------------
  * LOT 7.6 — Mise à jour du statut d'un article `articles_vetements` depuis
  * la page de détail commande. Permet au personnel de suivi (manager,

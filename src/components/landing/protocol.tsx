@@ -1,5 +1,5 @@
 /**
- * OgPressing — Protocole "Le Parcours d'une Commande" (LOT 17 — Section E)
+ * e-pressing — Protocole "Le Parcours d'une Commande" (LOT 17 — Section E)
  * ----------------------------------------------------------------------
  * Sticky Stack Archive : 3 cartes plein écran qui s'empilent au scroll.
  * Quand une nouvelle carte apparaît, celle du dessous passe en
@@ -363,7 +363,7 @@ export function Protocol() {
       ref={rootRef}
       id="protocole"
       className="relative bg-landing-bg scroll-mt-24"
-      aria-label="Parcours d'une commande OgPressing"
+      aria-label="Parcours d'une commande e-pressing"
     >
       {/* En-tête */}
       <div className="mx-auto max-w-7xl px-5 pt-20 text-center sm:pt-28 lg:px-8">

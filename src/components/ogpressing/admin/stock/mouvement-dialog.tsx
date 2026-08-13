@@ -1,5 +1,5 @@
 /**
- * OgPressing — MouvementDialog (LOT 10.1)
+ * e-pressing — MouvementDialog (LOT 10.1)
  * ---------------------------------------
  * Dialogue d'enregistrement d'un mouvement de stock (entrée ou sortie)
  * pour un produit donné.

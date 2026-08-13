@@ -1,5 +1,5 @@
 /**
- * OgPressing — Super Admin → Catalogue (REDIRECT)
+ * e-pressing — Super Admin → Catalogue (REDIRECT)
  * -----------------------------------------------
  * ⚠️ Cette route a été EXCLUE du compte Super Admin.
  *

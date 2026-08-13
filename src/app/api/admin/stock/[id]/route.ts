@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/stock/[id] (PATCH) — LOT 10.1
+ * e-pressing — API /api/admin/stock/[id] (PATCH) — LOT 10.1
  * ---------------------------------------------------------
  * Modification d'un produit_stock : seuil_alerte, nom, catégorie, unité,
  * prix_achat_unitaire, fournisseur, fds_url, date_expiration.

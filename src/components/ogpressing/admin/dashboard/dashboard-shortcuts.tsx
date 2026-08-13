@@ -1,5 +1,5 @@
 /**
- * OgPressing — DashboardShortcuts (LOT 6.2 + LOT 7.6)
+ * e-pressing — DashboardShortcuts (LOT 6.2 + LOT 7.6)
  * -----------------------------------------------------
  * Section "Raccourcis" du /admin/dashboard : 3 grosses cards cliquables.
  *

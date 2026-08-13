@@ -1,5 +1,5 @@
 /**
- * OgPressing — EditServiceDialog (LOT 11.1)
+ * e-pressing — EditServiceDialog (LOT 11.1)
  * ------------------------------------------
  * Modification d'un service : Nom + Prix unitaire.
  * Le type n'est PAS éditable (spec LOT 11.1 — affiché en lecture seule).

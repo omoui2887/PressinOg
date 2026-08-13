@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/repassage/commandes/{id} (REP-1)
+ * e-pressing — /personnel/repassage/commandes/{id} (REP-1)
  * --------------------------------------------------------
  * Page de détail d'une commande — variante "repassage" de la page
  * admin /admin/commandes/{id}.

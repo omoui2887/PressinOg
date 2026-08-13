@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de /personnel/manager/rapports
+ * e-pressing — Loading state de /personnel/manager/rapports
  * ---------------------------------------------------------
  * Squelette affiché pendant le chargement de la page Rapports. Reproduit
  * la structure : header + sélecteur de période + card exports + 4 StatCards

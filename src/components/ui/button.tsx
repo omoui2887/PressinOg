@@ -8,7 +8,7 @@ import { Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /**
- * OgPressing — Button (LOT 16.2 — embellissement + Phase 2-a éditorial)
+ * e-pressing — Button (LOT 16.2 — embellissement + Phase 2-a éditorial)
  * ================================================
  *
  * Améliorations appliquées :

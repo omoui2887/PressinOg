@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 018 : Fix fuites SECURITY DEFINER
+-- e-pressing — Migration 018 : Fix fuites SECURITY DEFINER
 -- ============================================================
 -- Fichier    : 018_fix_security_definer_leak.sql
 -- Version    : 1.0
@@ -8,7 +8,7 @@
 --               pour empêcher la fuite du statut d'une commande
 --               appartenant à un pressing tiers via /rpc/.
 --
--- Contexte sécurité (AUDIT OgPressing — item 2.5) :
+-- Contexte sécurité (AUDIT e-pressing — item 2.5) :
 --   ---------------------------------------------------------------
 --   3 fonctions étaient SECURITY DEFINER (et donc bypassaient RLS) :
 --     1. public.deriver_statut_commande(p_commande_id UUID)

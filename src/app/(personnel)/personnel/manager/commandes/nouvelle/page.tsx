@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/manager/commandes/nouvelle (MGR-1)
+ * e-pressing — /personnel/manager/commandes/nouvelle (MGR-1)
  * ---------------------------------------------------------
  * Wizard de création d'une nouvelle commande pressing — variante "manager"
  * du wizard admin.

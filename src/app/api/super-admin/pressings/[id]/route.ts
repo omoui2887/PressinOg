@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/super-admin/pressings/[id] (GET + PATCH)
+ * e-pressing — API /api/super-admin/pressings/[id] (GET + PATCH)
  * ----------------------------------------------------------------
  * Détails d'un pressing client (vue Super Admin) :
  *   - GET  : renvoie le pressing + historique complet des abonnements

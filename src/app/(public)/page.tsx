@@ -1,5 +1,5 @@
 /**
- * OgPressing — Landing page cinématographique (LOT 17)
+ * e-pressing — Landing page cinématographique (LOT 17)
  * ---------------------------------------------------
  * Composition des sections du LOT 17 + overlay de bruit + navbar
  * flottante + footer arrondi.

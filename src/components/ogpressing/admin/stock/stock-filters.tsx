@@ -1,5 +1,5 @@
 /**
- * OgPressing — StockFilters (LOT 10.1)
+ * e-pressing — StockFilters (LOT 10.1)
  * -------------------------------------
  * Barre de recherche (debounce 300ms) + lien vers l'historique des mouvements.
  */

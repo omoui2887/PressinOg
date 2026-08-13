@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/comptable/clients/{id} (COMPTA-1)
+ * e-pressing — /personnel/comptable/clients/{id} (COMPTA-1)
  * ---------------------------------------------------------
  * Page de détail d'un client — variante "comptable" de la page
  * admin /admin/clients/{id}.

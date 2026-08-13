@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 034 : Index sur commandes.created_at
+-- e-pressing — Migration 034 : Index sur commandes.created_at
 -- ============================================================
 -- Fichier    : 034_index_commandes_created_at.sql
 -- Version    : 1.0

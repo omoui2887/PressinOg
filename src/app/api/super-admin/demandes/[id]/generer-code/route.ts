@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/super-admin/demandes/[id]/generer-code (POST)
+ * e-pressing — API /api/super-admin/demandes/[id]/generer-code (POST)
  * --------------------------------------------------------------------
  * Génère un code d'activation pour une demande d'inscription et passe la
  * demande au statut 'validee'.

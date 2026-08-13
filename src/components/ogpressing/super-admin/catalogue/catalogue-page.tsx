@@ -1,5 +1,5 @@
 /**
- * OgPressing — CataloguePage (client orchestrator) — LOT 15.4
+ * e-pressing — CataloguePage (client orchestrator) — LOT 15.4
  * ------------------------------------------------------------
  * Page /super-admin/catalogue : gestion du catalogue global d'articles
  * par le Super Admin.

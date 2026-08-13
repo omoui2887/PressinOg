@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de /personnel/laveur/commandes
+ * e-pressing — Loading state de /personnel/laveur/commandes
  * ---------------------------------------------------------
  * Squelette affiché pendant le chargement de la liste des commandes
  * affectées au laveur.

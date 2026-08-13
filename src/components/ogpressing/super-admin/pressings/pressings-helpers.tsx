@@ -1,5 +1,5 @@
 /**
- * OgPressing — Pressings helpers (librairie partagée)
+ * e-pressing — Pressings helpers (librairie partagée)
  * -----------------------------------------------------
  * Définitions de types + libellés + badges pour le module Super Admin → Pressings.
  *

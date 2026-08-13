@@ -1,5 +1,5 @@
 /**
- * OgPressing — Helper de gestion d'erreurs Supabase (PURE — client + serveur)
+ * e-pressing — Helper de gestion d'erreurs Supabase (PURE — client + serveur)
  * --------------------------------------------------------------------------
  * Ce module est PURE JS : aucun import de `next/server` ou autre API serveur.
  * Il peut donc être importé côté client (composants 'use client') ET côté

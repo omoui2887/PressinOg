@@ -1,5 +1,5 @@
 /**
- * OgPressing — Header public (landing, login, activation)
+ * e-pressing — Header public (landing, login, activation)
  * -------------------------------------------------------
  * Header sticky avec logo, navigation desktop, menu mobile (Sheet),
  * et 2 CTA (Se connecter / S'inscrire).
@@ -88,7 +88,7 @@ export function PublicHeader() {
             <ShoppingBag className="size-5" />
           </span>
           <span className="text-foreground">
-            Og<span className="text-primary">Pressing</span>
+            e-<span className="text-primary">pressing</span>
           </span>
         </a>
 
@@ -133,7 +133,7 @@ export function PublicHeader() {
             <SheetContent side="right" className="w-full max-w-xs p-0">
               <SheetTitle className="sr-only">Menu de navigation</SheetTitle>
               <SheetDescription className="sr-only">
-                Navigation principale et accès au compte OgPressing.
+                Navigation principale et accès au compte e-pressing.
               </SheetDescription>
               <div className="flex h-full flex-col">
                 <div className="flex items-center justify-between border-b px-4 py-4">
@@ -141,7 +141,7 @@ export function PublicHeader() {
                     <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                       <ShoppingBag className="size-4" />
                     </span>
-                    Og<span className="text-primary">Pressing</span>
+                    e-<span className="text-primary">pressing</span>
                   </span>
                   <SheetClose asChild>
                     <Button variant="ghost" size="icon" aria-label="Fermer le menu">

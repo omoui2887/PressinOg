@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de la fiche client /personnel/caissier/clients/[id]
+ * e-pressing — Loading state de la fiche client /personnel/caissier/clients/[id]
  * -----------------------------------------------------------------------------
  * Squelette affiché pendant que le Server Component fetch le client.
  */

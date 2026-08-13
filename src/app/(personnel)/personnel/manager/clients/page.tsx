@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/manager/clients (MGR-1)
+ * e-pressing — /personnel/manager/clients (MGR-1)
  * ----------------------------------------------
  * Liste des clients du pressing connecté — variante "manager" de la page
  * admin /admin/clients.

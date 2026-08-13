@@ -1,5 +1,5 @@
 /**
- * OgPressing — /super-admin/demandes
+ * e-pressing — /super-admin/demandes
  * -----------------------------------
  * Gestion des demandes d'inscription (LOT 5.2).
  *

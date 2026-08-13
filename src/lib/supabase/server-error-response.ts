@@ -1,5 +1,5 @@
 /**
- * OgPressing — Réponse 503 "Service indisponible" (SERVEUR UNIQUEMENT)
+ * e-pressing — Réponse 503 "Service indisponible" (SERVEUR UNIQUEMENT)
  * --------------------------------------------------------------------
  * Construit une `NextResponse` 503 standardisée pour les erreurs réseau
  * Supabase. SÉPARÉ de `error-handling.ts` (qui est pure JS client+serveur)

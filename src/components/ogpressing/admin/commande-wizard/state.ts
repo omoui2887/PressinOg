@@ -1,5 +1,5 @@
 /**
- * OgPressing — Wizard Nouvelle Commande : état partagé
+ * e-pressing — Wizard Nouvelle Commande : état partagé
  * ----------------------------------------------------
  * Gestion centralisée de l'état du wizard 4 étapes avec useReducer.
  *

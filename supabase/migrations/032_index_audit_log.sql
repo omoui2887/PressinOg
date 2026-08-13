@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 032 : Index additionnels Phase 4
+-- e-pressing — Migration 032 : Index additionnels Phase 4
 -- ============================================================
 -- Fichier    : 032_index_audit_log.sql
 -- Version    : 1.0

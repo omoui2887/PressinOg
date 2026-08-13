@@ -1,5 +1,5 @@
 /**
- * OgPressing — Toasters (wrapper client)
+ * e-pressing — Toasters (wrapper client)
  * --------------------------------------
  * Wrapper client pour les deux systèmes de toast (shadcn/ui + Sonner).
  *

@@ -1,5 +1,5 @@
 /**
- * OgPressing — PersonnelPage (client orchestrator)
+ * e-pressing — PersonnelPage (client orchestrator)
  * -------------------------------------------------
  * Page /admin/personnel : gestion de l'équipe du pressing connecté.
  *

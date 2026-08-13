@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/laveur/commandes/{id} (LAV-1)
+ * e-pressing — /personnel/laveur/commandes/{id} (LAV-1)
  * -----------------------------------------------------
  * Page de détail d'une commande — variante "laveur" de la page
  * admin /admin/commandes/{id}.

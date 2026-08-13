@@ -1,5 +1,5 @@
 /**
- * OgPressing — Page "Tarifs par article" (LOT 16) — task 4
+ * e-pressing — Page "Tarifs par article" (LOT 16) — task 4
  * --------------------------------------------------------
  * Page /admin/tarifs : permet au manager de fixer un prix (FCFA) pour
  * chaque article du catalogue × chaque type de prestation (6 services).

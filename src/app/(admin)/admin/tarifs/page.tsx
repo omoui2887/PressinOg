@@ -1,5 +1,5 @@
 /**
- * OgPressing — /admin/tarifs (page wrapper) — LOT 16
+ * e-pressing — /admin/tarifs (page wrapper) — LOT 16
  * ---------------------------------------------------
  * Page d'administration des tarifs spécifiques par article du catalogue.
  *

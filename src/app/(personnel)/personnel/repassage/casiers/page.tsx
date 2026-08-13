@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/repassage/casiers (CASIER-FIX-V1)
+ * e-pressing — /personnel/repassage/casiers (CASIER-FIX-V1)
  * ---------------------------------------------------------
  * Vue grille des casiers de stockage du pressing pour le poste Repassage.
  * Miroir de la page /personnel/manager/casiers — seul le basePath change

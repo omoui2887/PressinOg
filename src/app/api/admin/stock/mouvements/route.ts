@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/stock/mouvements (GET) — LOT 10.2
+ * e-pressing — API /api/admin/stock/mouvements (GET) — LOT 10.2
  * --------------------------------------------------------------
  * Historique des mouvements de stock du pressing connecté.
  *

@@ -1,5 +1,5 @@
 /**
- * OgPressing — StatCard (EMBELLISSEMENT §6 + §17 + ÉDITORIAL LX §5/§6F)
+ * e-pressing — StatCard (EMBELLISSEMENT §6 + §17 + ÉDITORIAL LX §5/§6F)
  * ------------------------------------------------
  * Carte de statistique réutilisable pour les dashboards (Super Admin,
  * Admin pressing, Personnel). Affiche un libellé, une valeur principale,

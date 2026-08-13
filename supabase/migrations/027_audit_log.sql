@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 027 : Audit log (AUDIT-B-13)
+-- e-pressing — Migration 027 : Audit log (AUDIT-B-13)
 -- ============================================================
 -- Fichier    : 027_audit_log.sql
 -- Version    : 1.0

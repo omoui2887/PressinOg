@@ -1,5 +1,5 @@
 /**
- * OgPressing — Labels & helpers pour `PreferencesLavage`
+ * e-pressing — Labels & helpers pour `PreferencesLavage`
  * -------------------------------------------------------
  * Centralise le mappage des clés/valeurs du JSONB `clients.preferences_lavage`
  * vers des libellés FR affichables (Étape 1 du wizard commande, fiche client,

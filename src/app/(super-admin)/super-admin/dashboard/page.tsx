@@ -1,5 +1,5 @@
 /**
- * OgPressing — Dashboard Super Admin
+ * e-pressing — Dashboard Super Admin
  * ----------------------------------
  * Route : /super-admin/dashboard (groupe `(super-admin)`)
  *
@@ -169,7 +169,7 @@ export default async function SuperAdminDashboardPage() {
           Tableau de bord
         </h1>
         <p className="text-muted-foreground">
-          Vue d&apos;ensemble de la plateforme OgPressing
+          Vue d&apos;ensemble de la plateforme e-pressing
         </p>
       </div>
 

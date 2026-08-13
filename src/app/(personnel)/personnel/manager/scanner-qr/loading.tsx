@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de /personnel/manager/scanner-qr
+ * e-pressing — Loading state de /personnel/manager/scanner-qr
  * -----------------------------------------------------------
  * Squelette affiché pendant le chargement de la page scanner-qr.
  * Reproduit la structure : header (retour + titre) + card d'action

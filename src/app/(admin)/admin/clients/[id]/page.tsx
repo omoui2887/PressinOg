@@ -1,5 +1,5 @@
 /**
- * OgPressing — /admin/clients/{id} — Fiche client détaillée (LOT 8.2)
+ * e-pressing — /admin/clients/{id} — Fiche client détaillée (LOT 8.2)
  * -------------------------------------------------------------------
  * Page de détail d'un client : coordonnées (éditables), préférences de
  * lavage (éditables), notes (éditables), statistiques (solde impayé,

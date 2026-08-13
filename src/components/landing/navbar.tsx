@@ -1,10 +1,10 @@
 /**
- * OgPressing — Navbar flottante "L'Île Flottante" (LOT 17 — Section A)
+ * e-pressing — Navbar flottante "L'Île Flottante" (LOT 17 — Section A)
  * -------------------------------------------------------------------
  * Pilule flottante fixed en haut, centrée horizontalement.
  *
  * Contenu :
- *   - Logo "OgPressing"
+ *   - Logo "e-pressing"
  *   - Liens : Fonctionnalités, Tarifs, Témoignages
  *   - CTA "Essayer gratuitement" (Or Textile) → scroll vers #inscription
  *   - Lien discret "Se connecter" → /login
@@ -75,7 +75,7 @@ export function Navbar() {
             "flex items-center gap-2 font-jakarta text-base font-extrabold tracking-tight transition-colors sm:text-lg",
             scrolled ? "text-landing-ink" : "text-white"
           )}
-          aria-label="OgPressing — Accueil"
+          aria-label="e-pressing — Accueil"
         >
           <span
             className={cn(
@@ -88,7 +88,7 @@ export function Navbar() {
             Og
           </span>
           <span className="hidden xs:inline sm:inline">
-            Og<span className={scrolled ? "text-landing-accent-deep" : "text-landing-accent"}>Pressing</span>
+            e-<span className={scrolled ? "text-landing-accent-deep" : "text-landing-accent"}>pressing</span>
           </span>
         </a>
 

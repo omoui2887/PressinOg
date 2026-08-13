@@ -1,5 +1,5 @@
 /**
- * OgPressing — /admin/rapports (LOT 12.1)
+ * e-pressing — /admin/rapports (LOT 12.1)
  * ----------------------------------------
  * Vue d'ensemble des rapports du pressing : CA, commandes, panier moyen,
  * remises, graphiques (CA par jour, par mode de paiement, par type de

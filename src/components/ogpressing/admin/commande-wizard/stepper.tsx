@@ -1,5 +1,5 @@
 /**
- * OgPressing — Stepper visuel réutilisable
+ * e-pressing — Stepper visuel réutilisable
  * -----------------------------------------
  * Affiche les étapes d'un wizard sous forme de cercles numérotés reliés
  * par des lignes. L'étape courante est mise en avant (primary), les

@@ -6,7 +6,7 @@ import * as TooltipPrimitive from "@radix-ui/react-tooltip"
 import { cn } from "@/lib/utils"
 
 /**
- * OgPressing — Tooltip (LOT 16 + Phase 2-a éditorial)
+ * e-pressing — Tooltip (LOT 16 + Phase 2-a éditorial)
  * ===================================================
  *
  * Prop Phase 2-a `variant?: "default" | "editorial"` sur `TooltipContent` :
