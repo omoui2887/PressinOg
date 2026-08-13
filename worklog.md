@@ -2124,3 +2124,56 @@ Stage Summary:
 - ✅ Table super_admins : actif=true, nom_complet="Main e-pressing" (cohérent avec le rename)
 - Le password est stocké uniquement dans Supabase Auth (hashé bcrypt) — jamais en clair dans le code ou .env.
 - Note : ce password "Ogou1987" reste moins robuste que les recommandations OWASP (min 12 chars, mix maj/min/chiffres/symboles). Recommandation future : imposer une politique de mot de passe plus stricte + 2FA pour le compte super-admin.
+
+---
+Task ID: CHECKBOX-SERVICE-SELECTION
+Agent: main (Z.ai Code)
+Task: Modifier la boîte de dialogue de sélection des services et prix pour utiliser des cases à cocher (au lieu de lignes cliquables qui ajoutaient 1 service à la fois)
+
+Work Log:
+- Analysé la capture d'écran (VLM) : boîte de dialogue "Pantalons tissu" / "Choisissez l'action à effectuer" avec 6 services (Lavage, Repassage, Laver-Repasser, Nettoyage à sec, Détachage, Blanchisserie). Pattern actuel = lignes cliquables (tap-to-add-one), chevron à droite.
+- Identifié le composant : `src/components/pos/article-actions-dialog.tsx` (ArticleActionsDialog).
+- Compris l'intégration : `pos-caisse.tsx` ligne 759 passe `onPick={handlePickAction}` où `handlePickAction(variant)` ajoute UNE variante au panier (store.addArticle) et ferme le dialogue.
+- Refonte du dialogue (article-actions-dialog.tsx) :
+  * Importé `Checkbox` (shadcn/ui) + `Button` + `DialogFooter` + `ShoppingCart` (icône Lucide).
+  * Retiré `ChevronRight` (plus de navigation tap-to-close).
+  * Ajouté state `checked: Set<string>` (type_services cochés) + `wasOpen` pour reset à l'ouverture.
+  * Pattern « ajustement pendant le rendu » (React docs) au lieu de useEffect pour reset → satisfait react-hooks/set-state-in-effect.
+  * Chaque action configurée → `<label htmlFor>` enveloppant : icône + libellé + prix (badge rouge) + `<Checkbox>`. Le label entier est cliquable (UX standard).
+  * État visuel : bordure + fond highlight quand coché (border-primary + bg-primary-light).
+  * Actions non configurées → inchangées (grisées, Lock, non cliquables).
+  * Footer (DialogFooter) : ligne récap (count + total dynamique) + bouton "Ajouter N au panier" (disabled si 0 sélection).
+  * Changé prop `onPick: (variant) => void` → `onConfirm: (variants: PosArticle[]) => void`.
+  * Sous-titre dialogue : "Choisissez l'action à effectuer" → "Cochez les actions à effectuer".
+- Refonte du handler (pos-caisse.tsx) :
+  * `handlePickAction(variant)` → `handleConfirmActions(selectedVariants: PosArticle[])`.
+  * Boucle `for (const v of selectedVariants) s.addArticle(v)` → ajoute toutes les variantes cochées.
+  * `onPick={handlePickAction}` → `onConfirm={handleConfirmActions}` dans le JSX.
+- Lint : 0 erreur après fix du set-state-in-effect (useEffect → pattern render-time adjustment).
+- Vérification E2E via Agent Browser :
+  * Login demo pressing manager (password reset via service_role car expiré).
+  * Navigation /admin/commandes/nouvelle (POS).
+  * Ajouté 2 tarifs test (repassage=500, laver_repasser=800) pour Chemises via service_role (pour pouvoir tester multi-sélection — le pressing démo n'avait que lavage=500).
+  * Clic sur "Chemises" → dialogue s'ouvre avec 6 services, chacun avec une case à cocher.
+  * Coché Lavage + Repassage + Laver-Repasser via eval (les clicks agent-browser étaient interceptés par l'overlay Radix — workaround eval).
+  * Footer affiche : "3 actions sélectionnées" + "Total : 1 800 Fcfa" (500+500+800).
+  * Bouton dynamique : "Ajouter 3 au panier" (vs "Ajouter au panier" disabled quand 0 sélection).
+  * Clic "Ajouter 3 au panier" → dialogue se ferme, panier contient 3 lignes :
+    - Chemises / Lavage — 500 Fcfa × 1
+    - Chemises / Repassage — 500 Fcfa × 1
+    - Chemises / Laver-Repasser — 800 Fcfa × 1
+  * Total panier : 1 800 Fcfa ✓
+  * VLM a confirmé visuellement : 3 checkboxes cochées (bleues avec coche), footer avec count + total + bouton "Ajouter 3 au panier".
+  * 0 erreur console (les anciennes erreurs "Erreur fetch" sont pré-existantes au fix getPressingPlan).
+- Nettoyage : supprimé les 2 tarifs test (repassage, laver_repasser) — seul le lavage=500 original reste pour Chemises.
+
+Stage Summary:
+- ✅ Boîte de dialogue de sélection des services convertie de "lignes cliquables (1 à la fois)" → "cases à cocher (multi-sélection)".
+- ✅ UX : l'utilisateur peut cocher plusieurs services d'un coup (ex : Lavage + Repassage + Laver-Repasser pour un même article), voit le count + total en temps réel, puis clique sur "Ajouter N au panier" pour tout ajouter en une fois.
+- ✅ Compatibilité : les actions non configurées restent verrouillées (Lock, grisées, non cochables).
+- ✅ Footer dynamique : "Aucune action sélectionnée" (bouton disabled) → "N actions sélectionnées / Total : X FCfa" (bouton "Ajouter N au panier").
+- ✅ Reset auto de la sélection à chaque ouverture du dialogue (pas de résidu de session précédente).
+- 📁 Fichiers modifiés (2) :
+  * `src/components/pos/article-actions-dialog.tsx` (refonte complète : checkboxes + footer + onConfirm)
+  * `src/components/pos/pos-caisse.tsx` (handlePickAction → handleConfirmActions, onPick → onConfirm)
+- Lint 0/0, E2E vérifié via Agent Browser + VLM.
