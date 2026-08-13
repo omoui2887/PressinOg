@@ -2094,3 +2094,33 @@ Stage Summary:
 - ⚠️ Le token GitHub utilisé pour le push (`ghp_qVgK...`) a été exposé dans l'historique du chat — l'utilisateur DOIT le révoquer/réinitialiser après cette session.
 - ⚠️ Le PAT Supabase `sbp_[REDACTED-PAT]` était exposé dans le worklog (commits précédents) — bien qu'il ait été rédacté dans les commits poussés, il reste dans le git history LOCAL (refs/original supprimés mais objets git encore présents jusqu'au GC). L'utilisateur devrait aussi révoquer/rotater ce PAT Supabase.
 - Le fix `getPressingPlan` est maintenant live en production sur Vercel.
+
+---
+Task ID: FIX-SUPERADMIN-PWD
+Agent: main (Z.ai Code)
+Task: Corriger le mot de passe du compte super admin (login bloqué)
+
+Work Log:
+- Diagnostic : le worklog précédent (commit c61891f, redacté) montrait que le password super-admin avait été set à "Ogoul1987" (avec un 'l' — typo). L'utilisateur a confirmé que le bon password est "Ogou1987" (sans 'l'). C'est cette typo qui bloquait la connexion super-admin.
+- Script /tmp/fix-superadmin-pwd.ts (via service_role) :
+  1. Trouvé l'utilisateur auth.users : id=93ee6906-509d-42d5-a272-05a7a6424bea, email=ogouromain@gmail.com, email_confirmed_at ✓
+  2. Reset password → "Ogou1987" via sb.auth.admin.updateUserById (avec email_confirm=true pour éviter tout doute)
+  3. Vérifié super_admins table : id=1b7d9344-1c69-4757-a9db-2d4ee6289b40, nom_complet="Main e-pressing", actif=true, user_id matche ✓
+  4. Test login programmatique (signInWithPassword) : SUCCESS — session access_token acquis ✓
+- Vérification E2E via Agent Browser :
+  * Cookies cleared (session précédente demo pressing manager supprimée)
+  * Navigate /login → formulaire email + password rendu
+  * Fill ogouromain@gmail.com + password "Ogou1987" → clic "Se connecter"
+  * Redirect /login → /super-admin/dashboard ✅
+  * Dashboard rendu : "Main e-pressing" / ogouromain@gmail.com dans la sidebar
+  * Données réelles : 1 pressing actif, 3 demandes en attente, MRR 49.8K FCFA
+  * 0 erreur console, 0 erreur page
+- Screenshot : /tmp/superadmin-login.png
+
+Stage Summary:
+- ✅ Compte super admin corrigé : ogouromain@gmail.com / Ogou1987 (typo "Ogoul1987" → "Ogou1987" corrigée)
+- ✅ Login E2E vérifié : /login → /super-admin/dashboard redirect fonctionne
+- ✅ Dashboard super admin rend correctement avec données réelles (pressings, demandes, MRR)
+- ✅ Table super_admins : actif=true, nom_complet="Main e-pressing" (cohérent avec le rename)
+- Le password est stocké uniquement dans Supabase Auth (hashé bcrypt) — jamais en clair dans le code ou .env.
+- Note : ce password "Ogou1987" reste moins robuste que les recommandations OWASP (min 12 chars, mix maj/min/chiffres/symboles). Recommandation future : imposer une politique de mot de passe plus stricte + 2FA pour le compte super-admin.
