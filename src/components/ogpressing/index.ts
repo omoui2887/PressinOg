@@ -1,21 +1,23 @@
 /**
- * Barrel file — composants métier e-pressing.
+ * Barrel file — composants métier e-pressing (P4-F / AUDIT-C-03).
  * ------------------------------------------------------------------
  * Centralise les exports des composants e-pressing racines pour un import
  * propre : `import { PublicHeader, Reveal, StatCard } from "@/components/ogpressing";`.
  *
  * Catalogue des exports (chaque export pointe vers un fichier existant) :
  *   - PublicHeader / PublicFooter    → chrome public (header + footer).
+ *   - DashboardPlaceholder           → placeholder pour pages en cours.
  *   - Reveal                          → animation d'apparition au scroll.
  *   - StatCard (+ type StatAccent)   → carte statistique générique.
  *   - DashboardLayout (+ type)       → layout admin générique (sidebar + bottom nav).
  *   - AdminShell / AdminBottomNav    → chrome admin (sidebar desktop + nav mobile).
  *   - SubscriptionBanner             → bannière d'état d'abonnement.
+ *   - AdminPagePlaceholder           → placeholder pour pages admin en cours.
  *   - Editorial (voir `./editorial`) → composants décoratifs luxe (AuroraBackground, etc.).
  *
- * Note : DashboardPlaceholder et AdminPagePlaceholder étaient des composants
- * placeholder de développement, supprimés lors du nettoyage de code mort
- * (plus aucune page ne les consomme).
+ * Note : la plupart de ces composants sont également importables directement
+ * (ex : `@/components/ogpressing/stat-card`). Le barrel est l'API publique
+ * documentée — les consommateurs peuvent utiliser l'un ou l'autre.
  */
 export { PublicHeader } from "./public-header";
 export { PublicFooter } from "./public-footer";

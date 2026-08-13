@@ -40,6 +40,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { logAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -286,6 +287,42 @@ export async function POST(
     );
   }
 
+  // --- Audit log #1 : renew_abonnement (Task FIX-ENCAISSER-SUPERADMIN) ---
+  // Best-effort : logAudit() ne JAMAIS throw. On journalise le renouvellement
+  // avec before_state = abonnement AVANT update, after_state = abonnement
+  // APRÈS update. pressing_id = le pressing propriétaire de l'abonnement
+  // (récupéré du SELECT abonnement initial).
+  // user_id = l'UUID auth.users du super admin (superAdmin.user_id).
+  await logAudit({
+    pressing_id: abonnement.pressing_id,
+    user_id: superAdmin.user_id,
+    action: "renew_abonnement",
+    entity_type: "abonnement",
+    entity_id: abonnementId,
+    before_state: {
+      id: abonnement.id,
+      pressing_id: abonnement.pressing_id,
+      plan: abonnement.plan,
+      statut: abonnement.statut,
+      date_fin: abonnement.date_fin,
+      montant_mensuel: abonnement.montant_mensuel,
+    },
+    after_state: {
+      id: updatedAbonnement.id,
+      plan: updatedAbonnement.plan,
+      statut: updatedAbonnement.statut,
+      date_fin: updatedAbonnement.date_fin,
+      montant_mensuel: updatedAbonnement.montant_mensuel,
+      mode_paiement_derniere_echeance:
+        updatedAbonnement.mode_paiement_derniere_echeance,
+      date_derniere_echeance: updatedAbonnement.date_derniere_echeance,
+      reference_paiement: updatedAbonnement.reference_paiement,
+      paiement_id: paiement.id,
+      duree_mois: dureeMois,
+    },
+    req: request,
+  });
+
   // ---- 4. AUDIT-B-09 — Réactivation du pressing ----
   // Lors d'un renouvellement, si le pressing était suspendu (non-paiement)
   // ou en essai (période d'essai 7 jours), on le repasse en 'actif'. Le
@@ -334,6 +371,27 @@ export async function POST(
       console.log(
         `[renewal] Pressing ${pressingIdRenew} reactivated from ${oldStatut} to actif`
       );
+      // --- Audit log #2 : reactivate_pressing (Task FIX-ENCAISSER-SUPERADMIN) ---
+      // Le pressing vient d'être reactivé (suspendu/essai → actif) suite au
+      // renouvellement. On journalise cette transition pour traçabilité.
+      // before_state = pressing AVANT (statut = oldStatut),
+      // after_state = pressing APRÈS (statut = 'actif').
+      await logAudit({
+        pressing_id: pressingIdRenew,
+        user_id: superAdmin.user_id,
+        action: "reactivate_pressing",
+        entity_type: "pressing",
+        entity_id: pressingIdRenew,
+        before_state: {
+          id: pressingRow.id,
+          statut: oldStatut,
+        },
+        after_state: {
+          id: pressingRow.id,
+          statut: "actif",
+        },
+        req: request,
+      });
     }
   }
 

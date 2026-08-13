@@ -2,7 +2,7 @@
 -- e-pressing — Migration 030 : Modes paiement caissier (Phase 4 #13)
 -- ============================================================
 -- Fichier    : 030_modes_paiement_caissier.sql
--- Version    : 1.0
+-- Version    : 1.2  (correctif — voir sections CORRECTIF ci-dessous)
 -- Description : Ajoute la colonne `numero_caisse` à la table
 --               `public.personnel` et pose deux CHECK constraints
 --               défense-en-profondeur pour garantir que les champs
@@ -10,50 +10,59 @@
 --               `modes_paiement_autorises`) ne sont pas renseignés
 --               pour les autres rôles.
 --
--- Contexte (Phase 4 #13 — champs caissier) :
---   La migration 019_champs_caissier.sql a déjà ajouté :
---     - modes_paiement_autorises JSONB NOT NULL DEFAULT '["especes",...]'
---     - nom_affiche_recu TEXT
---     - seuil_alerte_impaye INTEGER NOT NULL DEFAULT 5000
---
---   ⚠️  La colonne `numero_caisse` n'existait PAS — non créée par
---   la migration 019, ni aucune autre. C'était un manque documenté
---   par l'agent P4-D dans le worklog (ligne ~1296).
---
---   Le CHECK constraint sur `modes_paiement_autorises` n'était pas
---   posé non plus (la migration 019 a posé un CHECK sur le FORMAT
---   JSON mais pas sur le ROLE). On l'ajoute ici.
---
---   Note : `modes_paiement_autorises` est NOT NULL DEFAULT '...' en
---   base (019). Le CHECK `modes_paiement_autorises IS NULL OR ...`
---   ne sera donc jamais NULL en pratique pour les lignes existantes,
---   mais il protège contre un futur ALTER qui retirerait le NOT NULL.
---   Pour les rôles non-caissier, on ne peut pas mettre NULL (NOT NULL),
---   mais on peut mettre un array à 1 élément fantôme — le CHECK
---   sur le rôle force donc à ne pas utiliser la valeur. L'applicatif
---   (P4-D) ignore déjà modes_paiement_autorises pour les non-caissiers.
---
--- Schéma :
---   ALTER TABLE public.personnel
---     ADD COLUMN IF NOT EXISTS numero_caisse TEXT;
---
---   CHECK check_numero_caisse_caissier_only:
---     numero_caisse IS NULL OR role::text = 'caissier'
---
---   CHECK check_modes_paiement_caissier_only:
---     -- Si la colonne perd son NOT NULL à l'avenir, ce CHECK force
---     -- à ce qu'un non-caissier n'ait pas de modes_paiement_autorises.
---     modes_paiement_autorises IS NULL OR role::text = 'caissier'
---
--- IDEMPOTENT :
---   - ADD COLUMN IF NOT EXISTS
---   - DO $$ vérifiant pg_constraint avant ADD CONSTRAINT
---   - COMMENT ON COLUMN (écrase le commentaire précédent)
---
--- Prérequis :
---   - Migrations 001 (enums) + 002 (tables) exécutées.
---   - Migration 019 (modes_paiement_autorises + autres champs caissier).
 -- ============================================================
+-- ⚠️  CORRECTIF v1.1 — erreur 23514 au run précédent
+-- ============================================================
+-- Le run précédent échouait avec :
+--   ERROR 23514: check constraint "check_modes_paiement_caissier_only"
+--   of relation "personnel" is violated by some row
+--
+-- Cause racine :
+--   La migration 019 a créé `modes_paiement_autorises` en
+--   NOT NULL DEFAULT '["especes","mobile_money","carte","cheque",
+--   "virement"]'::jsonb — donc TOUTES les lignes existantes (y compris
+--   les non-caissiers : manager, receptionniste, etc.) ont une valeur
+--   NON-NULL. Le CHECK voulu `modes_paiement_autorises IS NULL OR
+--   role='caissier'` était donc violé par chaque non-caissier.
+--
+--   En outre, 019 avait posé un CHECK de FORMAT
+--   (`personnel_modes_paiement_autorises_check`) qui exigeait
+--   `jsonb_typeof(...)='array' AND jsonb_array_length(...)>0` —
+--   incompatible avec une valeur NULL pour les non-caissiers.
+--
+-- Correctif appliqué (ordre IMPORTANT) :
+--   1. DROP CONSTRAINT personnel_modes_paiement_autorises_check (019)
+--   2. ALTER COLUMN modes_paiement_autorises DROP NOT NULL
+--   3. ALTER COLUMN modes_paiement_autorises SET DEFAULT NULL
+--      (les futurs INSERT de non-caissiers hériteront de NULL ;
+--       l'applicatif P4-D fournit toujours la liste pour les caissiers)
+--   4. Backfill : non-caissiers → NULL, caissiers → liste par défaut
+--      si NULL ou array vide
+--   5. Re-création d'un CHECK de FORMAT RELÂCHÉ (accepte NULL pour
+--      les non-caissiers ; valide le format seulement si non-NULL)
+--   6. CHECK check_numero_caisse_caissier_only (déjà OK — numero_caisse
+--      est NULLABLE)
+--   7. CHECK check_modes_paiement_caissier_only (passe maintenant car
+--      les non-caissiers ont NULL)
+--
+-- Idempotence :
+--   - ADD COLUMN IF NOT EXISTS
+--   - DROP CONSTRAINT IF EXISTS (ré-exécutable)
+--   - ALTER COLUMN ... DROP NOT NULL / SET DEFAULT (sans erreur si déjà fait)
+--   - DO $$ + pg_constraint avant ADD CONSTRAINT
+--   - UPDATE ... WHERE (ré-exécutable)
+-- ============================================================
+
+
+-- ============================================================
+-- 0. NETTOYAGE PRÉALABLE du CHECK de FORMAT 019 (conflit NULL)
+-- ============================================================
+-- Le CHECK 019 exigeait modes_paiement_autorises NON-NULL et array
+-- non-vide. Il entre en conflit avec notre objectif (NULL pour les
+-- non-caissiers). On le supprime ; on le recrée plus loin en version
+-- relâchée (accepte NULL).
+ALTER TABLE public.personnel
+    DROP CONSTRAINT IF EXISTS personnel_modes_paiement_autorises_check;
 
 
 -- ============================================================
@@ -68,11 +77,88 @@ COMMENT ON COLUMN public.personnel.numero_caisse IS
 
 
 -- ============================================================
--- 2. CHECK : numero_caisse réservé aux caissiers
+-- 2. RENDRE modes_paiement_autorises NULLABLE + DEFAULT NULL
 -- ============================================================
--- Empêche qu'un non-caissier (manager, receptionniste, etc.) ait un
--- numero_caisse renseigné. Cast ::text sur role::text pour la
--- comparaison (évite 22P02 sur enum paramétré).
+-- Permet aux non-caissiers d'avoir NULL (au lieu du DEFAULT array
+-- hérité de 019). Les caissiers conservent une valeur (fournie par
+-- l'applicatif P4-D ou par le backfill ci-dessous).
+ALTER TABLE public.personnel
+    ALTER COLUMN modes_paiement_autorises DROP NOT NULL;
+
+ALTER TABLE public.personnel
+    ALTER COLUMN modes_paiement_autorises SET DEFAULT NULL;
+
+
+-- ============================================================
+-- 3. BACKFILL des données existantes
+-- ============================================================
+-- 3a. Non-caissiers → NULL (machines à laver, repasseurs, managers...)
+--     Ce sont ces lignes qui violaient le CHECK 23514.
+UPDATE public.personnel
+SET modes_paiement_autorises = NULL
+WHERE role::text <> 'caissier';
+
+-- 3b. Caissiers → liste par défaut si NULL ou array vide (garde-fou).
+UPDATE public.personnel
+SET modes_paiement_autorises = '["especes","mobile_money","carte","cheque","virement"]'::jsonb
+WHERE role::text = 'caissier'
+  AND (modes_paiement_autorises IS NULL
+       OR jsonb_array_length(modes_paiement_autorises) = 0);
+
+-- 3c. numero_caisse → NULL pour les non-caissiers (défense).
+UPDATE public.personnel
+SET numero_caisse = NULL
+WHERE numero_caisse IS NOT NULL
+  AND role::text <> 'caissier';
+
+
+-- ============================================================
+-- 4. CHECK de FORMAT RELÂCHÉ sur modes_paiement_autorises
+-- ============================================================
+-- ⚠️  CORRECTIF v1.2 — erreur 0A000 au run précédent
+--   PostgreSQL INTERDIT les sous-requêtes dans les CHECK constraints
+--   (erreur 0A000 "cannot use subquery in check constraint"). La
+--   version précédente utilisait `NOT EXISTS (SELECT 1 FROM
+--   jsonb_array_elements_text(...))` → rejeté par PostgreSQL.
+--   La migration 019 originale avait le même bug (jamais réussi à
+--   poser ce CHECK).
+--
+--   Solution : utiliser l'opérateur JSONB `<@` (contained by) qui
+--   vérifie que TOUS les éléments du tableau de gauche sont présents
+--   dans le tableau de droite. C'est une expression pure (pas de
+--   sous-requête), acceptée par PostgreSQL dans un CHECK.
+--
+--   Exemple :
+--     '["especes","carte"]'::jsonb <@ '["especes","mobile_money",
+--     "carte","cheque","virement"]'::jsonb  → TRUE
+--     '["especes","bitcoin"]'::jsonb <@ '["especes",...]'::jsonb   → FALSE
+--
+-- Version relâchée du CHECK 019 : accepte NULL (pour les non-caissiers)
+-- et valide le format (array non-vide + tous éléments dans l'enum
+-- valide) seulement si la valeur est non-NULL.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'personnel_modes_paiement_autorises_check'
+    ) THEN
+        ALTER TABLE public.personnel
+            ADD CONSTRAINT personnel_modes_paiement_autorises_check
+            CHECK (
+                modes_paiement_autorises IS NULL
+                OR (
+                    jsonb_typeof(modes_paiement_autorises) = 'array'
+                    AND jsonb_array_length(modes_paiement_autorises) > 0
+                    AND modes_paiement_autorises <@ '["especes","mobile_money","carte","cheque","virement"]'::jsonb
+                )
+            );
+    END IF;
+END $$;
+
+
+-- ============================================================
+-- 5. CHECK : numero_caisse réservé aux caissiers
+-- ============================================================
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -87,14 +173,9 @@ END $$;
 
 
 -- ============================================================
--- 3. CHECK : modes_paiement_autorises réservé aux caissiers
+-- 6. CHECK : modes_paiement_autorises réservé aux caissiers
 -- ============================================================
--- Defense-in-depth : même si la colonne est NOT NULL DEFAULT (019),
--- ce CHECK garantit que SI la colonne devient NULLABLE à l'avenir,
--- un non-caissier ne peut pas avoir de modes_paiement_autorises
--- personnalisés (NULL = "pas de restriction spécifique" pour
--- non-caissier). L'applicatif (P4-D, route /api/personnel/caissier/
--- encaisser) ignore déjà cette colonne pour les non-caissiers.
+-- Passe désormais car les non-caissiers ont été backfillés à NULL.
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -109,25 +190,18 @@ END $$;
 
 
 -- ============================================================
--- 4. BACKFILL : NULL sur numero_caisse pour les non-caissiers
--- ============================================================
--- Si des lignes ont été créées avant ce CHECK avec un numero_caisse
--- non-NULL sur un non-caissier (très peu probable, mais par
--- défense), on remet à NULL.
-UPDATE public.personnel
-SET numero_caisse = NULL
-WHERE numero_caisse IS NOT NULL
-  AND role::text <> 'caissier';
-
-
--- ============================================================
 -- Fin de la migration 030_modes_paiement_caissier.sql
--- Récapitulatif :
+-- Récapitulatif (v1.2) :
 --   - 1 colonne ajoutée : personnel.numero_caisse TEXT
---   - 2 CHECK constraints :
+--   - 1 colonne modifiée : modes_paiement_autorises → NULLABLE, DEFAULT NULL
+--   - 1 CHECK supprimé puis recréé en version relâchée SANS sous-requête :
+--       * personnel_modes_paiement_autorises_check (accepte NULL,
+--         valide format + éléments via opérateur JSONB `<@`)
+--   - 2 CHECK constraints role-based :
 --       * check_numero_caisse_caissier_only
 --       * check_modes_paiement_caissier_only
---   - 1 backfill UPDATE (NULL sur numero_caisse pour non-caissiers)
+--   - 3 backfills UPDATE (non-caissiers → NULL, caissiers → défaut)
 --   - 1 COMMENT ON COLUMN
---   - Idempotent (ADD COLUMN IF NOT EXISTS, DO $$ + pg_constraint)
+--   - Idempotent (DROP IF EXISTS, ADD COLUMN IF NOT EXISTS,
+--     DO $$ + pg_constraint, ALTER COLUMN ré-exécutable)
 -- ============================================================

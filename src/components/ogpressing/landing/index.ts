@@ -1,16 +1,21 @@
 /**
- * Barrel file — sections de landing page e-pressing.
+ * Barrel file — sections de landing page e-pressing (P4-F / AUDIT-C-03).
  * ------------------------------------------------------------------
- * Centralise les exports des sections de landing "Luxe Éditorial".
+ * Centralise les exports des sections de landing "Luxe Éditorial" (Phase 3-b).
  *
- * Sections conservées (consommées par /page.tsx) :
- *   - ProblemSolutionSection   → section problème/solution.
- *   - TestimonialsSection      → témoignages clients.
+ * Catalogue des exports (chaque export pointe vers un fichier existant) :
+ *   - HeroSection              → hero "Plan d'Ouverture" (Phase 3-b).
+ *   - ProblemSolutionSection   → section problème/solution (Phase 3-b).
+ *   - FeaturesSection          → 3 artefacts fonctionnels (Phase 3-b).
+ *   - PricingSection           → 3 plans STARTER / PRO / BUSINESS (Phase 3-b).
+ *   - TestimonialsSection      → témoignages clients (utilisée sur /).
+ *   - InscriptionSection       → wrapper placeholder inscription (Phase 3-b).
  *
- * Note : les sections HeroSection / FeaturesSection / PricingSection /
- * InscriptionSection étaient des variantes "Luxe Éditorial" Phase 3-b
- * non consommées (la landing active utilise @/components/landing/*).
- * Elles ont été supprimées lors du nettoyage de code mort.
+ * Note : la landing publique active (`/`) utilise principalement les composants
+ * de `@/components/landing/*` (LOT 17). Ce barrel expose les sections "Luxe
+ * Éditorial" Phase 3-b — `TestimonialsSection` est la seule actuellement
+ * consommée via barrel par `src/app/(public)/page.tsx`. Les autres sections
+ * restent disponibles comme API publique pour usages futurs.
  */
 export { ProblemSolutionSection } from "./problem-solution";
 export { TestimonialsSection } from "./testimonials";
