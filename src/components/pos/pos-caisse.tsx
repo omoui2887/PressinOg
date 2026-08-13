@@ -53,6 +53,10 @@ import {
   getArticles,
   getCatalogueCategories,
   createCommande,
+  getActiveServices,
+  getCustomCatalogueAnchor,
+  type PosService,
+  type CustomCatalogueAnchor,
 } from "@/lib/pos/data";
 import { computeFinance, computeTotalEtiquettes } from "@/lib/pos/calc";
 import type {
@@ -69,6 +73,7 @@ import { ArticleSearchBar } from "./article-search-bar";
 import { CatalogueCategoryBar } from "./catalogue-category-bar";
 import { ProductGrid } from "./product-grid";
 import { ArticleActionsDialog } from "./article-actions-dialog";
+import { CustomArticleDialog } from "./custom-article-dialog";
 import { OrderTable } from "./order-table";
 import { CustomerPanel } from "./customer-panel";
 import { DatePanel } from "./date-panel";
@@ -107,6 +112,14 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
   >([]);
   const [actionsDialogOpen, setActionsDialogOpen] = useState(false);
   const [confirmAnnuler, setConfirmAnnuler] = useState(false);
+
+  // ---------- État du dialogue « Ajouter un linge / vêtement » ----------
+  // Permet à l'opérateur d'ajouter au panier un article qui n'est PAS dans
+  // le catalogue standard (nom + prix saisis librement, 6 actions possibles).
+  const [customDialogOpen, setCustomDialogOpen] = useState(false);
+  const [activeServices, setActiveServices] = useState<PosService[]>([]);
+  const [customAnchor, setCustomAnchor] =
+    useState<CustomCatalogueAnchor | null>(null);
   const [newClientOpen, setNewClientOpen] = useState(false);
   const [newClient, setNewClient] = useState({
     nom: "",
@@ -140,12 +153,19 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
       /* silencieux : best-effort, non-bloquant */
     }
 
-    const [{ articles, source }, catalogueCats] = await Promise.all([
-      getArticles(),
-      getCatalogueCategories(),
-    ]);
+    const [{ articles, source }, catalogueCats, services, anchor] =
+      await Promise.all([
+        getArticles(),
+        getCatalogueCategories(),
+        // Charge aussi les services actifs + l'article « fourre-tout » du
+        // catalogue (pour le dialogue « Ajouter un linge / vêtement »).
+        getActiveServices(),
+        getCustomCatalogueAnchor(),
+      ]);
     store.setArticles(articles, source);
     setCatalogueCategories(catalogueCats);
+    setActiveServices(services);
+    setCustomAnchor(anchor);
     if (source === "mock") {
       toast.info("Mode démonstration", {
         description:
@@ -183,6 +203,26 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
     [s]
   );
 
+  // ---------- Confirmation du dialogue « Ajouter un linge / vêtement » ----
+  // Ajoute au panier les articles personnalisés (is_custom=true) créés par
+  // l'opérateur (nom libre + prix libre pour chaque service coché). Le store
+  // deduplique par article.id (clé composite `${service_id}::custom::${nom}`)
+  // donc ajouter 2× le même couple (nom × service) incrémente la quantité.
+  const handleConfirmCustom = useCallback(
+    (selectedVariants: PosArticle[]) => {
+      for (const variant of selectedVariants) {
+        s.addArticle(variant);
+      }
+      setCustomDialogOpen(false);
+      if (selectedVariants.length > 0) {
+        toast.success("Article ajouté au panier", {
+          description: `${selectedVariants[0].catalogue_nom} — ${selectedVariants.length} action${selectedVariants.length > 1 ? "s" : ""}`,
+        });
+      }
+    },
+    [s]
+  );
+
   useEffect(() => {
     // Initialise les valeurs dépendant du temps côté client (anti mismatch SSR).
     usePosStore.getState().initSession();
@@ -216,13 +256,18 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
           } catch {
             /* silencieux */
           }
-          const [{ articles, source }, catalogueCats] = await Promise.all([
-            getArticles(),
-            getCatalogueCategories(),
-          ]);
+          const [{ articles, source }, catalogueCats, services, anchor] =
+            await Promise.all([
+              getArticles(),
+              getCatalogueCategories(),
+              getActiveServices(),
+              getCustomCatalogueAnchor(),
+            ]);
           const store = usePosStore.getState();
           store.setArticles(articles, source);
           setCatalogueCategories(catalogueCats);
+          setActiveServices(services);
+          setCustomAnchor(anchor);
         } catch {
           /* silent — on garde les données existantes */
         }
@@ -382,6 +427,11 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
           couleur: l.couleur ?? "blanc",
           etat: l.etat ?? "bon",
           description_etat: l.note,
+          // Article personnalisé (« Ajouter un linge / vêtement ») : on
+          // transmet is_custom + prix_unitaire pour que l'API utilise le
+          // nom + prix saisis par l'opérateur (sans résoudre le tarif).
+          is_custom: l.article.is_custom || undefined,
+          prix_unitaire: l.article.is_custom ? l.article.prix : undefined,
           quantite: l.quantite,
         })),
         remise:
@@ -548,6 +598,20 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
               onRefresh={loadArticles}
               registerRef={(el) => (articleSearchRef.current = el)}
             />
+          </div>
+          {/* Bouton « Ajouter un linge / vêtement » — permet d'ajouter au
+              panier un article qui n'est PAS dans le catalogue standard
+              (nom + prix saisis librement, 6 actions possibles). */}
+          <div className="px-2 pb-1">
+            <button
+              type="button"
+              onClick={() => setCustomDialogOpen(true)}
+              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-[var(--pos-primary)] bg-[var(--pos-primary-light)] px-3 py-1.5 text-[12px] font-semibold text-[var(--pos-primary-dark)] transition hover:bg-[var(--pos-primary)] hover:text-white"
+              title="Ajouter un linge ou vêtement personnalisé au panier"
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden />
+              Ajouter un linge / vêtement
+            </button>
           </div>
           {/*
             Barre de filtre par catégorie de catalogue (Vêtements, Linge, …).
@@ -765,6 +829,15 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
         open={actionsDialogOpen}
         onConfirm={handleConfirmActions}
         onClose={() => setActionsDialogOpen(false)}
+      />
+
+      {/* ===== Dialogue « Ajouter un linge / vêtement » (article personnalisé) ===== */}
+      <CustomArticleDialog
+        open={customDialogOpen}
+        services={activeServices}
+        anchor={customAnchor}
+        onConfirm={handleConfirmCustom}
+        onClose={() => setCustomDialogOpen(false)}
       />
     </div>
   );

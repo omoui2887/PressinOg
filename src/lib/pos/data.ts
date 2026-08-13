@@ -66,6 +66,21 @@ const ACTION_TYPES = [
 ] as const;
 
 /**
+ * Slug du catalogue utilisé comme « fourre-tout » pour les articles
+ * personnalisés ajoutés via le dialogue « Ajouter un linge / vêtement » du POS.
+ *
+ * L'UUID de cet article sert de `catalogue_article_id` pour satisfaire la
+ * contrainte FK NOT NULL côté `articles_vetements`. Le nom saisi par
+ * l'opérateur est conservé tel quel (l'API ne l'écrase PAS quand
+ * `is_custom=true`).
+ *
+ * Cet article existe dans le catalogue initial (migration 014, catégorie
+ * « Articles spéciaux »). Si pour une raison quelconque il n'existe pas
+ * (Super Admin l'a supprimé), on fallback sur le 1er article du catalogue.
+ */
+const CUSTOM_ARTICLE_SLUG = "houssse-vetement-perso";
+
+/**
  * Mapping type_service DB → catégorie POS.
  *
  * `laver_repasser` (DB) → `laver-repasser` (POS) : la valeur DB utilise un
@@ -362,6 +377,90 @@ function filterMockClients(q: string): PosClient[] {
       c.nom.toLowerCase().replace(/\s/g, "").includes(n) ||
       c.telephone.replace(/\s/g, "").includes(n)
   );
+}
+
+/**
+ * Service actif du pressing (pour le dialogue « Ajouter un linge / vêtement »).
+ * On expose le type DB (lavage, repassage, …), le nom affichable, l'UUID et
+ * le prix par défaut (qui pré-remplit le champ prix du dialogue custom).
+ */
+export interface PosService {
+  id: string;
+  type: string;
+  nom: string;
+  prix: number;
+  duree_estimee_h?: number;
+}
+
+/**
+ * Charge les services actifs du pressing connecté (GET /api/admin/services).
+ *
+ * Utilisé par le dialogue « Ajouter un linge / vêtement » pour :
+ *   - savoir quels types de service sont proposés par le pressing
+ *   - pré-remplir le champ prix de chaque action avec service.prix
+ *   - récupérer le service_id (nécessaire pour créer la commande)
+ *
+ * Retourne un tableau vide en cas d'échec (le dialogue custom affichera
+ * « Non configuré » sur toutes les actions).
+ */
+export async function getActiveServices(): Promise<PosService[]> {
+  try {
+    const res = await fetch("/api/admin/services", { cache: "no-store" });
+    if (!res.ok) return [];
+    const json = await res.json();
+    const rows = (json?.data ?? []) as Array<Record<string, unknown>>;
+    return rows.map((r) => ({
+      id: String(r.id ?? ""),
+      type: String(r.type ?? ""),
+      nom: String(r.nom ?? ""),
+      prix: Math.trunc(Number(r.prix ?? 0)) || 0,
+      duree_estimee_h: dureeToHours(r.duree_estimee),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Article du catalogue global utilisé comme « fourre-tout » pour les articles
+ * personnalisés (slug `houssse-vetement-perso`).
+ *
+ * Récupère l'UUID + le nom + l'icône via /api/public/catalogue-articles.
+ * Fallback : si l'article n'existe pas, prend le 1er article du catalogue
+ * (pour ne jamais bloquer la création d'articles personnalisés).
+ */
+export interface CustomCatalogueAnchor {
+  id: string;
+  nom: string;
+  icone_url: string;
+  slug: string;
+}
+
+export async function getCustomCatalogueAnchor(): Promise<CustomCatalogueAnchor | null> {
+  try {
+    const res = await fetch("/api/public/catalogue-articles", {
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const rows = (json?.data ?? []) as Array<{
+      id: string;
+      slug: string;
+      nom: string;
+      icone_url?: string;
+    }>;
+    if (!rows.length) return null;
+    const found =
+      rows.find((r) => r.slug === CUSTOM_ARTICLE_SLUG) ?? rows[0];
+    return {
+      id: found.id,
+      nom: found.nom,
+      icone_url: found.icone_url ?? iconeUrlForSlug(found.slug),
+      slug: found.slug,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**

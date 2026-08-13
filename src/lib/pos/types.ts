@@ -38,6 +38,10 @@ export interface PosArticle {
    * Permet de différencier la même carte article entre plusieurs types de
    * service (ex : "chemise × lavage" vs "chemise × repassage") pour le
    * dédoublonnage des lignes panier.
+   *
+   * Pour les articles personnalisés (is_custom=true), l'id composite inclut
+   * aussi le nom saisi : `${service_id}::custom::${nom}` afin de distinguer
+   * deux articles personnalisés de même service mais de noms différents.
    */
   id: string;
   /** FK vers services.id (pour la création de commande). */
@@ -48,7 +52,10 @@ export interface PosArticle {
   categorie: Exclude<PosCategorieId, "tous">;
   /** Slug du catalogue d'articles (pour l'illustration + identifiant lisible). */
   catalogue_slug: string;
-  /** UUID du catalogue_articles (FK envoyée à POST /api/admin/commandes). */
+  /** UUID du catalogue_articles (FK envoyée à POST /api/admin/commandes).
+   *  Pour les articles personnalisés (is_custom=true), on utilise l'UUID
+   *  d'un article « fourre-tout » du catalogue (slug `houssse-vetement-perso`)
+   *  pour satisfaire la contrainte FK NOT NULL côté DB. */
   catalogue_article_id: string;
   /** Nom du catalogue (affiché sous l'image). */
   catalogue_nom: string;
@@ -64,6 +71,19 @@ export interface PosArticle {
    *  False → l'action s'affiche « Non configuré » dans le dialogue et
    *  n'est pas cliquable (synergie avec Tarifs par article). */
   tarifConfigure: boolean;
+  /**
+   * True si cet article est un article personnalisé ajouté manuellement
+   * via le dialogue « Ajouter un linge / vêtement » (nom + prix saisis
+   * librement par l'opérateur). Dans ce cas :
+   *   - `catalogue_nom` contient le nom saisi (ex : "Boubou traditionnel")
+   *   - `prix` contient le prix saisi pour le service choisi
+   *   - `catalogue_article_id` pointe vers un article « fourre-tout » du
+   *     catalogue (pour satisfaire la FK NOT NULL côté DB)
+   * L'API POST /api/admin/commandes utilise ce flag pour :
+   *   - ne PAS écraser `catalogue_article_nom` avec le nom du catalogue
+   *   - utiliser `prix_unitaire` au lieu de résoudre le tarif service.prix
+   */
+  is_custom?: boolean;
 }
 
 /** Définition d'une catégorie POS (icône + libellé). */
@@ -174,6 +194,19 @@ export interface PosCommandePayload {
     etat?: string;
     description_etat?: string;
     quantite: number;
+    /**
+     * True pour un article personnalisé ajouté via « Ajouter un linge /
+     * vêtement ». L'API utilise alors `prix_unitaire` (au lieu de résoudre
+     * le tarif) et ne remplace pas `catalogue_article_nom` par le nom du
+     * catalogue (l'opérateur a saisi un nom libre).
+     */
+    is_custom?: boolean;
+    /**
+     * Prix unitaire forcé (entier FCFA). Utilisé uniquement quand
+     * `is_custom=true`. Pour les articles standards, l'API ignore ce champ
+     * et résout le prix via tarifs_articles → service.prix.
+     */
+    prix_unitaire?: number;
   }>;
   remise?: { type: PosRemiseType; valeur: number };
   acompte?: {

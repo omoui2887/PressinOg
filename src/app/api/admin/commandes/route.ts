@@ -109,6 +109,19 @@ interface ArticleInput {
   etat: EtatValid;
   description_etat?: string;
   quantite: number;
+  /**
+   * True pour un article personnalisé ajouté via « Ajouter un linge / vêtement »
+   * du POS. Dans ce cas :
+   *   - `catalogue_article_nom` contient le nom saisi librement par l'opérateur
+   *     (l'API NE DOIT PAS l'écraser avec le nom du catalogue).
+   *   - `prix_unitaire` est requis et utilisé tel quel pour la ligne de commande
+   *     (l'API ne résout PAS le tarif via tarifs_articles / service.prix).
+   *   - `catalogue_article_id` pointe vers un article « fourre-tout » du
+   *     catalogue (pour satisfaire la FK NOT NULL côté articles_vetements).
+   */
+  is_custom?: boolean;
+  /** Prix unitaire forcé (entier FCFA ≥ 0). Utilisé seulement si is_custom=true. */
+  prix_unitaire?: number;
 }
 
 interface RemiseInput {
@@ -600,6 +613,28 @@ export async function POST(request: NextRequest) {
         ? a.description_etat.trim().slice(0, 500)
         : null;
 
+    // Article personnalisé (« Ajouter un linge / vêtement » du POS) :
+    // l'opérateur saisit un nom libre + un prix libre pour le service choisi.
+    // On valide que prix_unitaire est un entier ≥ 0 quand is_custom=true.
+    const isCustom = a.is_custom === true;
+    let prixUnitaireCustom: number | undefined;
+    if (isCustom) {
+      const p =
+        typeof a.prix_unitaire === "number"
+          ? a.prix_unitaire
+          : parseInt(String(a.prix_unitaire ?? "0"), 10);
+      if (Number.isNaN(p) || p < 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Article ${i + 1} : prix_unitaire invalide (entier ≥ 0 FCFA requis pour un article personnalisé)`,
+          },
+          { status: 400 }
+        );
+      }
+      prixUnitaireCustom = Math.trunc(p);
+    }
+
     articles.push({
       service_id: serviceId,
       catalogue_article_id: catalogueArticleId,
@@ -609,6 +644,8 @@ export async function POST(request: NextRequest) {
       etat: etat as EtatValid,
       description_etat: descriptionEtat ?? undefined,
       quantite,
+      is_custom: isCustom || undefined,
+      prix_unitaire: prixUnitaireCustom,
     });
   }
 
@@ -807,7 +844,13 @@ export async function POST(request: NextRequest) {
       );
     }
     // Le nom vérifié côté serveur prime sur le snapshot client (sécurité).
-    articles[i].catalogue_article_nom = cat.nom;
+    // EXCEPTION : pour les articles personnalisés (is_custom=true), on garde
+    // le nom saisi par l'opérateur (ex : "Boubou traditionnel") — l'UUID
+    // catalogue pointe vers un article « fourre-tout » (houssse-vetement-perso)
+    // et ne doit PAS écraser le nom métier saisi au POS.
+    if (!articles[i].is_custom) {
+      articles[i].catalogue_article_nom = cat.nom;
+    }
   }
 
   // ---------- 3c. Fetch tarifs spécifiques par article (override prix service) ----------
@@ -854,23 +897,27 @@ export async function POST(request: NextRequest) {
    * sinon fallback sur service.prix. Garantit que le prix facturé correspond
    * toujours à ce que l'utilisateur a vu dans le POS (data.ts applique la
    * même logique côté client).
+   *
+   * EXCEPTION : pour les articles personnalisés (is_custom=true), on utilise
+   * directement `prix_unitaire` (saisi librement par l'opérateur au POS via
+   * le dialogue « Ajouter un linge / vêtement ») — on ignore les tarifs et
+   * service.prix.
    */
-  function resolvePrixUnitaire(
-    catalogueArticleId: string,
-    serviceId: string
-  ): number {
-    const svc = serviceMap.get(serviceId);
+  function resolvePrixUnitaire(article: ArticleInput): number {
+    if (article.is_custom) {
+      return Math.trunc(article.prix_unitaire ?? 0);
+    }
+    const svc = serviceMap.get(article.service_id);
     if (!svc) return 0;
     const tarifPrix = tarifByArticleType.get(
-      `${catalogueArticleId}::${svc.type}`
+      `${article.catalogue_article_id}::${svc.type}`
     );
     return Math.trunc(tarifPrix ?? svc.prix ?? 0);
   }
 
   // ---------- 4. Calcul montant_total_avant_remise ----------
   const montantTotalAvantRemise = articles.reduce(
-    (sum, a) =>
-      sum + resolvePrixUnitaire(a.catalogue_article_id, a.service_id) * a.quantite,
+    (sum, a) => sum + resolvePrixUnitaire(a) * a.quantite,
     0
   );
 
@@ -915,10 +962,7 @@ export async function POST(request: NextRequest) {
         // calculée sur service.prix (trop élevé) et la commande pourrait être
         // gratuite à tort (montant_total = 0).
         montantRemise =
-          resolvePrixUnitaire(
-            freeArticle.catalogue_article_id,
-            freeArticle.service_id
-          ) * freeArticle.quantite;
+          resolvePrixUnitaire(freeArticle) * freeArticle.quantite;
         break;
       }
       default:
@@ -1076,10 +1120,7 @@ export async function POST(request: NextRequest) {
   // ---------- 10. INSERT lignes + articles_vetements ----------
   for (let ligneIndex = 0; ligneIndex < articles.length; ligneIndex++) {
     const article = articles[ligneIndex];
-    const prixUnitaire = resolvePrixUnitaire(
-      article.catalogue_article_id,
-      article.service_id
-    );
+    const prixUnitaire = resolvePrixUnitaire(article);
     const montantLigne = prixUnitaire * article.quantite;
 
     // Description lisible : "Costumes & Vêtements de Cérémonie blanc — bon"
