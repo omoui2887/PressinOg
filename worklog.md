@@ -2064,3 +2064,33 @@ Stage Summary:
 - ✅ audit_log : chaque encaissement écrit une entrée `encaisser_paiement` avec entity_type=paiement, after_state complet (montant, methode, est_acompte, commande_id), horodatage UTC.
 - 📁 Fichier modifié (1) : `src/app/api/admin/commandes/route.ts` (+1 ligne import).
 - Lint 0/0, dev server tourne proprement, 0 erreur runtime après fix.
+
+---
+Task ID: GITHUB-VERCEL-PUSH-V2
+Agent: main (Z.ai Code)
+Task: Pousser le fix (getPressingPlan import) sur GitHub + Vercel
+
+Work Log:
+- Git status : 8 commits non poussés (origin/main..HEAD), incluant le fix critique `getPressingPlan is not defined`.
+- Premier essai de push → REJECTED par GitHub Secret Scanning : un PAT Supabase complet (`sbp_[REDACTED-PAT]`) avait été loggé dans worklog.md dans 2 commits précédents (6d281af, c61891f), plus un password super-admin.
+- Solution : `git filter-branch --tree-filter` avec script sed pour redacter les secrets dans TOUS les 8 commits non poussés :
+  * `sbp_[REDACTED-PAT]` → `sbp_[REDACTED-PAT]`
+  * `Ogoul1987` → `[REDACTED-PWD]`
+  * `Demo1234!` → `[REDACTED-PWD]`
+- Vérification post-rewrite : 0 secret dans tous les 8 commits (grep sur chaque tree).
+- Lint : 0 erreur après rewrite.
+- Push GitHub (tokenized URL, x-access-token method) : succès `d6c93f4..919f5c6 main -> main` ✅
+- Vérification GitHub API : commit `919f5c63584b5ddd380750eda6818a47af26fa58` confirmé sur origin/main.
+- Vercel auto-déploy déclenché par le push GitHub (intégration active).
+- Statut Vercel via GitHub commit statuses :
+  * Initialement : `state: pending`, `description: "Vercel is deploying your app"`
+  * Après ~60s : `state: success`, `description: "Deployment has completed"` ✅
+- URL Vercel : https://vercel.com/cloudsaas12-8720s-projects/pressin-og/HuhUBgPZDj2toNDjNUczR2aahser
+- Nettoyage : refs/original/ (backup filter-branch) supprimés.
+
+Stage Summary:
+- ✅ GitHub : 8 commits poussés sur omoui2887/PressinOg (main → 919f5c6), secrets rédatés.
+- ✅ Vercel : déploiement Production auto-déclenché, build réussi (status: success).
+- ⚠️ Le token GitHub utilisé pour le push (`ghp_qVgK...`) a été exposé dans l'historique du chat — l'utilisateur DOIT le révoquer/réinitialiser après cette session.
+- ⚠️ Le PAT Supabase `sbp_[REDACTED-PAT]` était exposé dans le worklog (commits précédents) — bien qu'il ait été rédacté dans les commits poussés, il reste dans le git history LOCAL (refs/original supprimés mais objets git encore présents jusqu'au GC). L'utilisateur devrait aussi révoquer/rotater ce PAT Supabase.
+- Le fix `getPressingPlan` est maintenant live en production sur Vercel.
