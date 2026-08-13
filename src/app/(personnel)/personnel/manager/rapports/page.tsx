@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/manager/rapports (MGR-1)
+ * e-pressing — /personnel/manager/rapports (MGR-1)
  * -----------------------------------------------
  * Rapports du pressing — variante "manager" de la page admin /admin/rapports.
  *

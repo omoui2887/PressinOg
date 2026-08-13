@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/commandes (GET list + POST create)
+ * e-pressing — API /api/admin/commandes (GET list + POST create)
  * ----------------------------------------------------------------
  * LOT 7 — fondations du wizard POS. Deux endpoints :
  *

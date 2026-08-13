@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state du détail commande /personnel/laveur/commandes/[id]
+ * e-pressing — Loading state du détail commande /personnel/laveur/commandes/[id]
  * -----------------------------------------------------------------------------
  * Squelette affiché pendant que le Server Component résout
  * `fetchCommandeDetail()` (RLS isole par pressing).

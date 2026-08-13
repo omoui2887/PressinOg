@@ -1,5 +1,5 @@
 /**
- * OgPressing — Helpers pour le catalogue d'articles (LOT 15.1)
+ * e-pressing — Helpers pour le catalogue d'articles (LOT 15.1)
  * -----------------------------------------------------------
  * Centralise :
  *   - Le type `CatalogueArticle` (shape DB de la table `catalogue_articles`)
@@ -76,7 +76,7 @@ export interface CatalogueArticleWithNom extends CatalogueArticle {
 // ============================================================
 
 /**
- * Les 9 catégories du catalogue initial OgPressing. L'ordre ici est
+ * Les 9 catégories du catalogue initial e-pressing. L'ordre ici est
  * utilisé pour le tri côté picker quand on n'a pas d'`ordre_affichage`
  * (et aussi pour l'affichage des onglets de filtre en haut du picker).
  *

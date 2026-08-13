@@ -1,5 +1,5 @@
 /**
- * OgPressing — Page « Essai expiré » (AUDIT-B-05)
+ * e-pressing — Page « Essai expiré » (AUDIT-B-05)
  * ------------------------------------------------
  * Route : /activation-expiree  (groupe (public))
  *
@@ -10,7 +10,7 @@
  *
  * La page :
  *   - explique que l'essai de 7 jours est terminé
- *   - propose un lien WhatsApp vers le support OgPressing pour activer un plan
+ *   - propose un lien WhatsApp vers le support e-pressing pour activer un plan
  *   - permet à l'utilisateur de se déconnecter (bouton « Se déconnecter »)
  *
  * Style : carte centrée sur fond navy avec aurora animée (cohérent avec la
@@ -41,7 +41,7 @@ import {
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { toast } from "sonner";
 
-/** Numéro WhatsApp support OgPressing (format international sans +). */
+/** Numéro WhatsApp support e-pressing (format international sans +). */
 const WHATSAPP_SUPPORT_URL = "https://wa.me/2250576103277";
 const WHATSAPP_SUPPORT_DISPLAY = "+225 05 76 10 32 77";
 
@@ -93,7 +93,7 @@ export default function ActivationExpireePage() {
             <ShoppingBag className="size-5" />
           </span>
           <span className="font-playfair text-lg font-bold tracking-tight text-editorial-ivory">
-            Og<span className="text-editorial-gold-deep">Pressing</span>
+            e-<span className="text-editorial-gold-deep">pressing</span>
           </span>
         </div>
 
@@ -112,7 +112,7 @@ export default function ActivationExpireePage() {
           </CardHeader>
           <CardContent className="space-y-5">
             <p className="text-center text-sm leading-relaxed text-editorial-ivory-dim">
-              Pour continuer à utiliser OgPressing et retrouver l&apos;accès à
+              Pour continuer à utiliser e-pressing et retrouver l&apos;accès à
               vos commandes, clients et statistiques, activez un plan
               d&apos;abonnement. Contactez notre équipe support via WhatsApp —
               nous vous accompagnons dans le choix du plan adapté à votre
@@ -121,7 +121,7 @@ export default function ActivationExpireePage() {
 
             <div className="rounded-md border border-editorial-gold/20 bg-editorial-gold/5 p-4 text-center">
               <p className="text-xs uppercase tracking-wider text-editorial-gold-pale">
-                Support OgPressing
+                Support e-pressing
               </p>
               <p className="mt-1 font-mono text-base font-semibold text-editorial-ivory">
                 {WHATSAPP_SUPPORT_DISPLAY}

@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/rapports/hebdomadaire (GET) — LOT 12.2
+ * e-pressing — API /api/admin/rapports/hebdomadaire (GET) — LOT 12.2
  * -------------------------------------------------------------------
  * Export .xlsx — Rapport Hebdomadaire : commandes et paiements de la semaine.
  *

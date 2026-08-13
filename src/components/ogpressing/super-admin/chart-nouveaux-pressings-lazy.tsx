@@ -1,5 +1,5 @@
 /**
- * OgPressing — Wrapper lazy pour ChartNouveauxPressings
+ * e-pressing — Wrapper lazy pour ChartNouveauxPressings
  * -----------------------------------------------------
  * Wrapper Client Component qui lazy-load le chart Recharts (~95KB gzippé)
  * via next/dynamic avec ssr:false. Le bundle Recharts n'est téléchargé

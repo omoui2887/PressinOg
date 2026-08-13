@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/comptable/rapports (COMPTA-1)
+ * e-pressing — /personnel/comptable/rapports (COMPTA-1)
  * ------------------------------------------------------
  * Page des rapports — variante "comptable" de la page admin /admin/rapports.
  *

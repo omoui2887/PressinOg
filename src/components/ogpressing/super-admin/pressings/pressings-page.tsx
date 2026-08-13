@@ -1,5 +1,5 @@
 /**
- * OgPressing — PressingsPage (client orchestrator)
+ * e-pressing — PressingsPage (client orchestrator)
  * -------------------------------------------------
  * Page /super-admin/pressings : liste des pressings clients (Super Admin).
  *

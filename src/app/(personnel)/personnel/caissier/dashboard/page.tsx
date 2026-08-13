@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/caissier/dashboard (CAIS-1)
+ * e-pressing — /personnel/caissier/dashboard (CAIS-1)
  * ---------------------------------------------------
  * Tableau de bord du caissier :
  *   1. Header (titre "Tableau de bord" + sous-titre "Caissier")

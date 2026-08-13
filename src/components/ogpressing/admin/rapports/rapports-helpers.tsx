@@ -1,5 +1,5 @@
 /**
- * OgPressing — Helpers partagés pour le module Rapports (LOT 12)
+ * e-pressing — Helpers partagés pour le module Rapports (LOT 12)
  * ---------------------------------------------------------------
  * Centralise :
  *   - Types & libellés FR pour les périodes (aujourdhui / semaine / mois / perso)

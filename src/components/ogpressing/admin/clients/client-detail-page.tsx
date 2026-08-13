@@ -1,5 +1,5 @@
 /**
- * OgPressing — ClientDetailPage (LOT 8.2 — orchestrator client)
+ * e-pressing — ClientDetailPage (LOT 8.2 — orchestrator client)
  * --------------------------------------------------------------
  * Composant client orchestrant toute la fiche client détaillée :
  *   - Header sticky (back + nom + 2 boutons : Nouvelle commande, Modifier)

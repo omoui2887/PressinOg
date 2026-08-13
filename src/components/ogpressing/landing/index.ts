@@ -1,5 +1,5 @@
 /**
- * Barrel file — sections de landing page OgPressing.
+ * Barrel file — sections de landing page e-pressing.
  * ------------------------------------------------------------------
  * Centralise les exports des sections de landing "Luxe Éditorial".
  *

@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de /personnel/manager/stock
+ * e-pressing — Loading state de /personnel/manager/stock
  * ------------------------------------------------------
  * Squelette affiché pendant le chargement de la liste des produits de
  * stock + mouvements récents. Reproduit la structure : header + grille

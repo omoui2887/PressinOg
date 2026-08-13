@@ -1,5 +1,5 @@
 /**
- * OgPressing — EditPreferencesDialog (LOT 8.2)
+ * e-pressing — EditPreferencesDialog (LOT 8.2)
  * ---------------------------------------------
  * Dialog d'édition des préférences de lavage d'un client (6 Selects
  * correspondant aux 6 clés du JSONB `preferences_lavage`).

@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 014 : Catalogue d'articles illustré (LOT 15.1)
+-- e-pressing — Migration 014 : Catalogue d'articles illustré (LOT 15.1)
 -- ============================================================
 -- Fichier    : 014_lot15_catalogue_articles.sql
 -- Version    : 1.0

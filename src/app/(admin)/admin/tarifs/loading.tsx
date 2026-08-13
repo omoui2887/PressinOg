@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state des tarifs par article (P4-F / AUDIT-C-06).
+ * e-pressing — Loading state des tarifs par article (P4-F / AUDIT-C-06).
  * -----------------------------------------------------------------------
  * Squelette de la page /admin/tarifs affiché pendant que le Client
  * Component `TarifsPage` charge son bundle et récupère le catalogue +

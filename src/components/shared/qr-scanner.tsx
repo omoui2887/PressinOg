@@ -1,5 +1,5 @@
 /**
- * OgPressing — QRScanner (composant partagé réutilisable)
+ * e-pressing — QRScanner (composant partagé réutilisable)
  * --------------------------------------------------------
  * Scanner QR Code basé sur `html5-qrcode`. Affiché dans un Dialog Radix.
  *

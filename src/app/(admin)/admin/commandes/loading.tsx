@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de la liste des commandes (P4-F / AUDIT-C-06).
+ * e-pressing — Loading state de la liste des commandes (P4-F / AUDIT-C-06).
  * --------------------------------------------------------------------------
  * Squelette de la page /admin/commandes affiché pendant que le Client
  * Component `CommandesPage` charge son bundle et récupère la 1re page

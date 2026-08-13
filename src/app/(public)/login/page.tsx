@@ -1,5 +1,5 @@
 /**
- * OgPressing — Page de connexion (PHASE 4-a — Luxe Éditorial)
+ * e-pressing — Page de connexion (PHASE 4-a — Luxe Éditorial)
  * ----------------------------------------------------
  * Route : /login
  *
@@ -140,7 +140,7 @@ export default function LoginPage() {
       acces_refuse:
         "Accès non autorisé à cet espace. Vous avez été redirigé vers votre tableau de bord.",
       pressing_suspendu:
-        "Votre pressing est suspendu. Contactez le support OgPressing pour réactiver votre abonnement.",
+        "Votre pressing est suspendu. Contactez le support e-pressing pour réactiver votre abonnement.",
       config_incomplete:
         "Configuration incomplète : les variables d'environnement Supabase ne sont pas configurées. Créez un fichier .env.local avec NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY et SUPABASE_SERVICE_ROLE_KEY pour activer l'authentification.",
     };
@@ -338,7 +338,7 @@ export default function LoginPage() {
             <ShoppingBag className="size-5" />
           </span>
           <span className="font-playfair text-xl font-bold tracking-tight">
-            Og<span className="text-editorial-gold">Pressing</span>
+            e-<span className="text-editorial-gold">pressing</span>
           </span>
         </div>
 
@@ -391,7 +391,7 @@ export default function LoginPage() {
 
         {/* Pied marketing */}
         <div className="relative z-10 text-xs text-editorial-ivory-dim">
-          © {new Date().getFullYear()} OgPressing — Côte d&apos;Ivoire
+          © {new Date().getFullYear()} e-pressing — Côte d&apos;Ivoire
         </div>
       </aside>
 
@@ -426,7 +426,7 @@ export default function LoginPage() {
               <ShoppingBag className="size-5" />
             </span>
             <span className="font-playfair text-lg font-bold tracking-tight text-editorial-ivory">
-              Og<span className="text-editorial-gold-deep">Pressing</span>
+              e-<span className="text-editorial-gold-deep">pressing</span>
             </span>
           </div>
 

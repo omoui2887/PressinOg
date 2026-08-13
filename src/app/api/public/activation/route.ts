@@ -1,5 +1,5 @@
 /**
- * OgPressing — API publique : Activation d'un pressing
+ * e-pressing — API publique : Activation d'un pressing
  * ----------------------------------------------------
  * POST /api/public/activation
  *
@@ -224,7 +224,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json<ApiResponse>(
       {
         success: false,
-        error: "Ce code a expiré. Les codes sont valables 7 jours. Contactez OgPressing pour un nouveau code.",
+        error: "Ce code a expiré. Les codes sont valables 7 jours. Contactez e-pressing pour un nouveau code.",
       },
       { status: 400 }
     );

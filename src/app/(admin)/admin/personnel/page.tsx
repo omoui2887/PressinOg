@@ -1,5 +1,5 @@
 /**
- * OgPressing — /admin/personnel
+ * e-pressing — /admin/personnel
  * ------------------------------
  * Gestion du personnel du pressing connecté :
  *   - Liste des employés (tableau desktop / cards mobile) : Nom, Rôle (badge

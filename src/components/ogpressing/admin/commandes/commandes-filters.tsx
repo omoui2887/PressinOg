@@ -1,5 +1,5 @@
 /**
- * OgPressing — CommandesFilters
+ * e-pressing — CommandesFilters
  * ------------------------------
  * Barre de filtres pour la liste des commandes :
  *   - Recherche texte (numero_commande OU nom du client) avec bouton effacer

@@ -1,5 +1,5 @@
 /**
- * OgPressing — Middleware Next.js racine
+ * e-pressing — Middleware Next.js racine
  * --------------------------------------
  * S'exécute sur TOUTES les requêtes entrantes (sauf fichiers statiques).
  * Pour l'instant : rafraîchit la session Supabase.

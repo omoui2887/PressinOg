@@ -1,5 +1,5 @@
 /**
- * OgPressing — EditProductDialog (LOT 10.1)
+ * e-pressing — EditProductDialog (LOT 10.1)
  * ------------------------------------------
  * Modification d'un produit_stock : nom, catégorie, unité, seuil d'alerte,
  * prix d'achat, fournisseur, date d'expiration, FDS (re-upload).

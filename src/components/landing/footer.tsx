@@ -1,5 +1,5 @@
 /**
- * OgPressing — Pied de page (LOT 17 — Section H)
+ * e-pressing — Pied de page (LOT 17 — Section H)
  * ----------------------------------------------
  * Footer arrondi (rounded-t-[4rem]) sur fond Bleu Nuit Pressing.
  *
@@ -58,7 +58,7 @@ export function Footer() {
   return (
     <footer
       className="relative overflow-hidden rounded-t-[2.5rem] bg-landing-primary-deep sm:rounded-t-[4rem]"
-      aria-label="Pied de page OgPressing"
+      aria-label="Pied de page e-pressing"
     >
       {/* Halo décoratif en haut */}
       <div
@@ -74,12 +74,12 @@ export function Footer() {
             <a
               href="/"
               className="flex items-center gap-2 font-jakarta text-lg font-extrabold tracking-tight text-white"
-              aria-label="OgPressing — Accueil"
+              aria-label="e-pressing — Accueil"
             >
               <span className="flex size-8 items-center justify-center rounded-lg bg-landing-accent text-sm font-bold text-landing-primary">
                 Og
               </span>
-              Og<span className="text-landing-accent">Pressing</span>
+              e-<span className="text-landing-accent">pressing</span>
             </a>
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-white/60">
               La gestion moderne de votre pressing, pensée pour la Côte
@@ -171,7 +171,7 @@ export function Footer() {
         {/* Ligne inférieure : copyright + rappel CTA */}
         <div className="flex flex-col items-center justify-between gap-6 pt-8 sm:flex-row sm:gap-4">
           <p className="font-plex-mono text-[11px] uppercase tracking-wider text-white/40">
-            © {new Date().getFullYear()} OgPressing — Côte d&apos;Ivoire 🇨🇮
+            © {new Date().getFullYear()} e-pressing — Côte d&apos;Ivoire 🇨🇮
           </p>
 
           <a

@@ -1,5 +1,5 @@
 /**
- * OgPressing — Layout racine des pages SUPER ADMIN
+ * e-pressing — Layout racine des pages SUPER ADMIN
  * -----------------------------------------------
  * Route group `(super-admin)` → /super-admin/*
  *

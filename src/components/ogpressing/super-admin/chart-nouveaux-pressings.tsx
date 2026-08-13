@@ -1,5 +1,5 @@
 /**
- * OgPressing — Graphique "Nouveaux pressings actifs par mois"
+ * e-pressing — Graphique "Nouveaux pressings actifs par mois"
  * ----------------------------------------------------------
  * Line chart Recharts (client component) affichant l'évolution du nombre
  * de nouveaux pressings (statut 'actif') activés par mois sur les 6

@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/rapports/stock (GET) — PRD §14 + §15
+ * e-pressing — API /api/admin/rapports/stock (GET) — PRD §14 + §15
  * ----------------------------------------------------------------
  * Export .xlsx — Rapport Stock : mouvements entrées/sorties du pressing.
  *

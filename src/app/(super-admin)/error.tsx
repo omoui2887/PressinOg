@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * OgPressing — Error Boundary du route group (super-admin)
+ * e-pressing — Error Boundary du route group (super-admin)
  * ---------------------------------------------------------
  * AUDIT-C-05 — Une error boundary par route group pour isoler les erreurs
- * de rendering côté /super-admin/* (super administrateur OgPressing).
+ * de rendering côté /super-admin/* (super administrateur e-pressing).
  *
  * Comportement identique aux autres error.tsx.
  */

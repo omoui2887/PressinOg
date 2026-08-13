@@ -1,5 +1,5 @@
 /**
- * OgPressing — PeriodSelector (LOT 12.1)
+ * e-pressing — PeriodSelector (LOT 12.1)
  * ---------------------------------------
  * Sélecteur de période pour la page /admin/rapports.
  *

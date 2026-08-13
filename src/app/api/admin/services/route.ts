@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/services (GET + POST) — LOT 11.1
+ * e-pressing — API /api/admin/services (GET + POST) — LOT 11.1
  * ------------------------------------------------------------
  *
  * GET — Liste des services du pressing connecté :

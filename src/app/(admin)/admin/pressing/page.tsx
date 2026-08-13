@@ -1,5 +1,5 @@
 /**
- * OgPressing — /admin/pressing (LOT 11.2)
+ * e-pressing — /admin/pressing (LOT 11.2)
  * --------------------------------------
  * Configuration générale du pressing, organisée en 3 onglets :
  *   1. Informations générales (nom, ville, adresse, téléphone, email, logo)

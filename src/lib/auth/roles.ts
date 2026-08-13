@@ -1,5 +1,5 @@
 /**
- * OgPressing — Helper d'authentification & rôles
+ * e-pressing — Helper d'authentification & rôles
  * ==============================================
  * Centralise la récupération du personnel courant et la vérification
  * des rôles pour les Route Handlers / Server Components.

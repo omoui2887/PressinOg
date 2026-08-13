@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/super-admin/abonnements/[id] (PATCH)
+ * e-pressing — API /api/super-admin/abonnements/[id] (PATCH)
  * -----------------------------------------------------------
  * Met à jour un abonnement : changement de plan, suspension OU réactivation.
  *

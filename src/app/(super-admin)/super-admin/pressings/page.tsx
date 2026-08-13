@@ -1,5 +1,5 @@
 /**
- * OgPressing — Super Admin → Pressings (page)
+ * e-pressing — Super Admin → Pressings (page)
  * ---------------------------------------------
  * Route : /super-admin/pressings (groupe `(super-admin)`)
  *

@@ -1,5 +1,5 @@
 /**
- * OgPressing — NewClientDialog
+ * e-pressing — NewClientDialog
  * -----------------------------
  * Dialog (modal) pour créer un nouveau client rattaché au pressing connecté.
  * Champs : Nom complet (requis), Téléphone (requis), Email (optionnel),

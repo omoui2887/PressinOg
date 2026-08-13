@@ -1,5 +1,5 @@
 /**
- * OgPressing — PersonnelActionsMenu (LOT 9.3)
+ * e-pressing — PersonnelActionsMenu (LOT 9.3)
  * --------------------------------------------
  * Menu d'actions (icône 3 points) pour chaque employé de la liste.
  *

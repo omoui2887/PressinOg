@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de /personnel/manager/commandes
+ * e-pressing — Loading state de /personnel/manager/commandes
  * ----------------------------------------------------------
  * Squelette affiché pendant que le bundle `CommandesPage` se charge +
  * récupère la 1re page de commandes via GET /api/admin/commandes.

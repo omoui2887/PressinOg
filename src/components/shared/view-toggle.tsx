@@ -1,5 +1,5 @@
 /**
- * OgPressing — ViewToggle
+ * e-pressing — ViewToggle
  * -----------------------
  * Interrupteur à 2 positions (Liste / Grille) pour les pages d'historique.
  * Utilise le primitive shadcn ToggleGroup (Radix) + icônes lucide List / LayoutGrid.

@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/super-admin/demandes/[id] (PATCH)
+ * e-pressing — API /api/super-admin/demandes/[id] (PATCH)
  * ---------------------------------------------------------
  * Met à jour une demande d'inscription :
  *   - `statut`        : 'contactee' | 'refusee' (passage à 'validee' se fait

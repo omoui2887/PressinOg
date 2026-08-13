@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 008 : Correctif robuste policy demande_insert_public
+-- e-pressing — Migration 008 : Correctif robuste policy demande_insert_public
 -- ============================================================
 -- Fichier    : 008_correctif_policy_demande.sql
 -- Version    : 1.0

@@ -1,5 +1,5 @@
 /**
- * OgPressing — Export Excel (.xlsx) utilitaire générique (LOT 12.2)
+ * e-pressing — Export Excel (.xlsx) utilitaire générique (LOT 12.2)
  * -----------------------------------------------------------------
  * Génère un fichier .xlsx côté client (navigateur) à partir d'un jeu de
  * données + d'une définition de colonnes, puis déclenche le téléchargement.

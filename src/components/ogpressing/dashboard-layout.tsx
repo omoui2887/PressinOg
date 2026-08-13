@@ -1,5 +1,5 @@
 /**
- * OgPressing — DashboardLayout
+ * e-pressing — DashboardLayout
  * ----------------------------
  * Coquille de dashboard réutilisable (sidebar + topbar + déconnexion)
  * pour les espaces Super Admin / Admin pressing / Personnel.
@@ -165,7 +165,7 @@ export function DashboardLayout({
     return pathname.startsWith(href + "/");
   }
 
-  // Bloc de marque : logo du pressing si fourni, sinon logo OgPressing.
+  // Bloc de marque : logo du pressing si fourni, sinon logo e-pressing.
   // Phase 4-b : `brand.variant === "editorial"` active le logo doré même en
   // accent="default" (touche « Luxe Éditorial » sans basculer tout le dashboard).
   const editorialLogo = isEditorial || brand?.variant === "editorial";
@@ -204,7 +204,7 @@ export function DashboardLayout({
         </span>
       ) : (
         <>
-          Og<span className={isEditorial ? "text-editorial-gold" : "text-primary"}>Pressing</span>
+          e-<span className={isEditorial ? "text-editorial-gold" : "text-primary"}>pressing</span>
         </>
       )}
     </span>
@@ -437,7 +437,7 @@ export function DashboardLayout({
                 </span>
               ) : (
                 <>
-                  Og<span className={isEditorial ? "text-editorial-gold" : "text-primary"}>Pressing</span>
+                  e-<span className={isEditorial ? "text-editorial-gold" : "text-primary"}>pressing</span>
                 </>
               )}
             </span>

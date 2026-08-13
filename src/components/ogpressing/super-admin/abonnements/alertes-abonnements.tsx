@@ -1,5 +1,5 @@
 /**
- * OgPressing — AlertesAbonnements
+ * e-pressing — AlertesAbonnements
  * --------------------------------
  * Bannière d'alerte affichée en haut de la liste des abonnements.
  *

@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/personnel/plan (GET) — PRD §16
+ * e-pressing — API /api/personnel/plan (GET) — PRD §16
  * -----------------------------------------------------
  * Retourne le plan d'abonnement actuel du pressing du personnel connecté,
  * ainsi que les features disponibles selon ce plan.

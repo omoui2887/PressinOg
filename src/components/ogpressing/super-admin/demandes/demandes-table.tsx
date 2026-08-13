@@ -1,5 +1,5 @@
 /**
- * OgPressing — DemandesTable
+ * e-pressing — DemandesTable
  * ---------------------------
  * Affiche la liste des demandes d'inscription :
  *   - Tableau sur desktop (md+) : Date, Nom + Prénom, Nom du pressing, Ville,

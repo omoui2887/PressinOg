@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/personnel/[id] (PATCH + POST)
+ * e-pressing — API /api/admin/personnel/[id] (PATCH + POST)
  * ---------------------------------------------------------
  * Gestion du cycle de vie d'un compte employé (LOT 9.3).
  *

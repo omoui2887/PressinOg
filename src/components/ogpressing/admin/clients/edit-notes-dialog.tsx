@@ -1,5 +1,5 @@
 /**
- * OgPressing — EditNotesDialog (LOT 8.2)
+ * e-pressing — EditNotesDialog (LOT 8.2)
  * ---------------------------------------
  * Dialog d'édition des notes libres d'un client (textarea 4 lignes).
  * Submit via PATCH /api/admin/clients/{id} avec `{ notes }`.

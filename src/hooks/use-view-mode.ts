@@ -1,5 +1,5 @@
 /**
- * OgPressing — useViewMode
+ * e-pressing — useViewMode
  * ------------------------
  * Hook de persistance du mode d'affichage (liste vs grille) pour les pages
  * d'historique. La préférence est stockée dans localStorage, clé par page

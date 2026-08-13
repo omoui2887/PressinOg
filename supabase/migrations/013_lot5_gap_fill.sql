@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 013 : Gap-fill LOT 5 (Dashboard Super Admin)
+-- e-pressing — Migration 013 : Gap-fill LOT 5 (Dashboard Super Admin)
 -- ============================================================
 -- Fichier    : 013_lot5_gap_fill.sql
 -- Version    : 1.0

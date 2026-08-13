@@ -1,5 +1,5 @@
 /**
- * OgPressing — Page /super-admin/abonnements
+ * e-pressing — Page /super-admin/abonnements
  * -------------------------------------------
  * Route : /super-admin/abonnements (groupe `(super-admin)`)
  *

@@ -1,5 +1,5 @@
 /**
- * OgPressing — Formulaire d'inscription (LOT 4 — landing page #inscription)
+ * e-pressing — Formulaire d'inscription (LOT 4 — landing page #inscription)
  * -------------------------------------------------------------------------
  * Composant client avec react-hook-form + zod.
  * 11 champs spec LOT 4 prompt 4.2 :
@@ -588,7 +588,7 @@ export function InscriptionForm() {
 
         <p className="text-center text-xs text-muted-foreground">
           En envoyant votre demande, vous acceptez d&apos;être contacté par
-          OgPressing. Aucun règlement ne se fait en ligne.
+          e-pressing. Aucun règlement ne se fait en ligne.
         </p>
       </form>
     </Form>

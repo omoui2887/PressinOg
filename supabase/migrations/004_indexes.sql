@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 004 : Index de performance
+-- e-pressing — Migration 004 : Index de performance
 -- ============================================================
 -- Fichier    : 004_indexes.sql
 -- Version    : 1.0

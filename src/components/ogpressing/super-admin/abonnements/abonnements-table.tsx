@@ -1,5 +1,5 @@
 /**
- * OgPressing — AbonnementsTable
+ * e-pressing — AbonnementsTable
  * ------------------------------
  * Affiche la liste des abonnements sous forme de :
  *   - Tableau sur desktop (md+) — 7 colonnes : Nom du pressing, Plan, Statut,
@@ -267,7 +267,7 @@ function AbonnementActions({ abonnement, onUpdated }: AbonnementActionsProps) {
             </AlertDialogTitle>
             <AlertDialogDescription>
               <strong>{abonnement.pressing?.nom}</strong> n&apos;aura plus accès
-              à la plateforme OgPressing. L&apos;abonnement passe en statut{" "}
+              à la plateforme e-pressing. L&apos;abonnement passe en statut{" "}
               <span className="font-medium text-danger">suspendu</span>. Vous
               pourrez le réactiver à tout moment en enregistrant un nouveau
               paiement.

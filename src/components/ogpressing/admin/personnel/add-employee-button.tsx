@@ -1,5 +1,5 @@
 /**
- * OgPressing — AddEmployeeButton
+ * e-pressing — AddEmployeeButton
  * -------------------------------
  * Bouton "+ Ajouter un employé" en haut de la page /admin/personnel.
  *

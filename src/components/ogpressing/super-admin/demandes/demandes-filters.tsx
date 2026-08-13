@@ -1,5 +1,5 @@
 /**
- * OgPressing — DemandesFilters
+ * e-pressing — DemandesFilters
  * -----------------------------
  * Barre de filtres pour la page /super-admin/demandes :
  *   - Recherche texte libre (nom, nom du pressing, téléphone) — debounce 300ms

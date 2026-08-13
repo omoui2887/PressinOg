@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/manager/commandes/{id} (MGR-1)
+ * e-pressing — /personnel/manager/commandes/{id} (MGR-1)
  * ------------------------------------------------------
  * Page de détail d'une commande — variante "manager" de la page
  * admin /admin/commandes/{id}.

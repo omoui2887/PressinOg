@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/rapports (GET) — LOT 12.1
+ * e-pressing — API /api/admin/rapports (GET) — LOT 12.1
  * -------------------------------------------------------
  * Renvoie l'ensemble des données agrégées pour la page /admin/rapports :
  *

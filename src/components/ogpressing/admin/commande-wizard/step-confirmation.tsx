@@ -271,7 +271,7 @@ ${bodyHtml}
 }
 
 /**
- * Construit et imprime le ticket client. Inclut : en-tête OgPressing,
+ * Construit et imprime le ticket client. Inclut : en-tête e-pressing,
  * numéro de ticket (font-mono), QR Code (rendu en `<img>` depuis dataURL via
  * un canvas temporaire), récap articles, montant total, statut paiement,
  * date de retrait prévue.
@@ -370,7 +370,7 @@ function printTicket(opts: {
 
   const bodyHtml = `
   <div class="header center">
-    <div class="brand">OgPressing</div>
+    <div class="brand">e-pressing</div>
     <div class="label">Ticket de dépôt</div>
   </div>
 
@@ -491,7 +491,7 @@ function printLabels(opts: {
       const desc = articleDescription(a);
       const etat = etatLabel(a.etat);
       return `<div class="label-sticker">
-        <div class="brand">OgPressing</div>
+        <div class="brand">e-pressing</div>
         <div class="ticket-no">${escapeHtml(commandeCree.numero_commande)}</div>
         <div class="article-info">${escapeHtml(desc)} — ${escapeHtml(etat)}</div>
         <div class="article-index">Article ${idx + 1} / ${articles.length}</div>

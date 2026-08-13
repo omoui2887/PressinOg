@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 006 : Row Level Security (RLS)
+-- e-pressing — Migration 006 : Row Level Security (RLS)
 -- ============================================================
 -- Fichier    : 006_rls_policies.sql
 -- Version    : 1.1
@@ -11,7 +11,7 @@
 --              codes_activation.code/utilise). Aucune correction nécessaire,
 --              la v1.0 était déjà alignée.
 -- Description : Activation de RLS + policies d'isolation multi-tenant
---               sur les 17 tables du schéma OgPressing (PRD §18.4).
+--               sur les 17 tables du schéma e-pressing (PRD §18.4).
 --
 -- Principes de sécurité :
 --   1. Isolation stricte par pressing_id (multi-tenant SaaS)
@@ -94,7 +94,7 @@ $$;
 
 -- Documentation des fonctions
 COMMENT ON FUNCTION public.is_super_admin() IS
-    'Retourne TRUE si auth.uid() est un Super Admin OgPressing. SECURITY DEFINER (bypass RLS interne).';
+    'Retourne TRUE si auth.uid() est un Super Admin e-pressing. SECURITY DEFINER (bypass RLS interne).';
 COMMENT ON FUNCTION public.get_pressing_id_utilisateur() IS
     'Retourne le pressing_id de l''utilisateur courant (via personnel). NULL si non lié. SECURITY DEFINER (bypass RLS interne).';
 

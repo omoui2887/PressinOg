@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/caissier/clients (CAIS-1)
+ * e-pressing — /personnel/caissier/clients (CAIS-1)
  * --------------------------------------------------
  * Liste des clients du pressing connecté — variante "caissier" en lecture
  * seule (le caissier consulte les clients et leurs impayés, mais ne peut

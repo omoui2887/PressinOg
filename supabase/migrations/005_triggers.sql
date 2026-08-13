@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 005 : Triggers & Functions
+-- e-pressing — Migration 005 : Triggers & Functions
 -- ============================================================
 -- Fichier    : 005_triggers.sql
 -- Version    : 1.2

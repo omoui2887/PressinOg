@@ -1,5 +1,5 @@
 /**
- * OgPressing — PressingDetailsSheet
+ * e-pressing — PressingDetailsSheet
  * -----------------------------------
  * Sheet latérale (côté droit, large sur desktop) affichant les détails
  * complets d'un pressing (Super Admin).

@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/super-admin/abonnements (GET)
+ * e-pressing — API /api/super-admin/abonnements (GET)
  * ----------------------------------------------------
  * Récupère la liste de TOUS les abonnements (tous pressings confondus) avec :
  *   - recherche par nom du pressing (param `q`)

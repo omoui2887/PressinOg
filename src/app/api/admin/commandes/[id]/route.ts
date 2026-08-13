@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/commandes/[id] (GET detail + PATCH update)
+ * e-pressing — API /api/admin/commandes/[id] (GET detail + PATCH update)
  * ---------------------------------------------------------------------
  * LOT 7 — détail complet d'une commande pour la page de suivi/détail :
  *   - champs de la commande

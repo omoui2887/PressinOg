@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/manager/stock (MGR-1)
+ * e-pressing — /personnel/manager/stock (MGR-1)
  * --------------------------------------------
  * Gestion du stock de biodétergents — variante "manager" de la page
  * admin /admin/stock.

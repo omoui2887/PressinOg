@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state du dashboard comptable (personnel)
+ * e-pressing — Loading state du dashboard comptable (personnel)
  *
  * AUDIT-C-06: skeleton cohérent avec les autres dashboards.
  */

@@ -6,7 +6,7 @@ import * as ProgressPrimitive from "@radix-ui/react-progress"
 import { cn } from "@/lib/utils"
 
 /**
- * OgPressing — Progress (LOT 16 + Phase 2-a éditorial)
+ * e-pressing — Progress (LOT 16 + Phase 2-a éditorial)
  * =====================================================
  *
  * Prop Phase 2-a `accent?: "default" | "editorial"` :

@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de /personnel/caissier/encaisser
+ * e-pressing — Loading state de /personnel/caissier/encaisser
  * -----------------------------------------------------------
  * Squelette affiché pendant le chargement de la page encaissement.
  * Reproduit la structure : header + card recherche commande + card

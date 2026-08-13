@@ -1,5 +1,5 @@
 /**
- * OgPressing — CommandesList
+ * e-pressing — CommandesList
  * ---------------------------
  * Affiche la liste des commandes sous forme de :
  *   - Tableau sur desktop (md+) : N° ticket, Client, Statut, Paiement,

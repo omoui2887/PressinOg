@@ -1,5 +1,5 @@
 /**
- * OgPressing — Fonctions utilitaires de formatage
+ * e-pressing — Fonctions utilitaires de formatage
  * -----------------------------------------------
  *
  * Conventions projet (PROJECT_CONTEXT.md) :

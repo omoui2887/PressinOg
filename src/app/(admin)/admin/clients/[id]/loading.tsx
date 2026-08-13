@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de la fiche client
+ * e-pressing — Loading state de la fiche client
  * -----------------------------------------------
  * Squelette de la page /admin/clients/{id} affiché pendant que le
  * Server Component fetch le client + 50 commandes + paiements via

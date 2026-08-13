@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/receptionniste/scanner-qr (REC-1)
+ * e-pressing — /personnel/receptionniste/scanner-qr (REC-1)
  * ---------------------------------------------------------
  * Page "Scanner QR" du réceptionniste.
  *

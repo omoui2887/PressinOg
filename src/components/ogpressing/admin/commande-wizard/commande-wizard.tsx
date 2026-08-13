@@ -1,5 +1,5 @@
 /**
- * OgPressing — Wizard Nouvelle Commande (orchestrateur)
+ * e-pressing — Wizard Nouvelle Commande (orchestrateur)
  * -----------------------------------------------------
  * Wizard 4 étapes pour la création d'une commande pressing :
  *   1. Sélection du client

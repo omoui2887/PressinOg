@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 010 : Gap-fill LOT 2
+-- e-pressing — Migration 010 : Gap-fill LOT 2
 -- ============================================================
 -- Fichier    : 010_lot2_gap_fill.sql
 -- Version    : 1.0

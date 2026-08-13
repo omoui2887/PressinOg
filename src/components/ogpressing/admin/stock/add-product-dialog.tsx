@@ -1,5 +1,5 @@
 /**
- * OgPressing — AddProductDialog (LOT 10.1)
+ * e-pressing — AddProductDialog (LOT 10.1)
  * -----------------------------------------
  * Formulaire de création d'un produit de stock (biodétergent).
  *

@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de /personnel/repassage/casiers
+ * e-pressing — Loading state de /personnel/repassage/casiers
  * ----------------------------------------------------------
  * Squelette affiché pendant le chargement de la page casiers du pôle
  * repassage (articles propres à ranger). Reproduit la structure : header

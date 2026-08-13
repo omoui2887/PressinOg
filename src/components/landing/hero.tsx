@@ -1,5 +1,5 @@
 /**
- * OgPressing — Hero "Le Plan d'Ouverture" (LOT 17 — Section B)
+ * e-pressing — Hero "Le Plan d'Ouverture" (LOT 17 — Section B)
  * ------------------------------------------------------------
  * Hero plein écran (100dvh) avec image de fond (intérieur de pressing
  * moderne / vapeur de fer à repasser) + overlay dégradé Bleu Nuit.
@@ -71,7 +71,7 @@ export function Hero() {
     <section
       ref={rootRef}
       className="relative flex min-h-[100dvh] w-full flex-col justify-end overflow-hidden bg-landing-primary"
-      aria-label="OgPressing — Le Plan d'Ouverture"
+      aria-label="e-pressing — Le Plan d'Ouverture"
     >
       {/* Image de fond */}
       <Image

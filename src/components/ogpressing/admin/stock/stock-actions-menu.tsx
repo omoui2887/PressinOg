@@ -1,5 +1,5 @@
 /**
- * OgPressing — StockActionsMenu (LOT 10.1)
+ * e-pressing — StockActionsMenu (LOT 10.1)
  * -----------------------------------------
  * Menu d'actions par produit (DropdownMenu) :
  *   - Enregistrer un mouvement

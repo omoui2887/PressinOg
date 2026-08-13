@@ -1,5 +1,5 @@
 /**
- * OgPressing — SuperAdminShell
+ * e-pressing — SuperAdminShell
  * ----------------------------
  * Wrapper CLIENT pour l'espace Super Admin. Détient la définition des
  * éléments de navigation latérale (avec icônes lucide-react) et rend le
@@ -40,7 +40,7 @@
  * Le dashboard RESTE en thème clair (light). Les touches dorées sont
  * ajoutées au niveau du DashboardLayout sous-jacent : bandeau de rôle
  * `text-editorial-gold-deep`, `<GoldSeparator />` sous le brand. Le logo
- * OgPressing par défaut reste en `bg-primary text-primary-foreground`
+ * e-pressing par défaut reste en `bg-primary text-primary-foreground`
  * (aucun brand spécifique à surcharger pour le super-admin). Le thème
  * editorial complet (navy/or) reste disponible via `accent="editorial"`.
  */

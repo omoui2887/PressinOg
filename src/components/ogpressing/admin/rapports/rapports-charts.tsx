@@ -1,5 +1,5 @@
 /**
- * OgPressing — RapportsCharts (LOT 12.1)
+ * e-pressing — RapportsCharts (LOT 12.1)
  * ---------------------------------------
  * 3 composants graphiques Recharts pour la page /admin/rapports :
  *

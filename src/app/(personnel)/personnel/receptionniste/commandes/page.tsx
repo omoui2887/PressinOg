@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/receptionniste/commandes (REC-1)
+ * e-pressing — /personnel/receptionniste/commandes (REC-1)
  * --------------------------------------------------------
  * Liste des commandes du pressing connecté — variante "réceptionniste" de
  * la page admin /admin/commandes.

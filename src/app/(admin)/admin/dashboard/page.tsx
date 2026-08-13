@@ -1,5 +1,5 @@
 /**
- * OgPressing — /admin/dashboard (LOT 6.2)
+ * e-pressing — /admin/dashboard (LOT 6.2)
  * ----------------------------------------
  * Vue d'ensemble du pressing connecté : KPIs du jour, raccourcis, commandes
  * récentes, alertes stock, clients avec impayés.

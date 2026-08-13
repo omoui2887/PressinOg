@@ -1,5 +1,5 @@
 /**
- * OgPressing — ClientsFilters
+ * e-pressing — ClientsFilters
  * ----------------------------
  * Barre de recherche + toggle "impayés uniquement" pour la liste des clients.
  *

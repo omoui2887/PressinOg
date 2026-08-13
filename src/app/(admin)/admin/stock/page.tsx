@@ -1,5 +1,5 @@
 /**
- * OgPressing — /admin/stock (LOT 10.1)
+ * e-pressing — /admin/stock (LOT 10.1)
  * -------------------------------------
  * Gestion du stock de biodétergents du pressing :
  *   - Liste des produits avec statut visuel (🔴🟡✅)

@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de la page /login
+ * e-pressing — Loading state de la page /login
  *
  * AUDIT-C-06: skeleton cohérent avec la forme du formulaire d'auth.
  */

@@ -1,5 +1,5 @@
 /**
- * OgPressing — Helpers partagés pour le module Stock (LOT 10)
+ * e-pressing — Helpers partagés pour le module Stock (LOT 10)
  * ------------------------------------------------------------
  * Constantes (catégories, unités), formatage (quantité, dates, FCFA),
  * et calcul du statut d'alerte d'un produit.

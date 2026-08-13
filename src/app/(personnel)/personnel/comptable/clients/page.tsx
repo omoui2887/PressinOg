@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/comptable/clients (COMPTA-1)
+ * e-pressing — /personnel/comptable/clients (COMPTA-1)
  * -----------------------------------------------------
  * Liste des clients du pressing connecté — variante "comptable" en lecture
  * seule (le comptable consulte les clients, leurs impayés et leur total

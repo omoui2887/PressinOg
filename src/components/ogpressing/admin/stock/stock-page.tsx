@@ -1,5 +1,5 @@
 /**
- * OgPressing — StockPage (client orchestrator) — LOT 10.1
+ * e-pressing — StockPage (client orchestrator) — LOT 10.1
  * --------------------------------------------------------
  * Page /admin/stock : gestion du stock de biodétergents du pressing.
  *

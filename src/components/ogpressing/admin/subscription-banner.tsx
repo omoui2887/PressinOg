@@ -1,5 +1,5 @@
 /**
- * OgPressing — SubscriptionBanner
+ * e-pressing — SubscriptionBanner
  * --------------------------------
  * Bannière d'avertissement affichée en haut de toutes les pages Admin quand
  * l'abonnement du pressing connecté est expiré ou suspendu.

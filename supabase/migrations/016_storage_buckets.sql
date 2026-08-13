@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 016 : Buckets Supabase Storage + RLS
+-- e-pressing — Migration 016 : Buckets Supabase Storage + RLS
 -- ============================================================
 -- Fichier    : 016_storage_buckets.sql
 -- Version    : 1.0

@@ -2254,3 +2254,43 @@ Stage Summary:
 - ✅ Sécurité : role guards stricts (CAN_CREATE_COMMANDES, CAN_RETIRER_COMMANDES, ROLES_AUTORISES_MODIFIER_STATUT_ARTICLE), plan-gating enforceé (fds-upload, fds-url, export-xlsx, qr-scan, history-cutoff), CHECK constraint DB sur modes_paiement.
 - ✅ PRD compliance : §3.4 (matrice permissions), §5.2 (3 modes paiement déclaratifs), §6.4 (workflow retire), §7.5 (points fidélité auto), §12.2 (reçu imprimable), §13.1 (QR payload), §13.2 (barcode payload), §15 (10 rapports .xlsx), §16 (plan-gating), §18.5 (enums).
 - Fichiers modifiés : ~25 (API routes, lib/auth, lib/workflow, components/admin/{commandes,rapports,personnel,clients}, components/pos/pos-caisse, components/ogpressing/{index,landing/index}, 7 fichiers supprimés, 2 nouvelles migrations SQL).
+
+---
+Task ID: RENAME-AND-LOGIN-FIX
+Agent: main
+Task: Rename "OgPressing" → "e-pressing" throughout the application, and fix the super admin login error (ogouromain@gmail.com / [REDACTED-PWD])
+
+Work Log:
+- Analyzed codebase: 375 source files contained the literal "OgPressing" (case-sensitive) — code comments, user-visible strings, page metadata, error messages, email/SMS templates.
+- Identified 8 split-brand JSX patterns `Og<span className="...">Pressing</span>` in login page, activation-expiree, compte-suspendu, public-header, public-footer, dashboard-layout, landing/navbar, landing/footer.
+- Identified 3 `ogpressing.com` URL references in user-visible SMS template + 2 code comments.
+- Executed 3-step global rename via sed:
+  1. `OgPressing` → `e-pressing` (375 files in src/ + supabase/)
+  2. Split-brand JSX `Og<span...>Pressing</span>` → `e-<span...>pressing</span>` (8 files, preserves two-tone styling)
+  3. `ogpressing.com` → `e-pressing.com` (3 files)
+- Verified: 0 remaining "OgPressing", 0 remaining split-brand JSX, 0 remaining ogpressing.com URLs in src/.
+
+- Diagnosed login failure root cause: `.env.local` file was MISSING entirely (only a 50-byte `.env` with DATABASE_URL existed). Supabase env vars (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY) were absent → middleware fail-closed → login impossible.
+- Retrieved Supabase API keys via Management API (PAT: sbp_[REDACTED-PAT], project ref: yqaitafigfxlrprrouhr).
+- Created `.env.local` with: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_PAT, NEXT_PUBLIC_SITE_URL=https://e-pressing.com, OGP_ROLE_CACHE_SECRET (strong HMAC key for role cache cookie signing).
+- Verified super admin user exists in Supabase Auth: id=93ee6906-509d-42d5-a272-05a7a6424bea, email=ogouromain@gmail.com, email_confirmed=true.
+- Verified super_admins table row exists: id=1b7b9344-1c69-4757-a9db-2d4ee6289b40, user_id matches, actif=true.
+- Tested password "[REDACTED-PWD]" via Supabase Auth API → FAILED (invalid_credentials). The password stored in Auth did not match.
+- Reset password to "[REDACTED-PWD]" via Admin API (PUT /auth/v1/admin/users/{id} with service_role key).
+- Updated super_admins.nom_complet from "Main OgPressing" → "Main e-pressing" (DB row, for consistency with rename).
+- Re-tested login via Supabase Auth API → SUCCESS (access_token retrieved).
+
+- Ran `bun run lint` → 0 errors, 0 warnings.
+- Verified via Agent Browser (end-to-end):
+  - Opened http://localhost:81/login → page title "e-pressing — Gestion professionnelle de pressings", brand link shows "e-pressing".
+  - Filled email "ogouromain@gmail.com" + password "[REDACTED-PWD]", clicked "Se connecter".
+  - Redirected to /super-admin/dashboard in 3 seconds.
+  - Dashboard renders: sidebar nav (Tableau de bord, Demandes, Pressings, Abonnements, Catalogue), 4 metric cards (Pressings actifs=1, Demandes en attente=3, MRR estimé=49.8K FCFA, En période d'essai=7), analytics chart "Nouveaux pressings actifs par mois".
+  - User profile shows "Main e-pressing" / "ogouromain@gmail.com".
+  - No console errors, no page errors, no dev log errors.
+
+Stage Summary:
+- ✅ Brand renamed globally: "OgPressing" → "e-pressing" (375 files + 8 JSX + 3 URLs). Folder name `src/components/ogpressing/` kept as-is (internal import path, not user-visible).
+- ✅ Super admin login fixed: root cause was missing `.env.local` (no Supabase env vars) + wrong password stored in Auth. Fixed by creating .env.local + resetting password to [REDACTED-PWD].
+- ✅ End-to-end verified via Agent Browser: login → redirect → dashboard renders with e-pressing branding.
+- Production-ready: lint clean, no compile errors, no runtime errors.

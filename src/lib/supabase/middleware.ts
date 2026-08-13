@@ -1,5 +1,5 @@
 /**
- * OgPressing — Helper Supabase pour le Middleware Next.js
+ * e-pressing — Helper Supabase pour le Middleware Next.js
  * -------------------------------------------------------
  * Sert de factory : crée un client Supabase Server adapté au contexte
  * Middleware (cookies synchrones NextRequest/NextResponse) et expose une

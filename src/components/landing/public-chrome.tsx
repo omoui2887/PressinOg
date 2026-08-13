@@ -1,5 +1,5 @@
 /**
- * OgPressing — PublicChrome (LOT 17)
+ * e-pressing — PublicChrome (LOT 17)
  * ----------------------------------
  * Wrapper client qui décide d'afficher ou non le header/footer par défaut
  * du layout `(public)` selon la route courante.

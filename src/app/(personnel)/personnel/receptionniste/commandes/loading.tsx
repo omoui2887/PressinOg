@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de /personnel/receptionniste/commandes
+ * e-pressing — Loading state de /personnel/receptionniste/commandes
  * -----------------------------------------------------------------
  * Squelette affiché pendant le chargement de la liste des commandes
  * (vue réceptionniste).

@@ -1,5 +1,5 @@
 /**
- * OgPressing — PersonnelBottomNav (LOT 13)
+ * e-pressing — PersonnelBottomNav (LOT 13)
  * ----------------------------------------
  * Barre de navigation mobile pour l'espace Personnel. Adapte dynamiquement
  * ses items selon le rôle connecté (receptionniste, caissier, laveur, etc.).

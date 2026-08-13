@@ -1,5 +1,5 @@
 /**
- * OgPressing — POS / Caisse : store Zustand
+ * e-pressing — POS / Caisse : store Zustand
  * ==========================================
  * État léger du panier POS. Survit à l'ouverture d'une boîte de dialogue
  * (nouveau client, fiche client) et peut être restauré après une erreur

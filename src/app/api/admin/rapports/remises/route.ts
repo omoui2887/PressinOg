@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/rapports/remises (GET) — LOT 12.2
+ * e-pressing — API /api/admin/rapports/remises (GET) — LOT 12.2
  * --------------------------------------------------------------
  * Export .xlsx — Rapport Remises : commandes ayant bénéficié d'une remise.
  *

@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel → /personnel/{role}/dashboard
+ * e-pressing — /personnel → /personnel/{role}/dashboard
  * ------------------------------------------------------
  * Redirection racine du portail personnel : lit le rôle de l'utilisateur
  * connecté (via Supabase SSR) et le redirige vers son dashboard dédié.

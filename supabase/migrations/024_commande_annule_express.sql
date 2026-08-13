@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 024 : Annulation commande + express + idempotence
+-- e-pressing — Migration 024 : Annulation commande + express + idempotence
 -- ============================================================
 -- Fichier    : 024_commande_annule_express.sql
 -- Version    : 1.0

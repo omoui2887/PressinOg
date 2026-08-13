@@ -1,5 +1,5 @@
 /**
- * OgPressing — Client Supabase côté serveur
+ * e-pressing — Client Supabase côté serveur
  * -----------------------------------------
  * Pour Server Components, Route Handlers et Server Actions.
  * Lit/écrit la session JWT dans les cookies HTTP de la requête courante.

@@ -1,5 +1,5 @@
 /**
- * OgPressing — POS / Caisse : types partagés
+ * e-pressing — POS / Caisse : types partagés
  * ==========================================
  * Types de l'écran de prise de commande POS (Point de Vente).
  *

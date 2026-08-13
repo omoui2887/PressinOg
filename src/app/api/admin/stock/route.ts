@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/stock (GET + POST) — LOT 10.1
+ * e-pressing — API /api/admin/stock (GET + POST) — LOT 10.1
  * ----------------------------------------------------------
  *
  * GET — Liste des produits_stock du pressing connecté :

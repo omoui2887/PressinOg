@@ -1,5 +1,5 @@
 /**
- * OgPressing — Sidebar (générique standalone)
+ * e-pressing — Sidebar (générique standalone)
  * --------------------------------------------
  * Menu latéral réutilisable, visible uniquement sur desktop (caché sur mobile
  * où la BottomNav prend le relais). Affiche :
@@ -19,13 +19,13 @@
  *
  * Usage :
  *   <Sidebar
- *     brand={{ name: "OgPressing", logoUrl: null }}
+ *     brand={{ name: "e-pressing", logoUrl: null }}
  *     items={[{ label: "Dashboard", icon: Home, href: "/admin/dashboard" }]}
  *     user={{ nom: "Awa Koné", email: "awa@pressing.ci", roleLabel: "Manager" }}
  *     onLogout={() => signOut()}
  *   />
  *
- * Note : Dans OgPressing, le DashboardLayout (`components/ogpressing/dashboard-layout.tsx`)
+ * Note : Dans e-pressing, le DashboardLayout (`components/ogpressing/dashboard-layout.tsx`)
  * intègre directement sa propre sidebar. Ce composant standalone est fourni
  * pour les cas où l'on veut une sidebar SANS le DashboardLayout complet
  * (ex : page plein écran, iframe, etc.).

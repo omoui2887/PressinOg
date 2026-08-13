@@ -1,5 +1,5 @@
 /**
- * Barrel file — Composants décoratifs "Luxe Éditorial" OgPressing.
+ * Barrel file — Composants décoratifs "Luxe Éditorial" e-pressing.
  *
  * Implémentent les utilitaires CSS définis dans `src/app/globals.css` :
  * - `.aurora-bg`        → <AuroraBackground />

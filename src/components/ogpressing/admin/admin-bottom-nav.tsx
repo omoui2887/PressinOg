@@ -1,5 +1,5 @@
 /**
- * OgPressing — AdminBottomNav
+ * e-pressing — AdminBottomNav
  * ----------------------------
  * Barre de navigation mobile pour l'espace Admin pressing. 5 items
  * principaux + 1 bouton "Plus" (menu à 3 points) ouvrant une Sheet avec

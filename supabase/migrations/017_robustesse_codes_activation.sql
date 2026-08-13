@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 017 : Robustesse des codes d'activation
+-- e-pressing — Migration 017 : Robustesse des codes d'activation
 -- ============================================================
 -- Fichier    : 017_robustesse_codes_activation.sql
 -- Version    : 1.0
@@ -15,7 +15,7 @@
 --                    nécessaires à l'API route /api/public/activation pour
 --                    continuer la création du pressing.
 --
--- Contexte sécurité (AUDIT OgPressing — item 9.10) :
+-- Contexte sécurité (AUDIT e-pressing — item 9.10) :
 --   ---------------------------------------------------------------
 --   AVANT cette migration, la vérification du code d'activation
 --   reposait entièrement sur la logique applicative de l'API route
@@ -161,7 +161,7 @@ BEGIN
     -- -------------------------------------------------------
     IF v_code.utilise THEN
         RAISE EXCEPTION 'Ce code d''activation a déjà été utilisé. Chaque code est à usage unique.'
-            USING HINT = 'Contactez le Super Admin OgPressing pour obtenir un nouveau code.';
+            USING HINT = 'Contactez le Super Admin e-pressing pour obtenir un nouveau code.';
     END IF;
 
     -- -------------------------------------------------------
@@ -172,7 +172,7 @@ BEGIN
     IF v_code.date_expiration IS NOT NULL
        AND v_code.date_expiration < NOW() THEN
         RAISE EXCEPTION 'Ce code d''activation a expiré. Les codes sont valables 7 jours.'
-            USING HINT = 'Contactez le Super Admin OgPressing pour obtenir un nouveau code.';
+            USING HINT = 'Contactez le Super Admin e-pressing pour obtenir un nouveau code.';
     END IF;
 
     -- -------------------------------------------------------
@@ -196,7 +196,7 @@ BEGIN
         -- une transaction concurrente a fait l'UPDATE entre le SELECT
         -- et l'UPDATE. On rollback et on laisse l'appelant réessayer.
         RAISE EXCEPTION 'Code déjà utilisé par une transaction concurrente.'
-            USING HINT = 'Veuillez réessayer ; si l''erreur persiste, contactez OgPressing.';
+            USING HINT = 'Veuillez réessayer ; si l''erreur persiste, contactez e-pressing.';
     END IF;
 
     -- -------------------------------------------------------
@@ -219,7 +219,7 @@ $$;
 -- ou via pg_proc.comment dans PostgREST).
 -- ------------------------------------------------------------
 COMMENT ON FUNCTION public.activer_code(TEXT) IS
-    'Activation atomique d''un code d''activation (AUDIT OgPressing 9.10). '
+    'Activation atomique d''un code d''activation (AUDIT e-pressing 9.10). '
     'Vérifie en une seule transaction : (1) existence du code, (2) usage unique (utilise = false), '
     '(3) non-expiration (date_expiration >= NOW()). '
     'Locke la ligne (FOR UPDATE) puis UPDATE atomique avec double-check (WHERE utilise = false). '

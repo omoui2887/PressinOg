@@ -1,5 +1,5 @@
 /**
- * OgPressing — Client Supabase ADMIN (service_role)
+ * e-pressing — Client Supabase ADMIN (service_role)
  * -------------------------------------------------
  * ⚠️  DANGEREUX — À UTILISER AVEC UNE EXTRÊME PRÉCAUTION
  *

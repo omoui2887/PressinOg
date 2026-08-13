@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state du dashboard super-admin
+ * e-pressing — Loading state du dashboard super-admin
  *
  * AUDIT-C-06: skeleton cohérent avec les autres dashboards.
  */

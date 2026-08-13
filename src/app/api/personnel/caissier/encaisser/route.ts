@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/personnel/caissier/encaisser (POST) — CAIS-1
+ * e-pressing — API /api/personnel/caissier/encaisser (POST) — CAIS-1
  * ----------------------------------------------------------------
  * Enregistre un paiement sur une commande existante.
  *

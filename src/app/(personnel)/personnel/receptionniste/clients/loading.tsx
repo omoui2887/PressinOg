@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de /personnel/receptionniste/clients
+ * e-pressing — Loading state de /personnel/receptionniste/clients
  * ----------------------------------------------------------------
  * Squelette affiché pendant le chargement de la liste des clients
  * (vue réceptionniste). Reproduit la structure : header + filtres +

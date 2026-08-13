@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/comptable/dashboard (COMPTA-1)
+ * e-pressing — /personnel/comptable/dashboard (COMPTA-1)
  * ------------------------------------------------------
  * Tableau de bord financier du comptable :
  *   1. Header (titre "Tableau de bord" + sous-titre "Comptable")

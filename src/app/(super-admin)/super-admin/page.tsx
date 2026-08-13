@@ -1,5 +1,5 @@
 /**
- * OgPressing — Redirection /super-admin → /super-admin/dashboard
+ * e-pressing — Redirection /super-admin → /super-admin/dashboard
  * -------------------------------------------------------------
  * L'ancien placeholder est remplacé par une redirection vers le vrai
  * dashboard. Route : /super-admin

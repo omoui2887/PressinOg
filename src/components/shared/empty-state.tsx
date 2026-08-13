@@ -1,5 +1,5 @@
 /**
- * OgPressing — EmptyState
+ * e-pressing — EmptyState
  * ------------------------
  * Composant générique affiché quand une liste est vide (aucune commande,
  * aucun client, aucun employé, etc.).

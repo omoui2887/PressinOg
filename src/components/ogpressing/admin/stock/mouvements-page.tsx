@@ -1,5 +1,5 @@
 /**
- * OgPressing — MouvementsPage (client orchestrator) — LOT 10.2
+ * e-pressing — MouvementsPage (client orchestrator) — LOT 10.2
  * -------------------------------------------------------------
  * Page /admin/stock/mouvements : historique des mouvements de stock.
  *

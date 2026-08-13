@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/clients (GET)
+ * e-pressing — API /api/admin/clients (GET)
  * -----------------------------------------
  * Récupère la liste des clients du pressing connecté avec :
  *   - recherche instantanée par nom ou téléphone (param `q`)

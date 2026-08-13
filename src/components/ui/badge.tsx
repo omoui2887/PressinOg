@@ -5,7 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 /**
- * OgPressing — Badge (LOT 16 + Phase 2-a éditorial)
+ * e-pressing — Badge (LOT 16 + Phase 2-a éditorial)
  * ==================================================
  *
  * Variantes Phase 2-a "Luxe Éditorial" (opt-in, backward-compatible) :

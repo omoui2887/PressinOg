@@ -1,5 +1,5 @@
 /**
- * OgPressing — PersonnelList
+ * e-pressing — PersonnelList
  * ---------------------------
  * Affiche la liste des employés du pressing sous forme de :
  *   - viewMode="list" (défaut) : Tableau sur desktop (md+) + Cards empilées sur mobile

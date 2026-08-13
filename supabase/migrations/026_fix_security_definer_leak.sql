@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 026 : Hardening SECURITY DEFINER (Phase 4 #11)
+-- e-pressing — Migration 026 : Hardening SECURITY DEFINER (Phase 4 #11)
 -- ============================================================
 -- Fichier    : 026_fix_security_definer_leak.sql
 -- Version    : 1.0

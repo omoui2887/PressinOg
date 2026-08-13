@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 030 : Modes paiement caissier (Phase 4 #13)
+-- e-pressing — Migration 030 : Modes paiement caissier (Phase 4 #13)
 -- ============================================================
 -- Fichier    : 030_modes_paiement_caissier.sql
 -- Version    : 1.0

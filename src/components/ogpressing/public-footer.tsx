@@ -1,8 +1,8 @@
 /**
- * OgPressing — Footer public (Stitch design)
+ * e-pressing — Footer public (Stitch design)
  * ------------------------------------------
  * Footer sombre (`bg-foreground`) en 3 colonnes :
- *   1. Brand + tagline ("OgPressing")
+ *   1. Brand + tagline ("e-pressing")
  *   2. Liens Utiles (titre vert `text-secondary`)
  *   3. Nous contacter (titre vert `text-secondary`)
  *
@@ -33,7 +33,7 @@ export function PublicFooter() {
                 <ShoppingBag className="size-5" aria-hidden />
               </span>
               <span className="text-background">
-                Og<span className="text-primary">Pressing</span>
+                e-<span className="text-primary">pressing</span>
               </span>
             </a>
             <p className="mt-4 max-w-sm text-sm text-background/70">
@@ -95,7 +95,7 @@ export function PublicFooter() {
         {/* ---------- Copyright centré ---------- */}
         <div className="mt-10 border-t border-background/10 pt-6 text-center">
           <p className="text-xs text-background/60">
-            © {new Date().getFullYear()} OgPressing — Côte d&apos;Ivoire. Tous droits réservés.
+            © {new Date().getFullYear()} e-pressing — Côte d&apos;Ivoire. Tous droits réservés.
           </p>
         </div>
       </div>

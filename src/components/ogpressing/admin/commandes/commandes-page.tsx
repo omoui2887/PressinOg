@@ -1,5 +1,5 @@
 /**
- * OgPressing — CommandesPage (client orchestrator, LOT 7.6)
+ * e-pressing — CommandesPage (client orchestrator, LOT 7.6)
  * ----------------------------------------------------------
  * Page /admin/commandes : liste des commandes du pressing connecté avec
  * recherche texte (numero_commande OU nom du client), filtres par statut

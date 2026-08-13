@@ -1,5 +1,5 @@
 /**
- * OgPressing — DemandeDetailsSheet
+ * e-pressing — DemandeDetailsSheet
  * ---------------------------------
  * Sheet (panneau latéral droit) affichant toutes les informations d'une
  * demande d'inscription, avec actions :
@@ -166,7 +166,7 @@ export function DemandeDetailsSheet({
   const tel = demande.telephone;
   const waContactUrl = buildWhatsAppUrl(
     tel,
-    `Bonjour ${demande.nom_gerant}, je vous contacte concernant votre demande d'inscription OgPressing pour le pressing "${demande.nom_pressing}".`
+    `Bonjour ${demande.nom_gerant}, je vous contacte concernant votre demande d'inscription e-pressing pour le pressing "${demande.nom_pressing}".`
   );
 
   /* ---------------- Mutations ---------------- */

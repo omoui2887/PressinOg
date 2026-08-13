@@ -1,5 +1,5 @@
 /**
- * OgPressing — CreateEmployeeDialog (LOT 9.2)
+ * e-pressing — CreateEmployeeDialog (LOT 9.2)
  * --------------------------------------------
  * Dialog de création d'un compte employé avec 2 méthodes :
  *
@@ -250,7 +250,7 @@ export function CreateEmployeeDialog({
   /* ---- Copier les identifiants ---- */
   function copyCredentials() {
     if (!credentials) return;
-    const text = `Identifiants OgPressing\nEmail: ${credentials.email}\nMot de passe: ${credentials.password}`;
+    const text = `Identifiants e-pressing\nEmail: ${credentials.email}\nMot de passe: ${credentials.password}`;
     navigator.clipboard.writeText(text).then(
       () => toast.success("Identifiants copiés"),
       () => toast.error("Impossible de copier")
@@ -265,7 +265,7 @@ export function CreateEmployeeDialog({
     const waPhone = phoneDigits.startsWith("0")
       ? "225" + phoneDigits.slice(1)
       : phoneDigits;
-    const message = `Bonjour ${credentials.nom_complet}, voici vos identifiants de connexion OgPressing :\n\nEmail: ${credentials.email}\nMot de passe: ${credentials.password}\n\nConnectez-vous sur l'application et changez votre mot de passe à la première connexion.`;
+    const message = `Bonjour ${credentials.nom_complet}, voici vos identifiants de connexion e-pressing :\n\nEmail: ${credentials.email}\nMot de passe: ${credentials.password}\n\nConnectez-vous sur l'application et changez votre mot de passe à la première connexion.`;
     return `https://wa.me/${waPhone}?text=${encodeURIComponent(message)}`;
   }
 

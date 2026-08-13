@@ -1,5 +1,5 @@
 /**
- * OgPressing — ClientsImpayesSection (LOT 12.1)
+ * e-pressing — ClientsImpayesSection (LOT 12.1)
  * -----------------------------------------------
  * Section "Clients avec impayés" de la page /admin/rapports.
  *

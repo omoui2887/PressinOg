@@ -1,5 +1,5 @@
 /**
- * OgPressing — Helpers partagés pour la page Catalogue (LOT 15.4)
+ * e-pressing — Helpers partagés pour la page Catalogue (LOT 15.4)
  * ---------------------------------------------------------------
  * Fournit :
  *   - Le type `CatalogueArticle` (re-exporté depuis `@/lib/catalogue/catalogue-articles`

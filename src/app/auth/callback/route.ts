@@ -1,5 +1,5 @@
 /**
- * OgPressing — Route /auth/callback (échange du code PKCE Supabase)
+ * e-pressing — Route /auth/callback (échange du code PKCE Supabase)
  * -----------------------------------------------------------------
  *
  * Route publique appelée par Supabase Auth lorsqu'un utilisateur clique sur
@@ -16,7 +16,7 @@
  *   2. L'API appelle `supabase.auth.admin.inviteUserByEmail(email, { redirectTo })`
  *      avec `redirectTo = ${SITE_URL}/auth/callback?next=/personnel/changer-mot-de-passe`
  *   3. Supabase envoie un email contenant un lien de la forme :
- *        https://app.ogpressing.com/auth/callback?code=<PKCE>&next=/personnel/changer-mot-de-passe
+ *        https://app.e-pressing.com/auth/callback?code=<PKCE>&next=/personnel/changer-mot-de-passe
  *   4. L'employé clique → GET /auth/callback?code=...&next=...
  *   5. Cette route échange `code` contre une session → cookie httpOnly posé
  *   6. Redirect vers `next` (/personnel/changer-mot-de-passe)

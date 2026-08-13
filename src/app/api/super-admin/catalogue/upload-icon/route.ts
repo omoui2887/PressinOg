@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/super-admin/catalogue/upload-icon (POST)
+ * e-pressing — API /api/super-admin/catalogue/upload-icon (POST)
  * --------------------------------------------------------------
  * LOT 15.4 — Upload d'une illustration d'article côté serveur.
  *

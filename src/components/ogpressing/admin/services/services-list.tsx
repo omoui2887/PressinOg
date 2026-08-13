@@ -1,5 +1,5 @@
 /**
- * OgPressing — ServicesList (LOT 11.1)
+ * e-pressing — ServicesList (LOT 11.1)
  * -------------------------------------
  * Liste des services.
  *

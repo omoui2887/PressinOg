@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de la page /activation
+ * e-pressing — Loading state de la page /activation
  *
  * AUDIT-C-06: skeleton cohérent avec le stepper d'activation.
  */

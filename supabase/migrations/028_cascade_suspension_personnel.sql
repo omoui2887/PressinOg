@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 028 : Cascade désactivation personnel (AUDIT-B-10)
+-- e-pressing — Migration 028 : Cascade désactivation personnel (AUDIT-B-10)
 -- ============================================================
 -- Fichier    : 028_cascade_suspension_personnel.sql
 -- Version    : 1.0

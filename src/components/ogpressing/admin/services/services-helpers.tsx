@@ -1,5 +1,5 @@
 /**
- * OgPressing — Helpers partagés pour le module Services (LOT 11.1)
+ * e-pressing — Helpers partagés pour le module Services (LOT 11.1)
  * ----------------------------------------------------------------
  * Constantes (types de service + icônes illustratives), formatage
  * (FCFA via @/lib/utils/format), et types partagés entre services-page /

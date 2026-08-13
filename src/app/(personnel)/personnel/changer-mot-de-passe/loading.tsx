@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de /personnel/changer-mot-de-passe
+ * e-pressing — Loading state de /personnel/changer-mot-de-passe
  * ------------------------------------------------------------
  * Squelette affiché pendant le chargement de la page changement de
  * mot de passe. Reproduit la structure : header + card formulaire

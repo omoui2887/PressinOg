@@ -1,5 +1,5 @@
 /**
- * OgPressing — Section Témoignages (Stitch design)
+ * e-pressing — Section Témoignages (Stitch design)
  * ------------------------------------------------
  * 2 cartes de témoignages clients (Côte d'Ivoire).
  *
@@ -24,7 +24,7 @@ interface Testimonial {
 const TESTIMONIALS: Testimonial[] = [
   {
     quote:
-      "Depuis que nous utilisons OgPressing, nous avons réduit les pertes de vêtements de 100%. Nos clients adorent recevoir un SMS quand leur commande est prête.",
+      "Depuis que nous utilisons e-pressing, nous avons réduit les pertes de vêtements de 100%. Nos clients adorent recevoir un SMS quand leur commande est prête.",
     author: "Pressing Excellence",
     location: "Abidjan, Cocody",
   },
@@ -42,7 +42,7 @@ export function TestimonialsSection() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <Reveal className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-            Ils digitalisent leur pressing avec OgPressing
+            Ils digitalisent leur pressing avec e-pressing
           </h2>
           <p className="mt-4 text-lg text-muted-foreground">
             Des gérants de pressings ivoiriens qui gagnent du temps au quotidien.

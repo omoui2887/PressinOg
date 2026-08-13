@@ -1,5 +1,5 @@
 /**
- * OgPressing — /admin/stock/mouvements (LOT 10.2)
+ * e-pressing — /admin/stock/mouvements (LOT 10.2)
  * ------------------------------------------------
  * Historique des mouvements de stock du pressing :
  *   - Liste triée par date décroissante

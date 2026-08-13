@@ -1,5 +1,5 @@
 /**
- * OgPressing — Configuration navigation Personnel (LOT 13)
+ * e-pressing — Configuration navigation Personnel (LOT 13)
  * --------------------------------------------------------
  * Centralise la navigation (sidebar desktop + bottom nav mobile) pour les
  * 7 rôles du personnel. Chaque rôle a un périmètre strict (matrice de

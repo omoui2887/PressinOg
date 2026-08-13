@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/super-admin/abonnements/[id]/justificatif-url (GET)
+ * e-pressing — API /api/super-admin/abonnements/[id]/justificatif-url (GET)
  * ----------------------------------------------------------------------
  * Génère une signed URL temporaire (1 heure) pour télécharger le
  * justificatif de paiement associé à un abonnement.

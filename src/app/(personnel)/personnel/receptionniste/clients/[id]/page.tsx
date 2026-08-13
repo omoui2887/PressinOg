@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/receptionniste/clients/{id} (REC-1)
+ * e-pressing — /personnel/receptionniste/clients/{id} (REC-1)
  * -----------------------------------------------------------
  * Page de détail d'un client — variante "réceptionniste" de la page
  * admin /admin/clients/{id}.

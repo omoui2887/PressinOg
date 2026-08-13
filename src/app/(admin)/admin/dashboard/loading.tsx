@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state du dashboard admin
+ * e-pressing — Loading state du dashboard admin
  * ----------------------------------------------
  * Squelette de la page /admin/dashboard affiché pendant que le server
  * component récupère les KPIs, commandes récentes, alertes stock et clients

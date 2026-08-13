@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/manager/scanner-qr (MGR-1)
+ * e-pressing — /personnel/manager/scanner-qr (MGR-1)
  * -------------------------------------------------
  * Page "Scanner QR" du manager — copie adaptée du scanner réceptionniste.
  *

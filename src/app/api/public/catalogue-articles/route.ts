@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/public/catalogue-articles (GET)
+ * e-pressing — API /api/public/catalogue-articles (GET)
  * -----------------------------------------------------
  * LOT 15.1 + 15.2 — Catalogue global d'articles illustré.
  *

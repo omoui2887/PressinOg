@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de la liste des services (P4-F / AUDIT-C-06).
+ * e-pressing — Loading state de la liste des services (P4-F / AUDIT-C-06).
  * --------------------------------------------------------------------------
  * Squelette de la page /admin/services affiché pendant que le Client
  * Component `ServicesPage` charge son bundle et récupère la liste des

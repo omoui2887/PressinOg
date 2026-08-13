@@ -1,5 +1,5 @@
 /**
- * OgPressing — Helpers partagés pour la page Tarifs par article (LOT 16)
+ * e-pressing — Helpers partagés pour la page Tarifs par article (LOT 16)
  * --------------------------------------------------------------------
  * Centralise :
  *   - L'enum TYPES_SERVICES (5 valeurs) avec icône Lucide + label français

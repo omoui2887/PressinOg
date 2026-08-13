@@ -1,5 +1,5 @@
 /**
- * OgPressing — <PlanUpgradeBanner> (PRD §16)
+ * e-pressing — <PlanUpgradeBanner> (PRD §16)
  * ------------------------------------------
  * Bannière d'information affichée quand une feature n'est pas disponible
  * dans le plan courant (Starter). N'empêche PAS la navigation : l'utilisateur
@@ -51,7 +51,7 @@ export function PlanUpgradeBanner({
             </p>
             <p className="text-xs text-muted-foreground">
               Votre abonnement Starter ne donne pas accès à {featureLabel}.
-              Contactez le support OgPressing pour passer au plan Pro ou
+              Contactez le support e-pressing pour passer au plan Pro ou
               Business et activer cette fonctionnalité.
             </p>
           </div>

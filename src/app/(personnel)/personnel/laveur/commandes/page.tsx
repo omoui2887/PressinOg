@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/laveur/commandes (LAV-1)
+ * e-pressing — /personnel/laveur/commandes (LAV-1)
  * --------------------------------------------------
  * Liste des commandes assignées au laveur (toutes les commandes du pressing
  * ayant potentiellement des articles à laver).

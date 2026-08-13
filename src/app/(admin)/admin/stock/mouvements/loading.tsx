@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state de la liste des mouvements de stock.
+ * e-pressing — Loading state de la liste des mouvements de stock.
  * --------------------------------------------------------------------------
  * Squelette de la page /admin/stock/mouvements affiché pendant que le
  * Server Component charge le bundle + récupère la 1re page de mouvements

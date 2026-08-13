@@ -1,5 +1,5 @@
 /**
- * OgPressing — Loading state du détail commande
+ * e-pressing — Loading state du détail commande
  * /personnel/repassage/commandes/[id]
  * ------------------------------------
  * Squelette affiché pendant que le Server Component résout

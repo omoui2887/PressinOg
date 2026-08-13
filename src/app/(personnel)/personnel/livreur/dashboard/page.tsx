@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/livreur/dashboard (LIV-1)
+ * e-pressing — /personnel/livreur/dashboard (LIV-1)
  * -------------------------------------------------
  * Tableau de bord du livreur :
  *   1. Header (titre "Tableau de bord" + sous-titre "Livreur")

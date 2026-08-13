@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * OgPressing — <RapportExportButton> ( LOT 12.2 + 12.3 )
+ * e-pressing — <RapportExportButton> ( LOT 12.2 + 12.3 )
  * --------------------------------------------------------
  * Bouton générique d'export .xlsx pour les 10 rapports du module Rapports.
  *

@@ -1,5 +1,5 @@
 /**
- * OgPressing — MouvementsList (LOT 10.2)
+ * e-pressing — MouvementsList (LOT 10.2)
  * ---------------------------------------
  * Liste des mouvements de stock.
  *

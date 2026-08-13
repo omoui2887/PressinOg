@@ -1,5 +1,5 @@
 /**
- * OgPressing — LOT 16 — Variantes Framer Motion réutilisables
+ * e-pressing — LOT 16 — Variantes Framer Motion réutilisables
  * =============================================================
  *
  * Bibliothèque centralisée de variantes d'animation pour Framer Motion.

@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/receptionniste/commandes/{id} (REC-1)
+ * e-pressing — /personnel/receptionniste/commandes/{id} (REC-1)
  * ------------------------------------------------------------
  * Page de détail d'une commande — variante "réceptionniste" de la page
  * admin /admin/commandes/{id}.

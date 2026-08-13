@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 
 /**
- * OgPressing — Error Boundary globale
+ * e-pressing — Error Boundary globale
  * ------------------------------------
  * Client Component obligatoire (Next.js error boundary).
  *
@@ -35,7 +35,7 @@ interface ErrorBoundaryProps {
 export default function GlobalError({ error, reset }: ErrorBoundaryProps) {
   useEffect(() => {
     // Log dev-only : ne jamais remonter le détail côté UI.
-    console.error("[OgPressing] Erreur non gérée :", error?.message ?? error, {
+    console.error("[e-pressing] Erreur non gérée :", error?.message ?? error, {
       digest: error?.digest,
     });
   }, [error]);

@@ -1,5 +1,5 @@
 /**
- * OgPressing — /admin/commandes/{id} (Server Component, LOT 7.6)
+ * e-pressing — /admin/commandes/{id} (Server Component, LOT 7.6)
  * ---------------------------------------------------------------
  * Page de détail d'une commande : informations complètes, client, finances,
  * articles (avec édition inline du statut), paiements, notes, boutons

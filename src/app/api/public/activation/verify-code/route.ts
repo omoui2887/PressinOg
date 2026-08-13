@@ -1,5 +1,5 @@
 /**
- * OgPressing — API publique : Vérification préalable d'un code d'activation
+ * e-pressing — API publique : Vérification préalable d'un code d'activation
  * -----------------------------------------------------------------------
  * POST /api/public/activation/verify-code
  *
@@ -22,7 +22,7 @@
  *   200 { success: true,  data: { code_id: string, plan: "starter"|"pro"|"business" } }
  *   400 { success: false, error: "Ce code n'est pas valide ou a expiré, contactez le +225 05 76 10 32 77 par WhatsApp" }
  *   400 { success: false, error: "Ce code a déjà été utilisé. Chaque code est à usage unique." }
- *   400 { success: false, error: "Ce code a expiré. Les codes sont valables 7 jours. Contactez OgPressing pour un nouveau code." }
+ *   400 { success: false, error: "Ce code a expiré. Les codes sont valables 7 jours. Contactez e-pressing pour un nouveau code." }
  *   400 { success: false, error: "Le code d'activation doit être au format PRS-XXXX-XXXX." }
  *   500 { success: false, error: "Erreur lors de la vérification du code." }
  */
@@ -42,7 +42,7 @@ const MSG_INVALIDE =
 const MSG_DEJA_UTILISE =
   "Ce code a déjà été utilisé. Chaque code est à usage unique.";
 const MSG_EXPIRE =
-  "Ce code a expiré. Les codes sont valables 7 jours. Contactez OgPressing pour un nouveau code.";
+  "Ce code a expiré. Les codes sont valables 7 jours. Contactez e-pressing pour un nouveau code.";
 const MSG_FORMAT =
   "Le code d'activation doit être au format PRS-XXXX-XXXX.";
 

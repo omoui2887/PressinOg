@@ -1,5 +1,5 @@
 /**
- * OgPressing — POS / Caisse : données fictives (démo)
+ * e-pressing — POS / Caisse : données fictives (démo)
  * ===================================================
  * Données de démonstration isolées, correspondant fidèlement à l'interface
  * de référence (catalogue de 6 prestations + 3 lignes de panier + clients).

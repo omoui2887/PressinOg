@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 003 : Contraintes métier (UNIQUE + CHECK)
+-- e-pressing — Migration 003 : Contraintes métier (UNIQUE + CHECK)
 -- ============================================================
 -- Fichier    : 003_constraints.sql
 -- Version    : 1.0

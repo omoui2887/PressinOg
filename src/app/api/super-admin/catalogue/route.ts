@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/super-admin/catalogue (GET + POST)
+ * e-pressing — API /api/super-admin/catalogue (GET + POST)
  * --------------------------------------------------------
  * LOT 15.4 — Gestion du catalogue global d'articles par le Super Admin.
  *

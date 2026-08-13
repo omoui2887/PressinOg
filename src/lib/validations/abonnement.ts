@@ -1,5 +1,5 @@
 /**
- * OgPressing — Schémas Zod pour /api/super-admin/abonnements (AUDIT #9).
+ * e-pressing — Schémas Zod pour /api/super-admin/abonnements (AUDIT #9).
  * --------------------------------------------------------------------------
  * Validation défense-en-profondeur pour les routes :
  *   - POST /api/super-admin/abonnements/[id]/renouveler

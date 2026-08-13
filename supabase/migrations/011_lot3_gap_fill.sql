@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 011 : Gap-fill LOT 3 (Authentification)
+-- e-pressing — Migration 011 : Gap-fill LOT 3 (Authentification)
 -- ============================================================
 -- Fichier    : 011_lot3_gap_fill.sql
 -- Version    : 1.0

@@ -1,5 +1,5 @@
 /**
- * <PosCaisse /> — Orchestrateur de l'écran POS / Caisse OgPressing.
+ * <PosCaisse /> — Orchestrateur de l'écran POS / Caisse e-pressing.
  * ================================================================
  * Assemble les 13 composants POS selon la structure de l'interface de
  * référence (catalogue à gauche, commande à droite, en-tête + boutons).
@@ -12,7 +12,7 @@
  * - Validation anti double-clic (loading + désactivation).
  * - Confirmation de succès avec numéro de commande + impression étiquettes.
  *
- * Adapté à l'application OgPressing : POST /api/admin/commandes (Supabase,
+ * Adapté à l'application e-pressing : POST /api/admin/commandes (Supabase,
  * RLS multi-tenant). Aucun paiement en ligne — uniquement déclaratif.
  */
 "use client";

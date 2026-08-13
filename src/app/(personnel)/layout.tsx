@@ -1,5 +1,5 @@
 /**
- * OgPressing — Layout racine des pages PERSONNEL (LOT 13)
+ * e-pressing — Layout racine des pages PERSONNEL (LOT 13)
  * -------------------------------------------------------
  * Route group `(personnel)` → dashboards des 7 rôles :
  *   - Manager (UX "admin allégé" sur /personnel/manager/*)

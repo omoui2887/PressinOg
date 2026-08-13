@@ -1,5 +1,5 @@
 /**
- * OgPressing — WorkflowStagesCard (CASIER-FIX-V1)
+ * e-pressing — WorkflowStagesCard (CASIER-FIX-V1)
  * -------------------------------------------------
  * Carte partagée affichant les articles d'une commande (ou d'un ensemble de
  * commandes) groupés par macro-étape du workflow de traitement :

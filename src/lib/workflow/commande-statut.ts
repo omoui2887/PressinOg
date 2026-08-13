@@ -1,5 +1,5 @@
 /**
- * OgPressing — Machine à états centralisée du workflow des commandes
+ * e-pressing — Machine à états centralisée du workflow des commandes
  * -------------------------------------------------------------------
  * WORKFLOW-FIX-V1 — Source unique de vérité pour :
  *   - Les statuts possibles d'une commande et d'un article (enum SQL)

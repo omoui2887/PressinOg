@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/casiers (GET)
+ * e-pressing — API /api/admin/casiers (GET)
  * --------------------------------------------------
  * Liste les casiers de stockage pour linges propres du pressing connecté.
  *

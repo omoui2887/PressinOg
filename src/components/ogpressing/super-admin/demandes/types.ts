@@ -1,5 +1,5 @@
 /**
- * OgPressing — Types partagés pour la page /super-admin/demandes
+ * e-pressing — Types partagés pour la page /super-admin/demandes
  * --------------------------------------------------------------
  * Définit les types des demandes d'inscription tels que retournés par
  * l'API `/api/super-admin/demandes` (GET), ainsi que les libellés et helpers
@@ -137,5 +137,5 @@ export function buildWhatsAppUrl(phone: string, message: string): string {
  * Construit le message WhatsApp par défaut pour l'envoi d'un code d'activation.
  */
 export function buildCodeWhatsAppMessage(code: string): string {
-  return `Bonjour, votre code d'activation OgPressing est : ${code}. Il expirera dans 7 jours. Rendez-vous sur https://ogpressing.com/activation pour activer votre compte.`;
+  return `Bonjour, votre code d'activation e-pressing est : ${code}. Il expirera dans 7 jours. Rendez-vous sur https://e-pressing.com/activation pour activer votre compte.`;
 }

@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 019 : Champs dédiés aux caissiers
+-- e-pressing — Migration 019 : Champs dédiés aux caissiers
 -- ============================================================
 -- Fichier    : 019_champs_caissier.sql
 -- Version    : 1.0

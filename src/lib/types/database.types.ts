@@ -1,7 +1,7 @@
 /**
- * OgPressing — Types Supabase (database.types.ts)
+ * e-pressing — Types Supabase (database.types.ts)
  * ------------------------------------------------
- * Types TypeScript du schéma de base de données OgPressing, dérivés des
+ * Types TypeScript du schéma de base de données e-pressing, dérivés des
  * migrations SQL du dossier /supabase/migrations/ (001 → 009).
  *
  * ⚠️ Ce fichier reflète le schéma APPLIQUÉ sur Supabase. Pour le regénérer

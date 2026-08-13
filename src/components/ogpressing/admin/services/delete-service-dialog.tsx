@@ -1,5 +1,5 @@
 /**
- * OgPressing — DeleteServiceDialog (LOT 11.1+)
+ * e-pressing — DeleteServiceDialog (LOT 11.1+)
  * --------------------------------------------
  * Dialogue de confirmation avant suppression définitive d'un service.
  *

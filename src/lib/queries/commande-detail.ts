@@ -1,5 +1,5 @@
 /**
- * OgPressing — Requête partagée pour le détail d'une commande
+ * e-pressing — Requête partagée pour le détail d'une commande
  * ============================================================
  * Utilisée par les 3 pages Server Component :
  *   - /(admin)/admin/commandes/[id]

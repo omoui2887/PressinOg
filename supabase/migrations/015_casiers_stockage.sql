@@ -1,5 +1,5 @@
 -- ============================================================
--- OgPressing — Migration 015 : Casiers de stockage pour linges propres
+-- e-pressing — Migration 015 : Casiers de stockage pour linges propres
 -- ============================================================
 -- Fichier    : 015_casiers_stockage.sql
 -- Version    : 1.0

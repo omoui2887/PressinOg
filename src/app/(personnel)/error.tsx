@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * OgPressing — Error Boundary du route group (personnel)
+ * e-pressing — Error Boundary du route group (personnel)
  * -------------------------------------------------------
  * AUDIT-C-05 — Une error boundary par route group pour isoler les erreurs
  * de rendering côté /personnel/* (réceptionniste, caissier, laveur, etc.).
@@ -59,7 +59,7 @@ export default function PersonnelError({
           <CardDescription className="mt-2 text-base text-muted-foreground">
             Une erreur inattendue s&rsquo;est produite dans votre espace
             personnel. Veuillez réessayer. Si le problème persiste, contactez
-            votre manager ou le support OgPressing.
+            votre manager ou le support e-pressing.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2 sm:flex-row sm:justify-center">

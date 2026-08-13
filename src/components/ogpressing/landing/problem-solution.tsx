@@ -1,5 +1,5 @@
 /**
- * OgPressing — Section Problème / Solution (Stitch design)
+ * e-pressing — Section Problème / Solution (Stitch design)
  * --------------------------------------------------------
  * Deux cartes côte-à-côte :
  *   - "Avant : Le chaos manuel"  (carte blanche, icône rouge X, image grisée)

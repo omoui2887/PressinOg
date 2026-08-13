@@ -1,5 +1,5 @@
 /**
- * OgPressing — API /api/admin/stock/[id]/fds-url (GET)
+ * e-pressing — API /api/admin/stock/[id]/fds-url (GET)
  * -----------------------------------------------------
  * Génère une signed URL temporaire (1 heure) pour télécharger la Fiche
  * de Données de Sécurité (FDS) d'un produit_stock.

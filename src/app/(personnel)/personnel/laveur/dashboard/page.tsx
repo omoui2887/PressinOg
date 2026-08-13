@@ -1,5 +1,5 @@
 /**
- * OgPressing — /personnel/laveur/dashboard (LAV-1)
+ * e-pressing — /personnel/laveur/dashboard (LAV-1)
  * --------------------------------------------------
  * Tableau de bord du laveur :
  *   1. Header (titre "Tableau de bord" + sous-titre "Laveur")

@@ -1,5 +1,5 @@
 /**
- * OgPressing — Section Inscription (LOT 17 — Section G)
+ * e-pressing — Section Inscription (LOT 17 — Section G)
  * -----------------------------------------------------
  * Wrapper qui réutilise le composant InscriptionForm existant
  * (react-hook-form + zod + 11 champs) en l'entourant d'un conteneur
@@ -117,7 +117,7 @@ export function InscriptionSection() {
       id="inscription"
       ref={rootRef}
       className="landing-section relative scroll-mt-24 bg-landing-primary-deep"
-      aria-label="Inscription OgPressing"
+      aria-label="Inscription e-pressing"
     >
       {/* Halo décoratif */}
       <div

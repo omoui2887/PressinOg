@@ -1,5 +1,5 @@
 /**
- * OgPressing — Helpers de typage pour Supabase (AUDIT-C-02).
+ * e-pressing — Helpers de typage pour Supabase (AUDIT-C-02).
  * --------------------------------------------------------------------------
  * Problème : supabase-js (PostgREST TypeScript client) infère les relations
  * comme des TABLEAUX dans les réponses `.select("*, relation(*)")`, même pour

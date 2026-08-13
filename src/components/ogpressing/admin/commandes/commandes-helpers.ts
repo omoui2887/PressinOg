@@ -1,5 +1,5 @@
 /**
- * OgPressing — Helpers d'affichage pour la liste / détail des commandes (LOT 7.6)
+ * e-pressing — Helpers d'affichage pour la liste / détail des commandes (LOT 7.6)
  * -----------------------------------------------------------------------------
  * Centralise :
  *   - Les types TypeScript pour les réponses API `/api/admin/commandes`

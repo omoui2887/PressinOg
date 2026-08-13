@@ -1,5 +1,5 @@
 /**
- * OgPressing — PressingsTable
+ * e-pressing — PressingsTable
  * -----------------------------
  * Affiche la liste des pressings (Super Admin) sous forme de :
  *   - Tableau sur desktop (md+) : Nom, Ville, Plan actuel, Statut,
