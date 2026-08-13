@@ -167,14 +167,17 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
     []
   );
 
-  // ---------- Choix d'une action dans le dialogue ----------
-  // Ajoute la variante sélectionnée (article × service spécifique) au panier
-  // et ferme le dialogue. Le store deduplique par article.id (clé composite
-  // `${service_id}::${slug}`), donc cliquer 2× sur la même action incrémente
-  // la quantité de la ligne existante.
-  const handlePickAction = useCallback(
-    (variant: PosArticle) => {
-      s.addArticle(variant);
+  // ---------- Confirmation des actions dans le dialogue (cases à cocher) ---
+  // L'utilisateur peut cocher plusieurs services d'un coup (ex : Lavage +
+  // Repassage pour un même article). On ajoute toutes les variantes cochées
+  // au panier, puis on ferme le dialogue. Le store deduplique par article.id
+  // (clé composite `${service_id}::${slug}`), donc ajouter 2× la même action
+  // incrémente la quantité de la ligne existante.
+  const handleConfirmActions = useCallback(
+    (selectedVariants: PosArticle[]) => {
+      for (const variant of selectedVariants) {
+        s.addArticle(variant);
+      }
       setActionsDialogOpen(false);
     },
     [s]
@@ -760,7 +763,7 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
         article={actionsDialogArticle}
         variants={actionsDialogVariants}
         open={actionsDialogOpen}
-        onPick={handlePickAction}
+        onConfirm={handleConfirmActions}
         onClose={() => setActionsDialogOpen(false)}
       />
     </div>
