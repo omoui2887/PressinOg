@@ -137,9 +137,9 @@ BEGIN
   ) THEN
     -- Schedule le job (idempotent : cron.schedule avec un nom existant
     -- remplace le job précédent). Toutes les 15 minutes.
-    -- NB : on utilise un tag $do$ pour le bloc externe afin d'éviter
-    --      la collision avec le $$...$$ interne (sinon PostgreSQL
-    --      termine le bloc DO prématurément au premier $$ rencontré).
+    -- NB : le bloc DO externe utilise un tag nommé (pas $$) afin d'éviter
+    --      la collision avec la chaine $$...$$ interne du cron.schedule,
+    --      sinon PostgreSQL terminerait le bloc DO au premier $$ rencontré.
     PERFORM cron.schedule(
       'sync-abonnements-expiration',
       '*/15 * * * *',
