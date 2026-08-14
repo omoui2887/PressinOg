@@ -140,3 +140,54 @@ export const CAN_VIEW_RAPPORTS: PersonnelRole[] = [
   "comptable",
   "receptionniste",
 ];
+
+/* -------------------------------------------------------------------------- */
+/*  AUTORISATIONS REMISES (moteur financier atomique — migration 036)         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Rôles autorisés à appliquer une remise commerciale (pourcentage ou
+ * montant_fixe). Le caissier ne peut PAS appliquer de remise — il ne fait
+ * qu'encaisser. Le manager et le réceptionniste peuvent accorder une
+ * remise commerciale dans la limite du seuil configuré
+ * (pressing_remise_config.remise_pourcentage_max, défaut 50%).
+ */
+export const CAN_APPLIQUER_REMISE_COMMERCIALE: PersonnelRole[] = [
+  "manager",
+  "receptionniste",
+];
+
+/**
+ * Rôles autorisés à appliquer une remise article gratuit (Xème article offert).
+ * Même matrice que la remise commerciale : manager + réceptionniste.
+ */
+export const CAN_APPLIQUER_REMISE_ARTICLE_GRATUIT: PersonnelRole[] = [
+  "manager",
+  "receptionniste",
+];
+
+/**
+ * Rôles autorisés à appliquer une remise fidélité automatique.
+ * La remise fidélité est calculée côté serveur (calculer_remise_fidelite_auto)
+ * à partir des points du client — l'utilisateur ne choisit pas la valeur.
+ * Tout rôle pouvant créer une commande peut activer la remise fidélité
+ * (le % est déterminé par le palier du client, pas par l'opérateur).
+ */
+export const CAN_APPLIQUER_REMISE_FIDELITE: PersonnelRole[] = [
+  ...CAN_CREATE_COMMANDES,
+];
+
+/**
+ * Rôles autorisés à appliquer une remise EXCEPTIONNELLE (au-delà du seuil
+ * `remise_seuil_exceptionnel`, défaut 20%). Seul le manager peut.
+ * Le réceptionniste est limité au seuil standard.
+ */
+export const CAN_APPLIQUER_REMISE_EXCEPTIONNELLE: PersonnelRole[] = ["manager"];
+
+/**
+ * Rôles autorisés à ANNULER un paiement financier (reversal).
+ * Seul le manager peut corriger une erreur de caisse — le caissier et
+ * le réceptionniste peuvent encaisser mais pas annuler.
+ * La RPC SQL `annuler_paiement` vérifie ce rôle côté DB (defense-in-depth).
+ */
+export const CAN_ANNULER_PAIEMENT: PersonnelRole[] = ["manager"];

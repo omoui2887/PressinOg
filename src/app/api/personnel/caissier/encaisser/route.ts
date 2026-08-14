@@ -3,49 +3,47 @@
  * ----------------------------------------------------------------
  * Enregistre un paiement sur une commande existante.
  *
- * Body : { commande_id, montant, methode, reference?, notes? }
- *   - commande_id : UUID de la commande (RLS isole par pressing_id)
- *   - montant     : entier > 0 en FCFA
- *   - methode     : "especes" | "mobile_money" | "carte_bancaire"
- *   - reference   : texte libre optionnel (numéro tx MOMO, 4 derniers chiffres)
- *   - notes       : texte libre optionnel
+ * Body : { commande_id, montant, methode, reference?, notes?, idempotency_key? }
+ *   - commande_id     : UUID de la commande (RLS isole par pressing_id)
+ *   - montant         : entier > 0 en FCFA
+ *   - methode         : "especes" | "mobile_money" | "carte_bancaire"
+ *   - reference       : texte libre optionnel (numéro tx MOMO, 4 derniers chiffres)
+ *   - notes           : texte libre optionnel (≤ 2000 chars)
+ *   - idempotency_key : UUID optionnel généré côté client (anti double-clic/retry)
  *
- * 🔒 SÉCURITÉ :
+ * 🔒 SÉCURITÉ (moteur financier atomique — migration 035) :
  *   - Auth Supabase (JWT) obligatoire
- *   - Le personnel connecté doit avoir un rôle ∈ CAN_ENCAISSER_PAIEMENT
- *     (manager / réceptionniste / caissier), actif=true, statut_compte="actif".
- *     FIX-ENCAISSE-ADMIN : avant, seul role="caissier" était accepté. Le
- *     manager et le réceptionniste peuvent désormais encaisser aussi pour
- *     régler le solde des commandes partiellement payées depuis la page détail.
- *   - RLS isole automatiquement par pressing_id : l'opérateur ne peut
- *     encaisser que les commandes de son propre pressing
- *   - RESTRICTION MODES PAIEMENT (AUDIT 9.11 — fix migration 019) :
- *     la méthode de paiement doit être (a) un enum valide (METHODES_VALID)
- *     ET (b) présent dans `me.modes_paiement_autorises` (JSONB array
- *     propre à chaque caissier). Un caissier peut ainsi être restreint
- *     à 'especes' + 'mobile_money' uniquement, par exemple. Pour les
- *     manager/réceptionniste (qui n'ont pas de modes_paiement_autorises
- *     configuré), le fallback MODES_AUTORISES_DEFAUT autorise tous les modes.
+ *   - Rôle ∈ CAN_ENCAISSER_PAIEMENT (manager / réceptionniste / caissier)
+ *   - RLS isole par pressing_id
+ *   - RESTRICTION MODES PAIEMENT (AUDIT 9.11 / migration 019) :
+ *     methode doit être (a) un enum valide ET (b) présent dans
+ *     `me.modes_paiement_autorises` (JSONB par caissier).
  *
- * ⚙️ LOGIQUE :
- *   1. Fetch la commande par id (RLS filtre par pressing) — inclut client_id
- *   2. Valide montant > 0 et montant + montant_paye ≤ montant_total + 1
- *      (tolérance de 1 FCFA pour les arrondis, alignée sur la CHECK
- *      constraint de la table commandes)
- *   3. Calcule est_acompte = (montant + montant_paye) < montant_total
- *   4. INSERT dans `paiements` avec enregistre_par = me.id
- *   5. ⚡ Le trigger `trigger_recalculer_paiement_commande` (migration 005)
- *      recalcule AUTOMATIQUEMENT commandes.montant_paye et statut_paiement
- *      → on n'a PAS à mettre à jour la commande manuellement
- *   6. Re-fetch la commande pour retourner le nouveau solde
- *   7. FIX-HIGH-1 (GAP 2 — PRD §7.5) : incrément auto des points fidélité
- *      du client — `Math.floor(montant / 100)` points crédités sur
- *      `clients.points_fidelite`. Non-bloquant si l'UPDATE échoue.
+ * ⚙️ LOGIQUE ATOMIQUE (migration 035 — encaisser_paiement_atomic) :
+ *   Toute la logique financière s'exécute en UNE SEULE transaction SQL :
+ *     1. SELECT FOR UPDATE sur la commande (verrou pessimiste)
+ *     2. Vérifie statut (pas annulée/terminée)
+ *     3. Vérifie idempotency_key → si existe, retourne le paiement existant
+ *     4. Calcule le reste réel = SUM(paiements actifs)
+ *     5. Refuse si montant > reste + 1 (tolérance 1 FCFA)
+ *     6. Vérifie règle acompte/solde (workflow)
+ *     7. INSERT le paiement (statut_row='actif')
+ *     8. Recalcule montant_paye + statut_paiement
+ *     9. Incrémente atomiquement clients.points_fidelite
+ *    10. Retourne le résultat complet
+ *
+ *   Protections assurées :
+ *     - double clic (idempotency_key)
+ *     - retry réseau (idempotency_key)
+ *     - deux caissiers simultanés (SELECT FOR UPDATE)
+ *     - deux onglets (idempotency_key)
+ *     - timeout suivi d'un retry (idempotency_key)
+ *     - manipulation frontend (calcul reste côté SQL)
  *
  * Réponse : { success: true, data: { paiement_id, commande_id, montant, methode,
  *           date_paiement, reference, nouveau_montant_paye,
  *           nouveau_statut_paiement, reste_a_payer, montant_total,
- *           points_gagnes } }
+ *           points_gagnes, replay } }
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
@@ -54,13 +52,8 @@ import {
   type PersonnelRole,
 } from "@/lib/auth/roles";
 import type { MethodePaiement } from "@/lib/types/database.types";
-import {
-  peutEncaisserAcompte,
-  peutEncaisserSoldeFinal,
-  paiementFermeCommande,
-  STATUT_COMMANDE_LABELS,
-} from "@/lib/workflow/commande-statut";
 import { logAudit } from "@/lib/audit";
+import { encaisserPaiementAtomique } from "@/lib/financial/atomic";
 
 export const dynamic = "force-dynamic";
 
@@ -98,6 +91,7 @@ interface EncaisserBody {
   methode?: unknown;
   reference?: unknown;
   notes?: unknown;
+  idempotency_key?: unknown;
 }
 
 /**
@@ -319,9 +313,8 @@ export async function POST(request: NextRequest) {
       : null;
   // FIX BUG-A1 (Task FIX-ENCAISSER-SUPERADMIN) : la migration 031 a posé un
   // CHECK `check_notes_max_length` sur paiements.notes (≤ 2000 caractères).
-  // Sans cette garde applicative, un notes > 2000 chars déclenche l'erreur
-  // PostgreSQL 23514 au INSERT, renvoyée jusqu'ici comme un générique
-  // « paiement invalide ». On valide en amont pour renvoyer un 400 explicite.
+  // La RPC encaisser_paiement_atomic vérifie aussi côté SQL, mais on valide
+  // en amont pour renvoyer un 400 explicite (avant l'appel SQL).
   if (notes && notes.length > 2000) {
     return NextResponse.json(
       {
@@ -334,261 +327,130 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // --- Fetch de la commande (RLS isole par pressing_id) ---
-  // FIX-HIGH-1 (GAP 2) : on sélectionne aussi `client_id` pour pouvoir
-  // incrémenter les points fidélité du client après l'INSERT du paiement.
-  const { data: commande, error: cmdErr } = await supabase
-    .from("commandes")
-    .select(
-      "id, montant_total, montant_paye, statut_paiement, statut, client_id"
-    )
-    .eq("id", commandeId)
-    .maybeSingle();
+  // --- idempotency_key (optionnelle, anti double-clic/retry) ---
+  // UUID généré côté client. Si la même clé est re-soumise pour la même
+  // commande, la RPC retourne le paiement existant (code='IDEMPOTENT_REPLAY').
+  const idempotencyKey =
+    typeof body.idempotency_key === "string" &&
+    body.idempotency_key.trim()
+      ? body.idempotency_key.trim().slice(0, 100)
+      : null;
 
-  if (cmdErr) {
-    console.error("[api/personnel/caissier/encaisser] Erreur SELECT commande:", cmdErr);
-    return NextResponse.json(
-      { success: false, error: "Erreur lors de la récupération de la commande." },
-      { status: 500 }
-    );
-  }
-  if (!commande) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Commande introuvable ou accès refusé.",
-      },
-      { status: 404 }
-    );
-  }
+  // --- Récupération de l'auth.users.id pour la RPC + audit ---
+  // me.user_id est déjà peuplé par getConnectedCaissier().
+  const authUserId = me.user_id;
 
-  // --- Validation du solde ---
-  const resteAPayer = commande.montant_total - commande.montant_paye;
-  if (resteAPayer <= 0) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Cette commande est déjà entièrement payée.",
-      },
-      { status: 409 }
-    );
-  }
-  // Tolérance de 1 FCFA (alignée sur la CHECK constraint commandes:
-  // montant_paye ≤ montant_total + 1)
-  if (montant > resteAPayer + 1) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: `Le montant saisi (${montant} FCFA) dépasse le reste à payer (${resteAPayer} FCFA).`,
-      },
-      { status: 400 }
-    );
-  }
-
-  // --- Guard workflow (WORKFLOW-FIX-V1) ---
-  // Le SOLDE FINAL (paiement qui ferme la commande → statut_paiement="paye")
-  // n'est autorisé que si la commande est au moins "repasse" (traitement fait).
-  // Les ACOMPTES (paiement partiel qui laisse un reste) sont autorisés dès
-  // la création, tant que la commande n'est pas terminée.
-  const fermeCommande = paiementFermeCommande(
-    commande.montant_paye,
-    commande.montant_total,
-    montant
-  );
-  const statutCourant = commande.statut as string;
-  const statutLabel = STATUT_COMMANDE_LABELS[statutCourant] ?? statutCourant;
-
-  if (fermeCommande) {
-    // Paiement du solde final → exige commande au moins "repasse"
-    if (!peutEncaisserSoldeFinal(statutCourant)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Encaissement du solde final refusé : la commande est au statut "${statutLabel}" mais doit être au moins "Repassé" (lavé + repassé) avant d'être entièrement payée. Encaissez un acompte partiel, ou faites avancer la commande dans le workflow (lavage → repassage → prêt).`,
-          code: "WORKFLOW_PAIEMENT_REFUSE",
-          details: {
-            statut_commande: statutCourant,
-            montant_paye_actuel: commande.montant_paye,
-            montant_total: commande.montant_total,
-            montant_paiement_propose: montant,
-            reste_a_payer: resteAPayer,
-            statut_requis_minimum: "repasse",
-          },
-        },
-        { status: 409 }
-      );
-    }
-  } else {
-    // Acompte partiel → autorisé tant que la commande n'est pas terminée
-    if (!peutEncaisserAcompte(statutCourant)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Encaissement refusé : la commande est au statut terminal "${statutLabel}". Aucun paiement supplémentaire n'est possible.`,
-          code: "WORKFLOW_PAIEMENT_REFUSE",
-        },
-        { status: 409 }
-      );
-    }
-  }
-
-  const estAcompte = !fermeCommande;
-
-  // --- INSERT paiement ---
-  // Le trigger `trigger_recalculer_paiement_commande` met à jour
-  // automatiquement commandes.montant_paye + statut_paiement.
-  // #12 — date_paiement est un timestamp serveur (UTC). On pourrait aussi
-  // déléguer à la DB DEFAULT NOW() (002_tables.sql:325), mais on garde la
-  // valeur explicite pour cohérence avec les autres INSERT de paiements.
-  const insertPayload: Record<string, unknown> = {
+  // --- Appel à la RPC atomique encaisser_paiement_atomic ---
+  // Toute la logique financière (verrou, vérif statut, calcul reste,
+  // refus dépassement, INSERT, recalcul, points fidélité) s'exécute en
+  // UNE SEULE transaction SQL côté PostgreSQL. Le frontend ne peut pas
+  // manipuler le calcul du reste ou le statut.
+  const result = await encaisserPaiementAtomique({
     commande_id: commandeId,
+    pressing_id: me.pressing_id,
+    user_id: authUserId,
+    personnel_id: me.id,
     montant,
-    methode,
-    date_paiement: new Date().toISOString(),
-    est_acompte: estAcompte,
-    enregistre_par: me.id,
-  };
-  if (reference) insertPayload.reference = reference;
-  if (notes) insertPayload.notes = notes;
+    methode: methode as MethodePaiement,
+    reference,
+    notes,
+    idempotency_key: idempotencyKey,
+  });
 
-  const { data: paiement, error: insertErr } = await supabase
-    .from("paiements")
-    .insert(insertPayload)
-    .select("id, commande_id, montant, methode, date_paiement, reference")
-    .maybeSingle();
+  if (!result.success || !result.data) {
+    // Mappe les codes d'erreur de la RPC aux statuts HTTP appropriés.
+    const code = result.code || "RPC_ERROR";
+    const errorMessage = result.error || "Erreur lors de l'encaissement.";
+    const details = result.details;
 
-  if (insertErr || !paiement) {
-    console.error("[api/personnel/caissier/encaisser] Erreur INSERT paiement:", insertErr);
-    // 23514 = CHECK violation. Plusieurs CHECK peuvent déclencher ce code :
-    //   - montant > 0  (paiements_montant_check)
-    //   - date_paiement ≤ NOW()+5min  (paiements_date_paiement_check)
-    //   - notes IS NULL OR length(notes) ≤ 2000  (check_notes_max_length, migration 031)
-    // FIX BUG-A2 : on mentionne explicitement « notes trop longues » car la
-    // garde amont (notes.length > 2000) ne couvre que le cas nominal ; un
-    // appelant bypassant la validation JS (curl/Postman) tomberait ici.
-    if (insertErr && insertErr.code === "23514") {
+    // 404 : commande introuvable
+    if (code === "COMMANDE_INTROUVABLE") {
       return NextResponse.json(
-        {
-          success: false,
-          code: "PAIEMENT_INVALIDE",
-          error:
-            "Le paiement ne respecte pas les contraintes (montant, date ou notes trop longues).",
-        },
+        { success: false, error: errorMessage, code, details },
+        { status: 404 }
+      );
+    }
+    // 403 : pressing mismatch, rôle insuffisant
+    if (
+      code === "PRESSING_MISMATCH" ||
+      code === "ROLE_INSUFFISANT"
+    ) {
+      return NextResponse.json(
+        { success: false, error: errorMessage, code, details },
+        { status: 403 }
+      );
+    }
+    // 409 : commande annulée, déjà payée, workflow refuse
+    if (
+      code === "COMMANDE_ANNULEE" ||
+      code === "DEJA_PAYE" ||
+      code === "WORKFLOW_PAIEMENT_REFUSE" ||
+      code === "PAIEMENT_DEJAY_ANNULE"
+    ) {
+      return NextResponse.json(
+        { success: false, error: errorMessage, code, details },
+        { status: 409 }
+      );
+    }
+    // 400 : montant invalide, dépassement, notes trop longues
+    if (
+      code === "MONTANT_INVALIDE" ||
+      code === "MONTANT_DEPASSE_SOLDE" ||
+      code === "NOTES_TOO_LONG"
+    ) {
+      return NextResponse.json(
+        { success: false, error: errorMessage, code, details },
         { status: 400 }
       );
     }
+    // Autre erreur RPC → 500
+    console.error(
+      "[api/personnel/caissier/encaisser] RPC error:",
+      result
+    );
     return NextResponse.json(
-      { success: false, error: "Erreur lors de l'enregistrement du paiement." },
+      { success: false, error: errorMessage, code, details },
       { status: 500 }
     );
   }
 
-  // --- Audit log (AUDIT-B-13 / Task FIX-ENCAISSER-SUPERADMIN) ---
-  // Best-effort : ne JAMAIS bloquer la réponse si l'audit échoue (la fonction
-  // logAudit interne gère elle-même son try/catch et retourne false en cas
-  // d'erreur, sans throw). On log l'événement `encaisser_paiement` avec le
-  // snapshot après-état (before_state = null car c'est une création).
-  await logAudit({
-    pressing_id: me.pressing_id,
-    user_id: me.user_id,
-    action: "encaisser_paiement",
-    entity_type: "paiement",
-    entity_id: paiement.id,
-    before_state: null,
-    after_state: {
-      paiement_id: paiement.id,
-      commande_id: paiement.commande_id,
-      montant: paiement.montant,
-      methode: paiement.methode,
-      notes,
-      date_paiement: paiement.date_paiement,
-      est_acompte: estAcompte,
-    },
-    req: request,
-  });
+  const paiementData = result.data;
 
-  // --- Re-fetch de la commande pour retourner le nouveau solde ---
-  // (le trigger a déjà mis à jour montant_paye + statut_paiement)
-  const { data: cmdUpdated } = await supabase
-    .from("commandes")
-    .select("montant_paye, statut_paiement, montant_total")
-    .eq("id", commandeId)
-    .maybeSingle();
-
-  const nouveauMontantPaye = cmdUpdated?.montant_paye ?? commande.montant_paye + montant;
-  const nouveauStatut = cmdUpdated?.statut_paiement ?? commande.statut_paiement;
-  const nouveauReste = (cmdUpdated?.montant_total ?? commande.montant_total) - nouveauMontantPaye;
-
-  // --- Incrément auto points fidélité (PRD §7.5 — 1 point = 100 FCFA payés) ---
-  // FIX-HIGH-1 (GAP 2) : après l'INSERT du paiement, on crédite les points
-  // fidélité du client. On fetch d'abord la valeur courante (SELECT) puis on
-  // UPDATE — l'atomicité parfaite nécessiterait une RPC SQL, mais le SELECT +
-  // UPDATE reste sûr ici car cette route est la seule à créditer les points
-  // fidélité (pas de concurrence réaliste en pressing). RLS isole par
-  // pressing_id, donc on ne peut créditer qu'un client de son propre pressing.
-  // Si la mise à jour échoue (ex : RLS bloque, colonne absente), on n'échoue
-  // pas le paiement — on logge juste l'erreur et on renvoie points_gagnes=0.
-  let pointsGagnes = 0;
-  const clientId: string | null =
-    typeof commande.client_id === "string" ? commande.client_id : null;
-  if (clientId) {
-    pointsGagnes = Math.floor(montant / 100);
-    if (pointsGagnes > 0) {
-      const { data: clientRow, error: clientErr } = await supabase
-        .from("clients")
-        .select("id, points_fidelite")
-        .eq("id", clientId)
-        .maybeSingle();
-
-      if (clientErr) {
-        console.error(
-          "[api/personnel/caissier/encaisser] Erreur SELECT clients (points_fidelite) — le paiement reste valide mais les points ne sont pas crédités:",
-          clientErr
-        );
-        pointsGagnes = 0;
-      } else if (clientRow) {
-        const pointsActuels = (clientRow.points_fidelite as number) ?? 0;
-        const { error: updateErr } = await supabase
-          .from("clients")
-          .update({
-            points_fidelite: pointsActuels + pointsGagnes,
-          })
-          .eq("id", clientId);
-
-        if (updateErr) {
-          console.error(
-            "[api/personnel/caissier/encaisser] Erreur UPDATE clients.points_fidelite — le paiement reste valide mais les points ne sont pas crédités:",
-            updateErr
-          );
-          pointsGagnes = 0;
-        }
-      } else {
-        // Client introuvable (RLS ou soft delete) — on ne crédite pas.
-        pointsGagnes = 0;
-      }
-    }
-  } else {
-    // commande.client_id null (commande sans client rattaché) — pas de points.
-    pointsGagnes = 0;
+  // --- Audit log (AUDIT-B-13 / migration 035) ---
+  // Best-effort : ne JAMAIS bloquer la réponse si l'audit échoue.
+  // On log uniquement si ce n'est PAS un replay idempotent (sinon on
+  // dupliquerait l'entrée audit pour le même paiement).
+  if (!paiementData.replay) {
+    await logAudit({
+      pressing_id: me.pressing_id,
+      user_id: authUserId,
+      action: "encaisser_paiement",
+      entity_type: "paiement",
+      entity_id: paiementData.paiement_id,
+      before_state: null,
+      after_state: {
+        paiement_id: paiementData.paiement_id,
+        commande_id: paiementData.commande_id,
+        montant: paiementData.montant,
+        methode: paiementData.methode,
+        notes,
+        date_paiement: paiementData.date_paiement,
+        est_acompte: paiementData.est_acompte,
+        idempotency_key: idempotencyKey,
+        points_gagnes: paiementData.points_gagnes,
+      },
+      req: request,
+    });
   }
 
+  // --- Réponse succès ---
+  // Si replay (idempotent), on retourne 200 (pas 201 — pas de nouvelle ressource).
+  // Sinon, 201 Created.
   return NextResponse.json(
     {
       success: true,
-      data: {
-        paiement_id: paiement.id,
-        commande_id: paiement.commande_id,
-        montant: paiement.montant,
-        methode: paiement.methode,
-        date_paiement: paiement.date_paiement,
-        reference: paiement.reference ?? null,
-        nouveau_montant_paye: nouveauMontantPaye,
-        nouveau_statut_paiement: nouveauStatut,
-        reste_a_payer: Math.max(0, nouveauReste),
-        montant_total: cmdUpdated?.montant_total ?? commande.montant_total,
-        points_gagnes: pointsGagnes,
-      },
+      data: paiementData,
     },
-    { status: 201 }
+    { status: paiementData.replay ? 200 : 201 }
   );
 }

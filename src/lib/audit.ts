@@ -89,7 +89,11 @@ export type AuditAction =
   | "renew_abonnement"
   | "suspend_abonnement"
   // Paiement
-  | "encaisser_paiement";
+  | "encaisser_paiement"
+  | "annuler_paiement"
+  // Remise (moteur financier atomique — migration 035/036)
+  | "appliquer_remise"
+  | "appliquer_remise_exceptionnelle";
 
 /** Types d'entité touchées. */
 export type AuditEntityType =
@@ -97,7 +101,9 @@ export type AuditEntityType =
   | "personnel"
   | "pressing"
   | "abonnement"
-  | "paiement";
+  | "paiement"
+  | "paiement_annulation"
+  | "remise";
 
 // ---------------------------------------------------------------------------
 // Implémentation

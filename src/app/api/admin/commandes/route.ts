@@ -59,6 +59,10 @@ import {
   reloadPostgrestSchema,
 } from "@/lib/supabase/reload-schema";
 import { getPressingPlan, getHistoryCutoff } from "@/lib/auth/plan-gating";
+import {
+  calculerRemiseAtomique,
+  calculerRemiseFideliteAuto,
+} from "@/lib/financial/atomic";
 
 export const dynamic = "force-dynamic";
 
@@ -921,53 +925,142 @@ export async function POST(request: NextRequest) {
     0
   );
 
-  // ---------- 5. Calcul montant_remise ----------
+  // ---------- 5. Calcul montant_remise (ATOMIQUE côté serveur, migration 036) ----------
+  // Le serveur est l'unique autorité financière. Le frontend ne fournit que
+  // le type + la valeur (ou rien pour fidelite — calculée séparément).
+  // La RPC calculer_remise_atomique valide :
+  //   - le rôle (manager/réceptionniste requis pour remise commerciale)
+  //   - le % max configuré (pressing_remise_config.remise_pourcentage_max)
+  //   - le seuil exceptionnel (manager requis au-delà)
+  //   - le refus de 100% (utilise article_gratuit sinon)
+  //   - le clamp au sous-total pour montant_fixe
+  //   - l'index article pour article_gratuit
   let montantRemise = 0;
   let remiseType: RemiseTypeValid = "aucune";
   let remiseValeur = 0;
 
   if (remise && remise.type !== "aucune") {
-    remiseType = remise.type;
-    remiseValeur = remise.valeur;
+    // Pour la remise fidélité, le serveur calcule le % à partir des points
+    // du client — le frontend ne choisit JAMAIS la valeur.
+    let remiseTypeForRpc = remise.type;
+    let remiseValeurForRpc = remise.valeur;
 
-    switch (remise.type) {
-      case "pourcentage":
-      case "fidelite": {
-        // valeur = % (0-100)
-        const pct = Math.max(0, Math.min(100, remise.valeur));
-        montantRemise = Math.round((montantTotalAvantRemise * pct) / 100);
-        break;
-      }
-      case "montant_fixe": {
-        montantRemise = Math.min(remise.valeur, montantTotalAvantRemise);
-        break;
-      }
-      case "article_gratuit": {
-        // valeur = index (0-based) de l'article offert
-        const idx = remise.valeur;
-        if (idx < 0 || idx >= articles.length) {
+    if (remise.type === "fidelite") {
+      // Calcule le % automatiquement (0/3/5 selon palier).
+      const pctFidelite = await calculerRemiseFideliteAuto(
+        pressingId,
+        clientId
+      );
+      remiseValeurForRpc = pctFidelite;
+      // Si 0%, on skip la remise (pas d'erreur — client pas éligible).
+      if (pctFidelite === 0) {
+        remiseType = "aucune";
+        remiseValeur = 0;
+        montantRemise = 0;
+      } else {
+        // Appelle la RPC pour valider + calculer.
+        const remiseResult = await calculerRemiseAtomique({
+          pressing_id: pressingId,
+          montant_avant_remise: montantTotalAvantRemise,
+          remise_type: "fidelite",
+          remise_valeur: pctFidelite,
+          role_utilisateur: me.role,
+          articles_json: null,
+        });
+        if (!remiseResult.success) {
           return NextResponse.json(
             {
               success: false,
-              error: `remise.valeur (article_gratuit) hors limites : index ${idx} invalide pour ${articles.length} article(s)`,
+              error: remiseResult.error || "Remise fidélité invalide.",
+              code: remiseResult.code,
+              details: remiseResult.details,
             },
-            { status: 400 }
+            {
+              status:
+                remiseResult.code === "ROLE_INSUFFISANT" ||
+                remiseResult.code === "FIDELITE_PCT_INVALIDE"
+                  ? 403
+                  : 400,
+            }
           );
         }
-        const freeArticle = articles[idx];
-        // Fix (FIX-WAVE1-A #1) : on doit utiliser le prix résolu (tarif override
-        // si configuré, sinon service.prix) pour rester cohérent avec le prix
-        // réellement facturé au client. Sinon, si un tarif override inférieur
-        // à service.prix est configuré, la remise "article offert" serait
-        // calculée sur service.prix (trop élevé) et la commande pourrait être
-        // gratuite à tort (montant_total = 0).
-        montantRemise =
-          resolvePrixUnitaire(freeArticle) * freeArticle.quantite;
-        break;
+        montantRemise = remiseResult.montant_remise ?? 0;
+        remiseType = "fidelite";
+        remiseValeur = remiseResult.remise_valeur_appliquee ?? pctFidelite;
       }
-      default:
-        montantRemise = 0;
-        break;
+    } else {
+      // Remise commerciale (pourcentage / montant_fixe / article_gratuit).
+      // Prépare le JSON des articles pour article_gratuit (index validation).
+      const articlesJson =
+        remise.type === "article_gratuit"
+          ? articles.map((a) => ({
+              prix_unitaire: resolvePrixUnitaire(a),
+              quantite: a.quantite,
+            }))
+          : null;
+
+      const remiseResult = await calculerRemiseAtomique({
+        pressing_id: pressingId,
+        montant_avant_remise: montantTotalAvantRemise,
+        remise_type: remiseTypeForRpc,
+        remise_valeur: remiseValeurForRpc,
+        role_utilisateur: me.role,
+        articles_json: articlesJson,
+      });
+      if (!remiseResult.success) {
+        // Mappe les codes d'erreur aux statuts HTTP.
+        const code = remiseResult.code;
+        const status =
+          code === "ROLE_INSUFFISANT" ||
+          code === "REMISE_EXCEPTIONNELLE_REQUIERT_MANAGER"
+            ? 403
+            : code === "POURCENTAGE_100_REFUSE" ||
+              code === "POURCENTAGE_DEPASSE_MAX" ||
+              code === "POURCENTAGE_INVALIDE" ||
+              code === "MONTANT_FIXE_INVALIDE" ||
+              code === "INDEX_ARTICLE_INVALIDE" ||
+              code === "ARTICLES_MANQUANTS" ||
+              code === "TYPE_REMISE_INVALIDE" ||
+              code === "MONTANT_INVALIDE"
+            ? 400
+            : 500;
+        return NextResponse.json(
+          {
+            success: false,
+            error: remiseResult.error || "Remise invalide.",
+            code,
+            details: remiseResult.details,
+          },
+          { status }
+        );
+      }
+      montantRemise = remiseResult.montant_remise ?? 0;
+      remiseType = (remiseResult.remise_type_appliquee as RemiseTypeValid) ?? remise.type;
+      remiseValeur = remiseResult.remise_valeur_appliquee ?? remise.valeur;
+    }
+
+    // Audit log pour chaque remise appliquée (non-nulle).
+    if (montantRemise > 0) {
+      const isExceptionnelle =
+        remiseType === "pourcentage" && remiseValeur > 20; // seuil défaut
+      await logAudit({
+        pressing_id: pressingId,
+        user_id: null, // sera rempli plus bas si possible
+        action: isExceptionnelle
+          ? "appliquer_remise_exceptionnelle"
+          : "appliquer_remise",
+        entity_type: "remise",
+        entity_id: null, // pas encore d'ID commande
+        before_state: null,
+        after_state: {
+          remise_type: remiseType,
+          remise_valeur: remiseValeur,
+          montant_remise: montantRemise,
+          montant_total_avant_remise: montantTotalAvantRemise,
+          client_id: clientId,
+        },
+        req: request,
+      });
     }
   }
 
