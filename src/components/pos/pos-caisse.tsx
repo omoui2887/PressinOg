@@ -442,7 +442,11 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
         acompte:
           s.paye > 0 && s.methodePaiement
             ? {
-                montant: s.paye,
+                // Montant effectivement encaissé = min(reçu, net à payer).
+                // Pour les espèces, le client peut donner plus que le net
+                // (ex: billet de 2000 pour 1000) — la monnaie est rendue
+                // physiquement, on n'enregistre que le montant réel du paiement.
+                montant: Math.min(s.paye, finance.net_a_payer),
                 methode: s.methodePaiement,
                 reference: s.referencePaiement.trim() || undefined,
               }
@@ -687,7 +691,7 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
             remiseValeur={s.remiseValeur}
             remiseMontant={finance.remise_montant}
             netAPayer={finance.net_a_payer}
-            paye={finance.paye}
+            paye={s.paye}
             reste={finance.reste}
             statut={finance.statut}
             methode={s.methodePaiement}
@@ -719,6 +723,8 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
           <ActionButtons
             submitting={s.submitting}
             canValidate={canValidate}
+            statut={finance.statut}
+            hasArticles={s.cartLines.length > 0}
             onAnnuler={() => {
               if (s.cartLines.length > 0) setConfirmAnnuler(true);
               else handleAnnuler();

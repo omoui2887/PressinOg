@@ -1510,6 +1510,59 @@ html {
 .pos-btn-cancel:hover { filter: brightness(1.08); }
 .pos-btn-cancel:active { transform: translateY(1px); }
 
+/* Variantes du bouton Valider selon le statut de paiement. */
+.pos-btn-validate-paid {
+  background: var(--pos-green);
+  color: #fff;
+  transition: filter .15s ease, transform .08s ease;
+}
+.pos-btn-validate-paid:hover { filter: brightness(1.08); }
+.pos-btn-validate-paid:active { transform: translateY(1px); }
+.pos-btn-validate-paid:disabled { opacity: .6; cursor: not-allowed; }
+
+.pos-btn-validate-acompte {
+  background: var(--pos-orange);
+  color: #fff;
+  transition: filter .15s ease, transform .08s ease;
+}
+.pos-btn-validate-acompte:hover { filter: brightness(1.08); }
+.pos-btn-validate-acompte:active { transform: translateY(1px); }
+.pos-btn-validate-acompte:disabled { opacity: .6; cursor: not-allowed; }
+
+.pos-btn-validate-unpaid {
+  background: var(--pos-danger);
+  color: #fff;
+  transition: filter .15s ease, transform .08s ease;
+}
+.pos-btn-validate-unpaid:hover { filter: brightness(1.08); }
+.pos-btn-validate-unpaid:active { transform: translateY(1px); }
+.pos-btn-validate-unpaid:disabled { opacity: .6; cursor: not-allowed; }
+
+/* Bouton « Aucun » (pas de paiement maintenant) — variant gris discret. */
+.pos-pay-btn-no {
+  border: 2px dashed var(--pos-border);
+  background: var(--pos-surface);
+  color: var(--pos-text-muted);
+  transition: all .12s ease;
+}
+.pos-pay-btn-no:hover {
+  border-color: var(--pos-danger);
+  color: var(--pos-danger);
+}
+.pos-pay-btn-no[data-active="true"] {
+  border-style: solid;
+  border-color: var(--pos-danger);
+  background: #FDECEC;
+  color: var(--pos-danger);
+}
+
+/* Boutons de raccourci montant (Net exact, billets). */
+.pos-quick-btn[data-active="true"] {
+  border-color: var(--pos-green);
+  background: #E8F5E9;
+  color: var(--pos-green);
+}
+
 /* Scrollbars fines pour les panneaux. */
 .pos-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
 .pos-scroll::-webkit-scrollbar-track { background: transparent; }
