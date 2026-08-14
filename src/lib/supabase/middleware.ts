@@ -190,9 +190,24 @@ type RoleCacheRole = "super_admin" | RolePersonnelVal;
 
 /** Nom du cookie de cache du rôle. */
 const ROLE_CACHE_COOKIE = "ogp_role_cache";
-/** TTL du cache du rôle : 5 minutes (en ms et secondes). */
-const ROLE_CACHE_TTL_MS = 5 * 60 * 1000;
-const ROLE_CACHE_TTL_SEC = 300;
+/** TTL du cache du rôle : 60 secondes.
+ *
+ *  🔧 RÉDUCTION (audit abonnements) : le TTL était de 5 minutes, ce qui
+ *  signifiait qu'un abonnement expiré pouvait rester accessible jusqu'à
+ *  5 min après son expiration (le cache gardait trial_expired=false /
+ *  abonnement_suspended=false tant que le cookie n'avait pas expiré).
+ *
+ *  Avec un TTL de 60s, la fenêtre d'accès excessif est réduite à max 60s.
+ *  Le middleware fait AUSSI une vérification temps réel sur date_fin
+ *  (cf. fetchRoleFromDB) pour ne pas dépendre uniquement du cron — mais
+ *  le cache court garantit qu'une expiration flipée par le cron soit
+ *  répercutée en max 60s.
+ *
+ *  Trade-off perf : 60s = 1 requête DB / minute max par utilisateur
+ *  actif (au lieu de 1 / 5 min). Acceptable — la requête est légère
+ *  (2 SELECT maybeSingle sur index user_id / pressing_id). */
+const ROLE_CACHE_TTL_MS = 60 * 1000;
+const ROLE_CACHE_TTL_SEC = 60;
 
 /* ========================================================================== */
 /*  TYPES                                                                      */
@@ -223,15 +238,29 @@ interface RoleInfo {
    *  du pressing, pas de l'abonnement — la suspension pressing déconnecte
    *  immédiatement l'utilisateur, la suspension abonnement est plus douce). */
   abonnement_suspended: boolean;
+  /** 🔧 AUDIT-ABONNEMENTS — True si l'abonnement courant du pressing est
+   *  expiré (statut='expire' OU (statut='actif' AND date_fin < now)).
+   *
+   *  Couvre DEUX cas :
+   *   1. Le cron synchroniser_statut_abonnements() a déjà flippé le statut
+   *      à 'expire' → on le lit tel quel.
+   *   2. Le cron n'a pas encore tourné mais date_fin est dans le passé →
+   *      on le détecte en temps réel (fail-safe : le middleware ne dépend
+   *      PAS uniquement du cron).
+   *
+   *  Toujours false pour les super admins (pas de pressing). Quand true,
+   *  on redirige /admin/* et /personnel/* vers /activation-expiree
+   *  (comme trial_expired — la page d'information est la même). */
+  abonnement_expired: boolean;
 }
 
 /** Payload signé stocké dans le cookie `ogp_role_cache`.
  *
  * On n'inclut PAS `actif`/`statut_compte` car on ne met en cache QUE les
  * comptes actifs (cf. `setRoleCacheCookie`). Si le cache est valide, on sait
- * que l'utilisateur était actif au moment du cache. Le TTL court (5 min)
+ * que l'utilisateur était actif au moment du cache. Le TTL court (60s)
  * garantit qu'une désactivation de compte (statut_compte='desactive') soit
- * répercutée en max 5 min (au prochain cache miss → DB query → signOut). */
+ * répercutée en max 60s (au prochain cache miss → DB query → signOut). */
 interface RoleCachePayload {
   /** ID utilisateur Supabase Auth — pour vérifier que le cache correspond
    * bien à l'utilisateur courant (sécurité : empêche un cookie de cache
@@ -247,13 +276,17 @@ interface RoleCachePayload {
    *  'suspendu' ou est absent, on retombe sur la DB. */
   pressing_statut?: string | null;
   /** AUDIT-B-05 — True si l'essai de 7 jours est expiré au moment de la mise
-   *  en cache. Le TTL court (5 min) garantit qu'une activation d'abonnement
-   *  (passage essai → actif) soit répercutée en max 5 min. */
+   *  en cache. Le TTL court (60s) garantit qu'une activation d'abonnement
+   *  (passage essai → actif) soit répercutée en max 60s. */
   trial_expired?: boolean;
   /** AUDIT-B-04 — True si l'abonnement est suspendu (statut='suspendu') au
-   *  moment de la mise en cache. Le TTL court (5 min) garantit qu'une
-   *  réactivation soit répercutée en max 5 min. */
+   *  moment de la mise en cache. Le TTL court (60s) garantit qu'une
+   *  réactivation soit répercutée en max 60s. */
   abonnement_suspended?: boolean;
+  /** 🔧 AUDIT-ABONNEMENTS — True si l'abonnement est expiré au moment de
+   *  la mise en cache. Le TTL court (60s) garantit qu'un renouvellement
+   *  soit répercuté en max 60s. */
+  abonnement_expired?: boolean;
   /** Expiration en ms epoch. */
   exp: number;
 }
@@ -416,6 +449,7 @@ async function setRoleCacheCookie(
     pressing_statut: info.pressing_statut,
     trial_expired: info.trial_expired,
     abonnement_suspended: info.abonnement_suspended,
+    abonnement_expired: info.abonnement_expired,
     exp: Date.now() + ROLE_CACHE_TTL_MS,
   };
   const signed = await signRoleCache(payload, secret);
@@ -425,7 +459,7 @@ async function setRoleCacheCookie(
     httpOnly: true, // pas accessible depuis JS client
     secure: true, // HTTPS uniquement
     sameSite: "lax", // protection CSRF
-    maxAge: ROLE_CACHE_TTL_SEC, // 5 min
+    maxAge: ROLE_CACHE_TTL_SEC, // 60s
     path: "/",
   });
 }
@@ -489,6 +523,7 @@ async function fetchRoleFromDB(
       pressing_statut: null,
       trial_expired: false,
       abonnement_suspended: false,
+      abonnement_expired: false,
     };
   }
 
@@ -510,12 +545,25 @@ async function fetchRoleFromDB(
   const pressingRow = pers.pressing as { statut?: string } | null;
   const pressingId = (pers.pressing_id as string | null) ?? null;
 
-  // AUDIT-B-05 + AUDIT-B-04 : fetch du dernier abonnement du pressing
-  // pour déterminer si l'essai est expiré ou si l'abonnement est suspendu.
+  // AUDIT-B-05 + AUDIT-B-04 + AUDIT-ABONNEMENTS : fetch du dernier abonnement
+  // du pressing pour déterminer :
+  //  - trial_expired       : statut='essai' AND date_fin < now
+  //  - abonnement_suspended: statut='suspendu'
+  //  - abonnement_expired  : statut='expire' OU (statut='actif' AND date_fin < now)
+  //
+  // 🔧 VÉRIFICATION TEMPS RÉEL (audit abonnements) : on ne dépend PAS
+  // uniquement du cron synchroniser_statut_abonnements() pour flippé le
+  // statut à 'expire'. Si le cron n'a pas encore tourné mais que date_fin
+  // est dans le passé, on le détecte ici (fail-safe). Le cron reste utile
+  // pour la cohérence globale (table abonnements propre pour le super-admin
+  // dashboard + les queries admin), mais le middleware est l'autorité
+  // finale pour l'accès.
+  //
   // RLS : un personnel peut lire les abonnements de son propre pressing
   // (policy d'isolation par pressing).
   let trialExpired = false;
   let abonnementSuspended = false;
+  let abonnementExpired = false;
   if (pressingId) {
     const { data: abn } = await supabase
       .from("abonnements")
@@ -526,15 +574,25 @@ async function fetchRoleFromDB(
       .maybeSingle();
     if (abn) {
       const statut = (abn.statut as string) ?? "";
+      const dateFin = abn.date_fin ? new Date(abn.date_fin as string) : null;
+      const now = new Date();
+      const isPast = dateFin !== null && dateFin < now;
+
       if (statut === "suspendu") {
         abonnementSuspended = true;
       }
-      if (
-        statut === "essai" &&
-        abn.date_fin &&
-        new Date(abn.date_fin as string) < new Date()
-      ) {
+      if (statut === "essai" && isPast) {
         trialExpired = true;
+      }
+      // 🔧 AUDIT-ABONNEMENTS : détection temps réel de l'expiration.
+      // Cas 1 : le cron a déjà flippé le statut à 'expire'.
+      // Cas 2 : le cron n'a pas tourné mais date_fin est passé (actif).
+      // NB : 'essai' expiré est géré par trial_expired (redirige aussi vers
+      // /activation-expiree) — on ne le double-compte pas ici.
+      if (statut === "expire") {
+        abonnementExpired = true;
+      } else if (statut === "actif" && isPast) {
+        abonnementExpired = true;
       }
     }
   }
@@ -549,6 +607,7 @@ async function fetchRoleFromDB(
     pressing_statut: pressingRow?.statut ?? null,
     trial_expired: trialExpired,
     abonnement_suspended: abonnementSuspended,
+    abonnement_expired: abonnementExpired,
   };
 }
 
@@ -874,8 +933,8 @@ export async function updateSession(
     if (payload && payload.user_id === user.id) {
       // Cache hit : on sait que l'utilisateur était actif au moment du
       // cache (on ne met en cache QUE les comptes actifs). Le TTL court
-      // (5 min) garantit qu'une désactivation de compte sera répercutée
-      // en max 5 min (au prochain cache miss → DB query → signOut).
+      // (60s) garantit qu'une désactivation de compte sera répercutée
+      // en max 60s (au prochain cache miss → DB query → signOut).
       roleInfo = {
         user_id: payload.user_id,
         role: payload.role,
@@ -885,14 +944,16 @@ export async function updateSession(
         statut_compte: "actif",
         // On ne met en cache QUE les pressings non suspendus → si le
         // cache est valide, le pressing était actif/essai au moment du
-        // cache. Le TTL court (5 min) garantit qu'une suspension soit
-        // répercutée en max 5 min (au prochain cache miss → DB query).
+        // cache. Le TTL court (60s) garantit qu'une suspension soit
+        // répercutée en max 60s (au prochain cache miss → DB query).
         pressing_statut: payload.pressing_statut ?? null,
-        // AUDIT-B-05 + AUDIT-B-04 : flags d'essai expiré / abonnement
-        // suspendu mis en cache. Le TTL court (5 min) garantit qu'une
-        // activation ou réactivation soit répercutée en max 5 min.
+        // AUDIT-B-05 + AUDIT-B-04 + AUDIT-ABONNEMENTS : flags d'essai expiré,
+        // abonnement suspendu, et abonnement expiré mis en cache. Le TTL
+        // court (60s) garantit qu'une activation, réactivation ou
+        // renouvellement soit répercutée en max 60s.
         trial_expired: !!payload.trial_expired,
         abonnement_suspended: !!payload.abonnement_suspended,
+        abonnement_expired: !!payload.abonnement_expired,
       };
     }
   }
@@ -918,7 +979,7 @@ export async function updateSession(
 
   // ---------------------------------------------------------------------
   // 2c. AUDIT-B-06 — Invalidation ciblée du cache pour /personnel/changer-
-  //     mot-de-passe. Le cache (5 min TTL) est signé HMAC et httpOnly →
+  //     mot-de-passe. Le cache (60s TTL) est signé HMAC et httpOnly →
   //     la page de changement de mot de passe ne peut PAS le modifier pour
   //     refléter `mot_de_passe_temporaire = false` après un changement
   //     réussi. Sans cette invalidation, l'utilisateur serait bloqué en
@@ -1019,16 +1080,22 @@ export async function updateSession(
   }
 
   // ---------------------------------------------------------------------
-  // 5.6. AUDIT-B-05 + AUDIT-B-04 — Essai expiré / Abonnement suspendu
-  //      (version légère). On ne signOut PAS l'utilisateur (il peut
-  //      toujours se déconnecter proprement depuis la page d'information),
-  //      on redirige juste les routes applicatives (/admin/* et
-  //      /personnel/*) vers une page d'information.
+  // 5.6. AUDIT-B-05 + AUDIT-B-04 + AUDIT-ABONNEMENTS — Essai expiré /
+  //      Abonnement suspendu / Abonnement expiré (version légère). On ne
+  //      signOut PAS l'utilisateur (il peut toujours se déconnecter
+  //      proprement depuis la page d'information), on redirige juste les
+  //      routes applicatives (/admin/* et /personnel/*) vers une page
+  //      d'information.
   //
   //      - AUDIT-B-05 : abonnements.statut='essai' AND date_fin < now
   //        → redirect /activation-expiree
   //      - AUDIT-B-04 : abonnements.statut='suspendu'
   //        → redirect /compte-suspendu
+  //      - AUDIT-ABONNEMENTS : abonnements.statut='expire' OU
+  //        (statut='actif' AND date_fin < now)
+  //        → redirect /activation-expiree (même page que l'essai expiré —
+  //          le message d'information est le même : "votre abonnement a
+  //          expiré, contactez le support pour le renouveler")
   //
   //      Ne s'applique PAS aux super admins (pas de pressing rattaché).
   //      Ne s'applique PAS aux routes publiques (/, /login, /activation,
@@ -1038,7 +1105,9 @@ export async function updateSession(
   if (
     roleInfo.role !== "super_admin" &&
     roleInfo.pressing_id &&
-    (roleInfo.trial_expired || roleInfo.abonnement_suspended)
+    (roleInfo.trial_expired ||
+      roleInfo.abonnement_suspended ||
+      roleInfo.abonnement_expired)
   ) {
     const isAdminRoute =
       pathname === "/admin" || pathname.startsWith("/admin/");
@@ -1046,8 +1115,9 @@ export async function updateSession(
       pathname === "/personnel" || pathname.startsWith("/personnel/");
 
     if (isAdminRoute || isPersonnelRoute) {
-      // La suspension abonnement a priorité sur l'essai expiré (au cas où
-      // un super-admin suspendrait un pressing dont l'essai venait d'expirer).
+      // La suspension abonnement a priorité sur l'expiration (au cas où
+      // un super-admin suspendrait un pressing dont l'abonnement venait
+      // d'expirer — la suspension est une action manuelle plus forte).
       const target = roleInfo.abonnement_suspended
         ? "/compte-suspendu"
         : "/activation-expiree";
@@ -1060,12 +1130,18 @@ export async function updateSession(
   //    Si user déjà connecté tente d'accéder à /, /login ou /activation
   //    → redirect automatique vers son dashboard.
   //
-  //    ⚠️ Si l'utilisateur est en essai expiré ou abonnement suspendu, on
-  //    NE redirige PAS vers le dashboard (qui serait immédiatement bloqué
-  //    par la section 5.6 ci-dessus) — on le laisse sur la page publique
-  //    courante pour qu'il puisse se déconnecter ou contacter le support.
+  //    ⚠️ Si l'utilisateur est en essai expiré, abonnement suspendu OU
+  //    abonnement expiré, on NE redirige PAS vers le dashboard (qui serait
+  //    immédiatement bloqué par la section 5.6 ci-dessus) — on le laisse
+  //    sur la page publique courante pour qu'il puisse se déconnecter ou
+  //    contacter le support.
   // ---------------------------------------------------------------------
-  if (isAuthRoute && !roleInfo.trial_expired && !roleInfo.abonnement_suspended) {
+  if (
+    isAuthRoute &&
+    !roleInfo.trial_expired &&
+    !roleInfo.abonnement_suspended &&
+    !roleInfo.abonnement_expired
+  ) {
     const target = computeDashboardTarget(roleInfo);
     return redirectTo(request, responseRef.current, target);
   }
