@@ -129,7 +129,7 @@ GRANT EXECUTE ON FUNCTION public.synchroniser_statut_abonnements() TO authentica
 --    via /api/cron/sync-abonnements (Next.js route handler) appelée
 --    par un scheduler externe (Vercel Cron, GitHub Actions, systemd).
 -- ------------------------------------------------------------
-DO $$
+DO $do$
 BEGIN
   -- Vérifie si l'extension pg_cron existe
   IF EXISTS (
@@ -137,6 +137,9 @@ BEGIN
   ) THEN
     -- Schedule le job (idempotent : cron.schedule avec un nom existant
     -- remplace le job précédent). Toutes les 15 minutes.
+    -- NB : on utilise un tag $do$ pour le bloc externe afin d'éviter
+    --      la collision avec le $$...$$ interne (sinon PostgreSQL
+    --      termine le bloc DO prématurément au premier $$ rencontré).
     PERFORM cron.schedule(
       'sync-abonnements-expiration',
       '*/15 * * * *',
@@ -149,7 +152,7 @@ BEGIN
 EXCEPTION
   WHEN OTHERS THEN
     RAISE NOTICE 'pg_cron scheduling skipped: %', SQLERRM;
-END $$;
+END $do$;
 
 -- ------------------------------------------------------------
 -- 4. Index de performance pour la synchronisation

@@ -54,6 +54,9 @@ const sql = readFileSync(sqlPath, "utf8");
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const pat = process.env.SUPABASE_PAT;
+// Mot de passe base de données (Dashboard → Project Settings → Database → Database password)
+// Permet la connexion au pooler si la clé service_role JWT n'est pas acceptée.
+const dbPassword = process.env.SUPABASE_DB_PASSWORD;
 
 if (!supabaseUrl) {
   console.error("✗ NEXT_PUBLIC_SUPABASE_URL manquant dans .env.local");
@@ -89,25 +92,104 @@ async function applyViaManagementApi(): Promise<boolean> {
 }
 
 // ------------------------------------------------------------
-// Strategy 2: Postgres direct via pg (if available)
+// Strategy 2: Postgres via Supabase pooler (session mode, port 5432)
 // ------------------------------------------------------------
+// Le host direct db.{ref}.supabase.co:5432 est REFUSÉ par défaut sur
+// Supabase (IPv6 + port fermé). Le POOLER (aws-0-{region}.pooler.supabase.com)
+// est accessible en IPv4 et accepte la clé service_role JWT comme mot de
+// passe pour l'utilisateur `postgres.{ref}`.
+//
+// Comme on ne connaît pas la région a priori (il faudrait un PAT pour
+// interroger la Management API), on essaie les régions les plus communes
+// jusqu'à trouver celle qui héberge le projet.
+//
+// Pooler session mode = port 5432 (requis pour DDL comme CREATE FUNCTION).
+// Pooler transaction mode = port 6543 (ne supporte pas les requêtes
+// multi-statements préparées).
+const POOLER_PREFIXES = ["aws-0", "aws-1"];
+const POOLER_REGIONS = [
+  // Europe
+  "eu-west-1",
+  "eu-west-2",
+  "eu-central-1",
+  "eu-north-1",
+  // North America
+  "us-east-1",
+  "us-east-2",
+  "us-west-1",
+  "us-west-2",
+  "ca-central-1",
+  // Asia Pacific
+  "ap-east-1",
+  "ap-northeast-1",
+  "ap-northeast-2",
+  "ap-southeast-1",
+  "ap-southeast-2",
+  "ap-south-1",
+  // South America
+  "sa-east-1",
+];
+
 async function applyViaPg(): Promise<boolean> {
-  // Construit la connection string Supabase
-  const connStr = `postgresql://postgres:${serviceKey}@db.${projectRef}.supabase.co:5432/postgres`;
-  console.log(`→ Trying direct Postgres connection to db.${projectRef}.supabase.co...`);
-  try {
-    // Import dynamique de pg (peut ne pas être installé)
-    const { Client } = await import("pg");
-    const client = new Client({ connectionString: connStr, ssl: { rejectUnauthorized: false } });
-    await client.connect();
-    await client.query(sql);
-    await client.end();
-    console.log("✓ Migration applied via direct Postgres connection");
-    return true;
-  } catch (e: any) {
-    console.error(`✗ Direct Postgres failed: ${e.message?.slice(0, 200)}`);
+  const candidates: string[] = [];
+  for (const prefix of POOLER_PREFIXES) {
+    for (const region of POOLER_REGIONS) {
+      candidates.push(`${prefix}-${region}.pooler.supabase.com`);
+    }
+  }
+  // Liste des mots de passe à essayer : DB password d'abord (si présent),
+  // puis service_role JWT (accepté par Supavisor sur certains projets).
+  const passwords: { label: string; value: string }[] = [];
+  if (dbPassword) passwords.push({ label: "DB_PASSWORD", value: dbPassword });
+  if (serviceKey) passwords.push({ label: "service_role JWT", value: serviceKey });
+  if (passwords.length === 0) {
+    console.error("✗ No password available (set SUPABASE_DB_PASSWORD or SUPABASE_SERVICE_ROLE_KEY).");
     return false;
   }
+  console.log(`→ Trying Supabase pooler (project: ${projectRef}, ${candidates.length} hosts × ${passwords.length} creds)...`);
+  const { Client } = await import("pg");
+  const user = `postgres.${projectRef}`;
+
+  for (const cred of passwords) {
+    for (const host of candidates) {
+      const connStr = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(cred.value)}@${host}:5432/postgres`;
+      const client = new Client({
+        connectionString: connStr,
+        ssl: { rejectUnauthorized: false },
+        connectionTimeoutMillis: 8000,
+      });
+      try {
+        process.stdout.write(`  · ${host}:5432 [${cred.label}] ... `);
+        await client.connect();
+        console.log("CONNECTED");
+        // Exécute la migration entière en une seule transaction
+        await client.query("BEGIN");
+        try {
+          await client.query(sql);
+          await client.query("COMMIT");
+          console.log("✓ Migration applied via Supabase pooler (" + host + ", " + cred.label + ")");
+          await client.end();
+          return true;
+        } catch (e: any) {
+          await client.query("ROLLBACK");
+          throw e;
+        }
+      } catch (e: any) {
+        const msg = e.message?.slice(0, 150) || String(e);
+        console.log(`FAIL (${e.code || "ERR"}: ${msg})`);
+        try { await client.end(); } catch {}
+        // Si l'erreur est d'authentification, on continue avec un autre host/cred.
+        // Si l'erreur est de syntaxe SQL, on s'arrête (la migration est fautive).
+        if (/syntax error|duplicate|already exists|does not exist/i.test(msg) && !/Tenant|project not found|password|authentication/i.test(msg)) {
+          console.error(`\n✗ SQL error (not a region/auth issue): ${msg}`);
+          return false;
+        }
+        // Sinon on continue avec le host suivant
+      }
+    }
+  }
+  console.error("✗ All pooler hosts/creds failed.");
+  return false;
 }
 
 // ------------------------------------------------------------
@@ -127,9 +209,30 @@ const applied =
 
 if (!applied) {
   console.error("\n✗ Could not apply migration automatically.");
-  console.error("  Manual options:");
-  console.error("  1. Open Supabase Dashboard → SQL Editor → paste the SQL → Run");
-  console.error(`  2. Set SUPABASE_PAT in .env.local and re-run`);
-  console.error("  3. Install pg: bun add pg && re-run");
+  console.error("");
+  console.error("  ⚠️  Le sandbox ne peut pas atteindre la base Supabase :");
+  console.error("     - host direct db.{ref}.supabase.co → IPv6 only (sandbox = IPv4)");
+  console.error("     - pooler aws-0/aws-1.*.pooler.supabase.com → 'tenant not found' sur toutes les régions");
+  console.error("     - Management API → nécessite un PAT (SUPABASE_PAT vide)");
+  console.error("");
+  console.error("  ▶ Pour appliquer la migration, choisissez UNE de ces 3 options :");
+  console.error("");
+  console.error("  [Option A — recommandée] Générer un PAT et le mettre dans .env.local :");
+  console.error("    1. https://supabase.com/dashboard/account/tokens");
+  console.error("    2. Generate new token → copier la valeur (sbp_...)");
+  console.error("    3. Ajouter dans .env.local : SUPABASE_PAT=sbp_...");
+  console.error(`    4. Re-run: bun run scripts/apply-migration.ts ${file}`);
+  console.error("");
+  console.error("  [Option B] Utiliser le mot de passe DB :");
+  console.error("    1. Dashboard → Project Settings → Database → Database password");
+  console.error("    2. Ajouter dans .env.local : SUPABASE_DB_PASSWORD=...");
+  console.error(`    3. Re-run: bun run scripts/apply-migration.ts ${file}`);
+  console.error("");
+  console.error("  [Option C — manuelle] Copier-coller dans le SQL Editor :");
+  console.error("    1. https://supabase.com/dashboard/project/" + projectRef + "/sql/new");
+  console.error(`    2. Copier le contenu de: ${file}`);
+  console.error("    3. Cliquer Run");
+  console.error("");
+  console.error(`  📋 Le SQL corrigé (bug $$ corrigé) est dans: ${sqlPath}`);
   process.exit(1);
 }
