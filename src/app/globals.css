@@ -211,9 +211,9 @@
   --color-landing-primary-deep: #0d1640; /* Bleu nuit plus profond (bas de dégradé) */
 
   /* Police titres / display / mono de la landing (scopées au route group (public))
-     Les variables --font-jakarta etc. sont posées par next/font dans le
-     layout (public). On mappe ici les tokens Tailwind font-* vers ces
-     variables. → génère les utilities : font-jakarta, font-fraunces,
+     Les variables --font-jakarta etc. sont définies dans :root (auto-hébergées
+     via @fontsource — voir plus haut). On mappe ici les tokens Tailwind font-*
+     vers ces variables. → génère les utilities : font-jakarta, font-fraunces,
      font-plex-mono. */
   --font-jakarta: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
   --font-fraunces: var(--font-fraunces), ui-serif, Georgia, serif;
@@ -247,7 +247,8 @@
   --color-editorial-success: #5E8A6E;       /* Vert luxe (statuts positifs) */
   --color-editorial-danger: #9A4A4A;        /* Rouge terne (erreurs, alertes) */
 
-  /* Police Serif éditoriale — Playfair Display (titres premium) */
+  /* Police Serif éditoriale — Playfair Display (titres premium).
+     var(--font-playfair) est définie dans :root (@fontsource). */
   --font-playfair: var(--font-playfair), ui-serif, Georgia, "Times New Roman", serif;
 
   /* ============================================================
@@ -295,6 +296,29 @@
 
 :root {
   --radius: 0.625rem;
+
+  /* ---- Polices auto-hébergées (@fontsource) ----
+     Remplace next/font/google qui échoue sous Turbopack 16.2.12 :
+       Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/font'
+     ET qui nécessite un accès réseau build-time à Google Fonts
+     (impossible dans ce sandbox — dev.log : "Failed to download IBM
+     Plex Mono from Google Fonts").
+
+     Les feuilles @font-face sont importées via JS dans src/app/layout.tsx
+     (@fontsource-variable/* + @fontsource/ibm-plex-mono). On définit ici
+     les variables CSS consommées par :
+       - @theme inline → utilities font-jakarta, font-fraunces,
+         font-plex-mono, font-playfair (qui référencent var(--font-*))
+       - @theme inline --font-sans / --font-mono → var(--font-geist-*)
+     La cascade :root s'applique à tout <html>, donc pas besoin de poser
+     les variables sur <body> via une classe next/font. */
+  --font-geist-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-geist-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-jakarta: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-fraunces: "Fraunces Variable", ui-serif, Georgia, serif;
+  --font-plex-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-playfair: "Playfair Display Variable", ui-serif, Georgia, "Times New Roman", serif;
+
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -455,8 +479,9 @@
   body {
     @apply bg-background text-foreground;
     /* Plus Jakarta Sans est appliquée via .font-jakarta posée sur <body>
-       dans layout.tsx. On renforce ici les features OpenType pour la
-       lisibilité en plein jour (kerning + ligatures standards). */
+       dans layout.tsx (variable --font-jakarta définie dans :root via
+       @fontsource-variable/plus-jakarta-sans). On renforce ici les
+       features OpenType pour la lisibilité en plein jour. */
     font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
   }
 
@@ -481,9 +506,9 @@
    (CMD-XXXX), codes d'activation (PRS-XXXX-XXXX), références de
    paiement, horodatages et quantités.
 
-   - font-plex-mono : IBM Plex Mono (variable CSS posée par next/font
-     dans layout.tsx, mappée vers la utility Tailwind `font-plex-mono`
-     dans @theme inline de globals.css)
+   - font-plex-mono : IBM Plex Mono (variable CSS --font-plex-mono
+     définie dans :root via @fontsource/ibm-plex-mono, mappée vers la
+     utility Tailwind `font-plex-mono` dans @theme inline de globals.css)
    - tabular-nums : alignement vertical parfait des chiffres dans les
      colonnes (journaux de caisse, tableaux de commandes)
    - font-variant-numeric : oldstyle-nums désactivé, slash zero activé

@@ -1,79 +1,58 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Plus_Jakarta_Sans, IBM_Plex_Mono, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { Toasters } from "@/components/ogpressing/toasters";
 
 /**
- * Polices globales e-pressing (EMBELLISSEMENT — section 3 du prompt)
+ * Polices globales e-pressing — AUTO-HÉBERGÉES via @fontsource
  * --------------------------------------------------------------------
- *  - Geist + Geist_Mono : conservées pour rétro-compat (utilisées par
- *    certains composants shadcn/ui qui pointent sur --font-geist-*).
- *  - Plus Jakarta Sans (--font-jakarta) : police d'INTERFACE par défaut,
- *    titres ET corps, sur TOUS les espaces (public, admin, personnel,
- *    super-admin). Identity premium, lisible en plein jour.
- *  - IBM Plex Mono (--font-plex-mono) : police des DONNÉES — montants
- *    FCFA, numéros de commande (CMD-XXXX), codes d'activation
- *    (PRS-XXXX-XXXX), références de paiement, horodatages, quantités.
- *    Mono + tabular-nums garantit l'alignement vertical des montants
- *    dans les tableaux et journaux de caisse.
- *  - Playfair Display (--font-playfair) : police SERIF éditoriale pour
- *    titres premium "luxe fonctionnel" (brief §2). Usage opt-in via
- *    className `font-playfair` sur les H1/H2 éditoriaux des pages
- *    auth, landing, et cards premium.
+ *  Raison du passage à @fontsource (au lieu de next/font/google) :
+ *   - next/font/google échoue sous Turbopack 16.2.12 avec l'erreur
+ *     « Module not found: Can't resolve
+ *        '@vercel/turbopack-next/internal/font/google/font' »
+ *   - next/font/google télécharge les polices à la build depuis Google
+ *     Fonts, ce qui échoue aussi dans ce sandbox sans accès réseau
+ *     (dev.log : "Failed to download IBM Plex Mono from Google Fonts").
  *
- *  Les variables CSS --font-jakarta, --font-plex-mono et --font-playfair
- *  sont mappées vers les utilities Tailwind correspondantes dans
- *  globals.css (@theme inline).
+ *  Solution : @fontsource téléverse les fichiers .woff2 dans /node_modules
+ *  et les sert localement. Aucune résolution de module interne Turbopack,
+ *  aucune dépendance réseau build-time. Les @font-face sont importés ci-
+ *  dessous ; les variables CSS (--font-jakarta, --font-plex-mono, etc.)
+ *  sont définies dans :root de globals.css.
  *
- * 🚀 PERF (audit PERF-AUDIT-1) : Jakarta et Playfair utilisent désormais
- *  leurs versions VARIABLE (1 fichier couvrant toutes les graisses au
- *  lieu de 5 + 8 fichiers séparés). IBM Plex Mono (pas de version
- *  variable sur Google Fonts) est réduit à 2 graisses (400 + 500).
- *  Total requêtes police : 7 fichiers au lieu de 18 → -60% sur le
- *  waterfall initial mobile.
+ *  Polices chargées :
+ *   - Geist + Geist Mono       : rétro-compat composants shadcn (--font-geist-*)
+ *   - Plus Jakarta Sans        : police d'INTERFACE par défaut (--font-jakarta)
+ *   - IBM Plex Mono            : police des DONNÉES / montants FCFA (--font-plex-mono)
+ *   - Playfair Display         : serif éditorial premium (--font-playfair)
+ *   - Fraunces (italique inc.) : serif dramatique landing (--font-fraunces)
+ *
+ *  Les @font-face sont globaux (un seul import suffit pour tout l'app).
  */
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-  display: "swap",
-});
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-  display: "swap",
-});
+// --- Geist (interface par défaut des composants shadcn) ---
+import "@fontsource-variable/geist";
+import "@fontsource-variable/geist-mono";
 
-// 🚀 PERF : Plus Jakarta Sans a une version variable sur Google Fonts.
-// Ne PAS spécifier `weight` → next/font charge 1 seul fichier couvrant
-// toutes les graisses (400, 500, 600, 700, 800) au lieu de 5 fichiers.
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-jakarta",
-});
+// --- Plus Jakarta Sans (interface e-pressing, titres ET corps) ---
+// Version variable : 1 fichier .woff2 couvre toutes les graisses 400→800.
+import "@fontsource-variable/plus-jakarta-sans";
 
-// IBM Plex Mono n'a PAS de version variable sur Google Fonts : on doit
-// lister les graisses. Audit : seules 400 et 500 sont utilisées (grep
-// `font-plex-mono.*font-(medium|semibold|bold)` → aucun match semibold/bold).
-const plexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-plex-mono",
-  weight: ["400", "500"],
-});
+// --- IBM Plex Mono (données, montants FCFA, codes, horodatages) ---
+// Pas de version variable sur Google Fonts → on importe les graisses
+// utilisées (400 normal, 500 medium, 600 semibold).
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import "@fontsource/ibm-plex-mono/600.css";
 
-// 🚀 PERF : Playfair Display a une version variable sur Google Fonts.
-// Ne PAS spécifier `weight` → 1 fichier couvrant toutes les graisses
-// (400, 500, 600, 700, 800, 900) au lieu de 4×2=8 fichiers.
-// On garde `style: ["normal", "italic"]` car Playfair utilise l'axe ital
-// (masters italiques séparés dans le même fichier variable).
-const playfair = Playfair_Display({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-playfair",
-  style: ["normal", "italic"],
-});
+// --- Playfair Display (serif éditorial — titres premium "luxe fonctionnel") ---
+// Versions variable normal + italique (axe ital séparé).
+import "@fontsource-variable/playfair-display/wght.css";
+import "@fontsource-variable/playfair-display/wght-italic.css";
+
+// --- Fraunces (serif italique dramatique — landing (public) uniquement) ---
+// Versions variable normal + italique.
+import "@fontsource-variable/fraunces/wght.css";
+import "@fontsource-variable/fraunces/wght-italic.css";
 
 export const metadata: Metadata = {
   title: {
@@ -122,9 +101,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fr" suppressHydrationWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} ${jakarta.variable} ${plexMono.variable} ${playfair.variable} antialiased bg-background text-foreground font-jakarta`}
-      >
+      {/* Les variables --font-* sont posées dans :root (globals.css) via
+          @fontsource — pas besoin des classes .variable de next/font. */}
+      <body className="antialiased bg-background text-foreground font-jakarta">
         {children}
         {/* 🚀 PERF : Toasters lazy-loadés (shadcn/ui + Sonner) — wrapper client */}
         <Toasters />
