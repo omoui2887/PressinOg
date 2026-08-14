@@ -35,6 +35,10 @@ import { isValidCIPhone, normalizeCIPhone } from "@/lib/validations/phone";
 import { isEnvConfigured } from "@/lib/env";
 import { isSupabaseNetworkError } from "@/lib/supabase/error-handling";
 import { serviceUnavailableResponse } from "@/lib/supabase/server-error-response";
+import {
+  isPostgrestSchemaCacheError,
+  reloadPostgrestSchema,
+} from "@/lib/supabase/reload-schema";
 import type { ApiResponse } from "@/lib/types";
 
 /* ----------------------- Constantes ----------------------- */
@@ -47,6 +51,94 @@ const PLAN_PRICES: Record<string, number> = {
 
 const ESSAI_DURATION_DAYS = 7;
 const CODE_REGEX = /^PRS-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+
+/* --------------------------------------------------------------------------
+ * Helpers — retry sur cache PostgREST stale + détection email déjà utilisé
+ * --------------------------------------------------------------------------
+ *
+ * WHY :
+ *   PostgREST (moteur REST de Supabase) met en cache le schéma DB et ne le
+ *   refresh que toutes les ~5 min ou sur NOTIFY. Après une migration qui
+ *   ajoute une colonne ou un enum, le cache reste stale pendant cette
+ *   fenêtre → les INSERT/UPDATE utilisant la nouvelle colonne/enum échouent
+ *   avec PGRST204 (colonne introuvable) ou 22P02 (enum invalide).
+ *   L'activation d'un pressing crée 4 lignes (pressing, personnel, abonnement,
+ *   code_activation UPDATE) — si l'une échoue pour cette raison, l'utilisateur
+ *   voit un générique "Erreur interne du serveur" (500) sans pouvoir
+ *   activationner son compte.
+ *
+ * FIX (defense-in-depth, pattern identique à /api/admin/commandes commit 381e031) :
+ *   - `withSchemaCacheRetry` wrap une opération DB : si l'erreur est un
+ *     PGRST204/22P02, on appelle `reload_pgrst_schema()` (migration 033) qui
+ *     envoie `NOTIFY pgrst 'reload schema'`, on attend 400ms, puis on réessaaye
+ *     une fois. Si ça échoue encore, on propage l'erreur (→ catch block →
+ *     rollback).
+ *   - `isEmailAlreadyUsedError` détecte "email déjà utilisé" via plusieurs
+ *     signaux (message substring + status code 400/409 + code d'erreur
+ *     `user_already_exists` / `email_exists`) au lieu d'un simple substring
+ *     sur "already"/"registered". Évite les faux négatifs si Supabase change
+ *     le wording du message.
+ */
+
+/**
+ * Wrap une opération DB Supabase avec retry auto sur erreur de cache PostgREST.
+ * - Si l'erreur n'est PAS un PGRST204/22P02, on la propage telle quelle.
+ * - Si c'est une erreur de cache, on reload le schéma PostgREST puis on réessaaye
+ *   une fois. Si le retry échoue encore, on propage l'erreur.
+ *
+ * @param step Label court pour les logs (ex: "INSERT pressing")
+ * @param requestId UUID court pour corrélation logs ↔ réponse client
+ * @param op Fonction async qui retourne le résultat Supabase `{ data, error }`
+ * @returns Le résultat du premier essai réussi, ou le dernier échec
+ */
+async function withSchemaCacheRetry<T>(
+  step: string,
+  requestId: string,
+  // `PromiseLike` (et non `Promise`) car le builder supabase-js est un thenable
+  // (PostgrestBuilder implémente `.then()` mais n'est pas une Promise native).
+  // Accepter `PromiseLike` permet de passer directement `supabase.from(...).insert(...).single()`
+  // sans wrapper explicite dans `Promise.resolve(...)`.
+  op: () => PromiseLike<{ data: T | null; error: unknown }>
+): Promise<{ data: T | null; error: unknown }> {
+  const result = await op();
+  if (!result.error || !isPostgrestSchemaCacheError(result.error)) {
+    return result;
+  }
+  // Cache PostgREST stale détecté — reload + retry unique.
+  console.warn(
+    `[activation][${requestId}] ${step}: cache PostgREST stale détecté, reload + retry...`,
+    result.error
+  );
+  await reloadPostgrestSchema();
+  return await op();
+}
+
+/**
+ * Détecte si une erreur Supabase Auth correspond à "email déjà utilisé".
+ * Multi-signaux pour robustesse face aux variations de wording entre versions
+ * de GoTrue (moteur Auth de Supabase).
+ */
+function isEmailAlreadyUsedError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { message?: string; status?: number; code?: string };
+  const msg = (e.message ?? "").toLowerCase();
+  const code = (e.code ?? "").toLowerCase();
+  // Substring classique (messages historiques GoTrue)
+  if (msg.includes("already") || msg.includes("registered") || msg.includes("exists")) {
+    return true;
+  }
+  // Code d'erreur explicite (formats récents)
+  if (code === "user_already_exists" || code === "email_exists" || code === "duplicate") {
+    return true;
+  }
+  // Cas particulier : status 400 avec message générique sur un email connu
+  // de la base Auth (se produit parfois si l'utilisateur a été créé sans
+  // email_confirm puis supprimé partiellement).
+  if (e.status === 400 && msg.includes("email")) {
+    return true;
+  }
+  return false;
+}
 
 /* ----------------------- Validation ----------------------- */
 
@@ -187,21 +279,47 @@ export async function POST(req: NextRequest) {
 
   const supabase = getSupabaseAdmin();
 
-  /* --- Étape 1 : Vérifier le code --- */
-  const { data: codeRow, error: codeError } = await supabase
-    .from("codes_activation")
-    .select("id, utilise, date_expiration, plan_initial, cree_par")
-    .eq("code", code)
-    .maybeSingle();
+  // Request ID court pour corrélation logs serveur ↔ message client.
+  // Permet au support de retrouver l'erreur exacte dans les logs Vercel à
+  // partir du message affiché à l'utilisateur (sans exposer de détails
+  // techniques sensibles côté client).
+  const requestId =
+    typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID().slice(0, 8)
+      : Math.random().toString(36).slice(2, 10);
+
+  /* --- Étape 1 : Vérifier le code (avec retry sur cache PostgREST stale) --- */
+  const { data: codeRow, error: codeError } = await withSchemaCacheRetry<{
+    id: string;
+    utilise: boolean;
+    date_expiration: string | null;
+    plan_initial: string;
+    cree_par: string | null;
+  }>(
+    "SELECT codes_activation",
+    requestId,
+    () =>
+      supabase
+        .from("codes_activation")
+        .select("id, utilise, date_expiration, plan_initial, cree_par")
+        .eq("code", code)
+        .maybeSingle()
+  );
 
   if (codeError) {
     // Erreur réseau (Supabase injoignable) → 503 clair au lieu d'un 500.
     if (isSupabaseNetworkError(codeError)) {
       return serviceUnavailableResponse("api/public/activation", codeError);
     }
-    console.error("[activation] Erreur lookup code :", codeError);
+    console.error(`[activation][${requestId}] Erreur lookup code :`, codeError);
     return NextResponse.json<ApiResponse>(
-      { success: false, error: "Erreur lors de la vérification du code." },
+      {
+        success: false,
+        error:
+          "Erreur lors de la vérification du code. Réessayez dans quelques instants. (réf. " +
+          requestId +
+          ")",
+      },
       { status: 500 }
     );
   }
@@ -254,64 +372,89 @@ export async function POST(req: NextRequest) {
 
     if (authError) {
       // Email déjà utilisé ?
-      if (authError.message.toLowerCase().includes("already") || authError.message.toLowerCase().includes("registered")) {
+      if (isEmailAlreadyUsedError(authError)) {
         return NextResponse.json<ApiResponse>(
-          { success: false, error: "Cet email est déjà utilisé. Connectez-vous ou utilisez un autre email." },
+          {
+            success: false,
+            error:
+              "Cet email est déjà utilisé. Connectez-vous ou utilisez un autre email. (réf. " +
+              requestId +
+              ")",
+          },
           { status: 409 }
         );
       }
-      console.error("[activation] Erreur createUser :", authError);
+      console.error(`[activation][${requestId}] Erreur createUser :`, authError);
       // Sécurité (audit #8) : ne pas fuiter le message Supabase brut.
-      throw new Error("Erreur interne du serveur");
+      throw new Error("Étape 2 (createUser) échec — réf. " + requestId);
+    }
+
+    if (!authUser?.user?.id) {
+      // Cas défensif : pas d'erreur mais pas d'utilisateur non plus (théoriquement
+      // impossible avec supabase-js v2, mais on se protège).
+      console.error(`[activation][${requestId}] createUser: data.user null sans erreur`);
+      throw new Error("Étape 2 (createUser) — user null — réf. " + requestId);
     }
 
     createdUserId = authUser.user.id;
 
-    /* --- Étape 3 : Créer le pressing --- */
-    const { data: pressing, error: pressingError } = await supabase
-      .from("pressing")
-      .insert({
-        nom: nom_pressing,
-        telephone,
-        email,
-        ville,
-        commune,
-        statut: "essai",
-        date_activation: new Date().toISOString(),
-      })
-      .select("id")
-      .single();
+    /* --- Étape 3 : Créer le pressing (avec retry sur cache PostgREST stale) --- */
+    const pressingInsert = await withSchemaCacheRetry<{ id: string }>(
+      "INSERT pressing",
+      requestId,
+      () =>
+        supabase
+          .from("pressing")
+          .insert({
+            nom: nom_pressing,
+            telephone,
+            email,
+            ville,
+            commune,
+            statut: "essai",
+            date_activation: new Date().toISOString(),
+          })
+          .select("id")
+          .single()
+    );
+    const { data: pressing, error: pressingError } = pressingInsert;
 
     if (pressingError || !pressing) {
       // Sécurité (audit #8) : log serveur seul, message générique au client.
-      console.error("[activation] Erreur INSERT pressing :", pressingError);
-      throw new Error("Erreur interne du serveur");
+      console.error(`[activation][${requestId}] Erreur INSERT pressing :`, pressingError);
+      throw new Error("Étape 3 (INSERT pressing) échec — réf. " + requestId);
     }
 
     createdPressingId = pressing.id;
 
     /* --- Étape 4 : Créer le personnel (manager = admin du pressing) --- */
-    const { data: personnel, error: personnelError } = await supabase
-      .from("personnel")
-      .insert({
-        pressing_id: createdPressingId,
-        user_id: createdUserId,
-        nom_complet,
-        email,
-        telephone,
-        role: "manager",
-        methode_creation: "creation_directe",
-        statut_compte: "actif",
-        date_activation: new Date().toISOString(),
-        actif: true,
-      })
-      .select("id")
-      .single();
+    const personnelInsert = await withSchemaCacheRetry<{ id: string }>(
+      "INSERT personnel",
+      requestId,
+      () =>
+        supabase
+          .from("personnel")
+          .insert({
+            pressing_id: createdPressingId,
+            user_id: createdUserId,
+            nom_complet,
+            email,
+            telephone,
+            role: "manager",
+            methode_creation: "creation_directe",
+            statut_compte: "actif",
+            date_activation: new Date().toISOString(),
+            actif: true,
+          })
+          .select("id")
+          .single()
+    );
+    const { data: personnel, error: personnelError } = personnelInsert;
 
     if (personnelError || !personnel) {
       // Sécurité (audit #8) : log serveur seul, message générique au client.
-      console.error("[activation] Erreur INSERT personnel :", personnelError);
-      throw new Error("Erreur interne du serveur");
+      console.error(`[activation][${requestId}] Erreur INSERT personnel :`, personnelError);
+      throw new Error("Étape 4 (INSERT personnel) échec — réf. " + requestId);
     }
 
     createdPersonnelId = personnel.id;
@@ -320,23 +463,29 @@ export async function POST(req: NextRequest) {
     const maintenant = new Date();
     const finEssai = new Date(maintenant.getTime() + ESSAI_DURATION_DAYS * 24 * 60 * 60 * 1000);
 
-    const { data: abonnement, error: abonnementError } = await supabase
-      .from("abonnements")
-      .insert({
-        pressing_id: createdPressingId,
-        plan: planInitial,
-        statut: "essai",
-        date_debut: maintenant.toISOString(),
-        date_fin: finEssai.toISOString(),
-        montant_mensuel: montantMensuel,
-      })
-      .select("id")
-      .single();
+    const abonnementInsert = await withSchemaCacheRetry<{ id: string }>(
+      "INSERT abonnements",
+      requestId,
+      () =>
+        supabase
+          .from("abonnements")
+          .insert({
+            pressing_id: createdPressingId,
+            plan: planInitial,
+            statut: "essai",
+            date_debut: maintenant.toISOString(),
+            date_fin: finEssai.toISOString(),
+            montant_mensuel: montantMensuel,
+          })
+          .select("id")
+          .single()
+    );
+    const { data: abonnement, error: abonnementError } = abonnementInsert;
 
     if (abonnementError || !abonnement) {
       // Sécurité (audit #8) : log serveur seul, message générique au client.
-      console.error("[activation] Erreur INSERT abonnement :", abonnementError);
-      throw new Error("Erreur interne du serveur");
+      console.error(`[activation][${requestId}] Erreur INSERT abonnement :`, abonnementError);
+      throw new Error("Étape 5 (INSERT abonnement) échec — réf. " + requestId);
     }
 
     createdAbonnementId = abonnement.id;
@@ -355,22 +504,28 @@ export async function POST(req: NextRequest) {
     // temps, l'UPDATE affecte 0 ligne → `updatedCode` est null → on lève
     // une erreur qui déclenche le rollback (suppression du pressing,
     // personnel, abonnement, user Auth créés aux étapes 2-5).
-    const { data: updatedCode, error: updateCodeError } = await supabase
-      .from("codes_activation")
-      .update({
-        utilise: true,
-        date_utilisation: new Date().toISOString(),
-        pressing_id_cible: createdPressingId,
-      })
-      .eq("id", codeRow.id)
-      .eq("utilise", false)
-      .select("id")
-      .maybeSingle();
+    const codeUpdate = await withSchemaCacheRetry<{ id: string }>(
+      "UPDATE codes_activation",
+      requestId,
+      () =>
+        supabase
+          .from("codes_activation")
+          .update({
+            utilise: true,
+            date_utilisation: new Date().toISOString(),
+            pressing_id_cible: createdPressingId,
+          })
+          .eq("id", codeRow.id)
+          .eq("utilise", false)
+          .select("id")
+          .maybeSingle()
+    );
+    const { data: updatedCode, error: updateCodeError } = codeUpdate;
 
     if (updateCodeError) {
       // Sécurité (audit #8) : log serveur seul, message générique au client.
-      console.error("[activation] Erreur UPDATE code :", updateCodeError);
-      throw new Error("Erreur interne du serveur");
+      console.error(`[activation][${requestId}] Erreur UPDATE code :`, updateCodeError);
+      throw new Error("Étape 6 (UPDATE code) échec — réf. " + requestId);
     }
 
     if (!updatedCode) {
@@ -379,9 +534,9 @@ export async function POST(req: NextRequest) {
       // déclenche le rollback via le catch block ci-dessous (le message
       // renvoyé au client reste générique).
       console.error(
-        "[activation] Code utilisé concurremment (TOCTOU) — rollback"
+        `[activation][${requestId}] Code utilisé concurremment (TOCTOU) — rollback`
       );
-      throw new Error("TOCTOU: code used concurrently");
+      throw new Error("TOCTOU: code used concurrently — réf. " + requestId);
     }
 
     /* --- Succès --- */
@@ -393,7 +548,14 @@ export async function POST(req: NextRequest) {
       { status: 200 }
     );
   } catch (err) {
-    console.error("[activation] Échec — rollback en cours :", err);
+    // Extraction du requestId si l'erreur est un Error avec notre message
+    // formaté "... — réf. <id>", sinon fallback sur requestId du scope.
+    const errRequestId =
+      err instanceof Error && err.message.includes("réf. ")
+        ? err.message.slice(err.message.lastIndexOf("réf. ") + 5).trim()
+        : requestId;
+
+    console.error(`[activation][${errRequestId}] Échec — rollback en cours :`, err);
 
     /* --- Rollback manuel (ordre inverse) --- */
     if (createdAbonnementId) {
@@ -419,8 +581,18 @@ export async function POST(req: NextRequest) {
     // invalide/expiré/déjà utilisé) sont renvoyées AVANT ce catch via
     // NextResponse.json direct. Toute erreur atteignant ici est technique
     // (Supabase, SQL, réseau) → message générique, détail loggé ci-dessus.
+    //
+    // On inclut le requestId dans le message client pour que le support
+    // puisse corréler avec les logs Vercel sans exposer de détails techniques
+    // sensibles (message SQL brut, nom de table, etc.).
     return NextResponse.json<ApiResponse>(
-      { success: false, error: "Erreur interne du serveur" },
+      {
+        success: false,
+        error:
+          "Erreur interne du serveur. Réessayez dans quelques instants. Si le problème persiste, contactez le support avec la référence " +
+          errRequestId +
+          ".",
+      },
       { status: 500 }
     );
   }
