@@ -1,7 +1,26 @@
 /**
  * e-pressing — API /api/admin/commandes (GET list + POST create)
  * ----------------------------------------------------------------
- * LOT 7 — fondations du wizard POS. Deux endpoints :
+ * POST est désormais un ORCHESTRATEUR MINCE qui appelle la RPC
+ * PostgreSQL `create_commande_atomic` (migration 038).
+ *
+ * RÔLE DE CETTE ROUTE (orchestrateur) :
+ *   1. Authentification + autorisation (getCurrentPersonnel + hasRole)
+ *   2. Parse + validation de surface du body (types + enums)
+ *   3. Appel à createCommandeAtomique(params)
+ *   4. Mapping du résultat RPC → réponse HTTP (statut + body)
+ *
+ * CE QUE LA ROUTE NE FAIT PLUS :
+ *   - INSERTs séquentiels (commandes → lignes → articles → paiements)
+ *   - Calcul des montants (sous-total, remise, total)
+ *   - Rollback manuel (DELETE cascade)
+ *   - Lookup des services / catalogue / tarifs
+ *   - Retry loop sur collision numero_commande (géré par le trigger DB)
+ *
+ * Toute cette logique vit dans la RPC SQL, qui s'exécute en UNE
+ * transaction atomique. Si une étape échoue → ROLLBACK automatique
+ * de tout (commande, lignes, articles, paiement, audit). La commande
+ * est soit entièrement créée, soit totalement absente.
  *
  * 1) GET /api/admin/commandes
  *    Liste paginée des commandes du pressing connecté, avec recherche
@@ -10,33 +29,10 @@
  *      { success, data, total, page, pageSize, totalPages }
  *
  * 2) POST /api/admin/commandes
- *    Crée une commande complète en une seule requête : articles (lignes +
- *    articles_vetements individuels par QR), remise optionnelle, acompte
- *    optionnel. Inserts séquentiels avec rollback manuel (DELETE cascade)
- *    en cas d'erreur à n'importe quelle étape. Réponse :
+ *    Crée une commande complète en appelant la RPC atomique. Réponse :
  *      { success: true, data: { id, pressing_id, numero_commande,
- *        montant_total, montant_paye, statut, statut_paiement } }
- *    `pressing_id` est renvoyé pour permettre au wizard (Étape 4) de
- *    générer le QR Code sans refetch.
- *
- * Format du numero_commande : CMD-YYYYMMDD-XXXXXX où XXXXXX = 6 chiffres
- * aléatoires (900 000 combinaisons/jour). Un retry loop (5 tentatives)
- * gère les collisions sur la contrainte UNIQUE en régénérant le numéro.
- *
- * Idempotence (#15) : si le client fournit un `idempotence_key`, on
- * vérifie d'abord qu'aucune commande n'existe déjà pour ce
- * (pressing_id, idempotence_key). Si oui → on renvoie la commande
- * existante (200) sans recréer. Sinon → création normale avec la clé.
- *
- * Priorité express (#2) : un champ optionnel `priorite` ('normal' | 'express')
- * est stocké sur la commande pour le MVP express.
- *
- * Date de retrait (#8) : calculée automatiquement côté serveur comme
- *   date_pret_prevue + 7 jours (commandes normales) OU + 3 jours (commandes
- *   'express'). Stockée dans `commandes.date_retrait` (TIMESTAMPTZ nullable,
- *   cf. migration 002_tables.sql ligne 258). Le client n'a PAS la main sur
- *   cette date — c'est le serveur qui la calcule pour garantir la cohérence.
- *   Le client peut l'afficher après réception de la commande créée.
+ *        montant_total, montant_paye, statut, statut_paiement,
+ *        priorite, date_pret_prevue, date_retrait } }
  *
  * 🔒 SÉCURITÉ :
  *   - getSupabaseServer() (client anon + JWT) → RLS `isolation_pressing`
@@ -44,6 +40,8 @@
  *   - pressing_id dérivé du personnel connecté (jamais trusté du client).
  *   - Auth : n'importe quel personnel actif du pressing.
  *   - 401 si non authentifié, 403 si personnel inactif/non trouvé.
+ *   - Aucune donnée financière frontend n'est trustée : la RPC
+ *     recalcule les montants à partir de services.prix / tarifs_articles.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
@@ -53,16 +51,14 @@ import {
   hasRole,
   isPersonnelActive,
 } from "@/lib/auth/roles";
-import { logAudit } from "@/lib/audit";
-import {
-  isPostgrestSchemaCacheError,
-  reloadPostgrestSchema,
-} from "@/lib/supabase/reload-schema";
 import { getPressingPlan, getHistoryCutoff } from "@/lib/auth/plan-gating";
 import {
-  calculerRemiseAtomique,
-  calculerRemiseFideliteAuto,
-} from "@/lib/financial/atomic";
+  createCommandeAtomique,
+  codeRpcToHttpStatus,
+  type ArticleInputRpc,
+  type RemiseInputRpc,
+  type AcompteInputRpc,
+} from "@/lib/financial/create-commande";
 
 export const dynamic = "force-dynamic";
 
@@ -102,123 +98,8 @@ const METHODE_PAIEMENT_VALID = [
 ] as const;
 type MethodePaiementValid = (typeof METHODE_PAIEMENT_VALID)[number];
 
-interface ArticleInput {
-  service_id: string;
-  /** FK vers catalogue_articles.id (LOT 15 — remplace type_vetement). */
-  catalogue_article_id: string;
-  /** Nom du catalogue (snapshot client, utilisé pour la description lisible). */
-  catalogue_article_nom: string;
-  couleur: CouleurValid;
-  couleur_libre?: string;
-  etat: EtatValid;
-  description_etat?: string;
-  quantite: number;
-  /**
-   * True pour un article personnalisé ajouté via « Ajouter un linge / vêtement »
-   * du POS. Dans ce cas :
-   *   - `catalogue_article_nom` contient le nom saisi librement par l'opérateur
-   *     (l'API NE DOIT PAS l'écraser avec le nom du catalogue).
-   *   - `prix_unitaire` est requis et utilisé tel quel pour la ligne de commande
-   *     (l'API ne résout PAS le tarif via tarifs_articles / service.prix).
-   *   - `catalogue_article_id` pointe vers un article « fourre-tout » du
-   *     catalogue (pour satisfaire la FK NOT NULL côté articles_vetements).
-   */
-  is_custom?: boolean;
-  /** Prix unitaire forcé (entier FCFA ≥ 0). Utilisé seulement si is_custom=true. */
-  prix_unitaire?: number;
-}
-
-interface RemiseInput {
-  type: RemiseTypeValid;
-  valeur: number;
-}
-
-interface AcompteInput {
-  montant: number;
-  methode: MethodePaiementValid;
-  reference?: string;
-}
-
 /* -------------------------------------------------------------------------- */
-/*  HELPERS                                                                    */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Génère un numero_commande au format CMD-YYYYMMDD-XXXXXX (6 chiffres aléatoires).
- * La combinaison date + 6 chiffres aléatoires offre 900 000 codes possibles par
- * jour, ce qui rend la probabilité de collision négligeable. En cas de collision
- * malgré tout (UNIQUE constraint), l'appelant doit réessayer en régénérant le
- * numéro — voir la boucle de retry dans le POST (Step 9).
- */
-function generateNumeroCommande(): string {
-  const now = new Date();
-  const y = now.getUTCFullYear();
-  const m = String(now.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(now.getUTCDate()).padStart(2, "0");
-  const rand = String(Math.floor(100000 + Math.random() * 900000)); // 100000-999999
-  return `CMD-${y}${m}${d}-${rand}`;
-}
-
-/**
- * Détecte si une erreur Supabase/PostgREST correspond à une violation de
- * contrainte UNIQUE (code SQLSTATE 23505). Utilisé pour décider si l'on
- * doit régénérer le numero_commande et réessayer l'INSERT.
- */
-function isUniqueViolation(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  const e = err as { code?: string; message?: string };
-  if (e.code === "23505") return true;
-  const msg = (e.message ?? "").toLowerCase();
-  return (
-    msg.includes("unique") ||
-    msg.includes("duplicate") ||
-    msg.includes("déjà") ||
-    msg.includes("existe déjà")
-  );
-}
-
-/**
- * Rollback manuel : supprime une commande et tout ce qui y est rattaché
- * (articles_vetements, commande_lignes, paiements). Utilisé en cas d'erreur
- * pendant la création séquentielle.
- */
-async function rollbackCommande(
-  supabase: Awaited<ReturnType<typeof getSupabaseServer>>,
-  commandeId: string
-): Promise<void> {
-  try {
-    await supabase
-      .from("paiements")
-      .delete()
-      .eq("commande_id", commandeId);
-  } catch {
-    /* ignore */
-  }
-  try {
-    await supabase
-      .from("articles_vetements")
-      .delete()
-      .eq("commande_id", commandeId);
-  } catch {
-    /* ignore */
-  }
-  try {
-    await supabase
-      .from("commande_lignes")
-      .delete()
-      .eq("commande_id", commandeId);
-  } catch {
-    /* ignore */
-  }
-  try {
-    await supabase.from("commandes").delete().eq("id", commandeId);
-  } catch {
-    /* ignore */
-  }
-}
-
-/* -------------------------------------------------------------------------- */
-/*  GET — LISTE PAGINÉE                                                        */
+/*  GET — LISTE PAGINÉE (inchangé)                                            */
 /* -------------------------------------------------------------------------- */
 
 export async function GET(request: NextRequest) {
@@ -334,10 +215,11 @@ export async function GET(request: NextRequest) {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  POST — CRÉATION COMPLÈTE (commande + lignes + articles + acompte)         */
+/*  POST — CRÉATION ATOMIQUE via RPC PostgreSQL (orchestrateur mince)         */
 /* -------------------------------------------------------------------------- */
 
 export async function POST(request: NextRequest) {
+  // ---------- 1. Auth + autorisation ----------
   const supabase = await getSupabaseServer();
   const me = await getCurrentPersonnel(supabase);
   if (!me) {
@@ -352,7 +234,7 @@ export async function POST(request: NextRequest) {
       { status: 403 }
     );
   }
-  // Rôles autorisés à créer une commande (manager, réceptionniste, caissier, comptable)
+  // Rôles autorisés à créer une commande (manager, réceptionniste)
   if (!hasRole(me, CAN_CREATE_COMMANDES)) {
     return NextResponse.json(
       {
@@ -366,7 +248,22 @@ export async function POST(request: NextRequest) {
   const personnelId = me.id;
   const pressingId = me.pressing_id;
 
-  // ---------- 1. Parse + validate body ----------
+  // ---------- 2. Récupère l'auth.users.id pour audit_log.user_id ----------
+  // (effectué tôt car le résultat est passé à la RPC ; best-effort)
+  let authUserId: string | null = null;
+  try {
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser();
+    authUserId = authUser?.id ?? null;
+  } catch {
+    authUserId = null;
+  }
+
+  // ---------- 3. Parse + validation de surface du body ----------
+  // La validation financière (calcul des montants, lookup tarifs, etc.)
+  // est déléguée à la RPC SQL — le serveur reste l'unique autorité.
+  // Ici on valide uniquement le SHAPE du payload (types, enums, présence).
   let body: Record<string, unknown>;
   try {
     body = await request.json();
@@ -397,10 +294,6 @@ export async function POST(request: NextRequest) {
     );
   }
   // Validation défensive : date_pret_prevue doit être une date ISO parsable.
-  // On n'utilise PAS cette valeur directement pour les timestamp serveur —
-  // c'est une date métier fournie par le client (le réceptionniste choisit
-  // la date prévue de prêt dans le wizard). On vérifie juste qu'elle est
-  // parsable pour pouvoir calculer date_retrait ci-dessous.
   const datePretParsed = new Date(datePretPrevue);
   if (Number.isNaN(datePretParsed.getTime())) {
     return NextResponse.json(
@@ -412,16 +305,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // AUDIT #19 + migration 031 — Validation notes (≤ 2000 caractères).
-  // Sans ce check, un `notes` > 2000 chars déclencherait une 23514
-  // (check_violation) sur le CHECK `check_notes_max_length` (migration 031)
-  // → 500 générique côté client. On renvoie un 400 propre à la place.
-  //
-  // NB : le schéma Zod canonique `createCommandeSchema` (P4-C) possède
-  // `notes: z.string().max(2000).optional()`. On extrait uniquement cette
-  // contrainte ici pour ne pas perturber les validations métier existantes
-  // (client_id, articles, services, etc.) qui renvoient des messages
-  // spécifiques et plus actionnables pour l'utilisateur.
+  // Notes ≤ 2000 caractères (la RPC vérifie aussi, mais on échoue tôt
+  // pour renvoyer un message plus actionnable).
   if (
     typeof body.notes === "string" &&
     body.notes.trim().length > 2000
@@ -435,80 +320,24 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-
   const notes =
     typeof body.notes === "string" && body.notes.trim()
       ? body.notes.trim()
       : null;
 
-  // #2 — Priorité (optionnelle, défaut 'normal'). Valide : 'normal' | 'express'.
+  // Priorité (optionnelle, défaut 'normal')
   const prioriteRaw =
     typeof body.priorite === "string" ? body.priorite.trim() : "";
   const priorite: "normal" | "express" =
     prioriteRaw === "express" ? "express" : "normal";
 
-  // #8 — Date de retrait calculée côté serveur (le client ne fournit PAS cette
-  // date — c'est le serveur qui la calcule à partir de date_pret_prevue + un
-  // délai selon la priorité). Délai par défaut : 7 jours pour les commandes
-  // normales (le client a une semaine pour récupérer ses vêtements après la
-  // date prévue de prêt). Pour les commandes 'express', on raccourcit à 3
-  // jours (le client express attend une livraison rapide → retrait rapide).
-  // Stockée dans `commandes.date_retrait` (TIMESTAMPTZ, nullable — migration
-  // 002_tables.sql ligne 258). Configurable plus tard via une table de params.
-  const RETRAIT_DELAY_NORMAL_MS = 7 * 24 * 60 * 60 * 1000; // +7 jours
-  const RETRAIT_DELAY_EXPRESS_MS = 3 * 24 * 60 * 60 * 1000; // +3 jours
-  const retraitDelayMs =
-    priorite === "express"
-      ? RETRAIT_DELAY_EXPRESS_MS
-      : RETRAIT_DELAY_NORMAL_MS;
-  const dateRetraitIso = new Date(
-    datePretParsed.getTime() + retraitDelayMs
-  ).toISOString();
-
-  // #15 — Idempotence key (optionnelle). Si fournie, on vérifiera plus loin
-  // si une commande existe déjà pour ce (pressing_id, key) afin de renvoyer
-  // la commande existante au lieu d'en créer une nouvelle (idempotent replay).
+  // Idempotence key (optionnelle)
   let idempotenceKey: string | null = null;
   if (typeof body.idempotence_key === "string" && body.idempotence_key.trim()) {
     idempotenceKey = body.idempotence_key.trim().slice(0, 100);
   }
 
-  // #15 — Idempotent replay : si une clé est fournie, vérifie si une commande
-  // existe déjà pour ce (pressing_id, idempotence_key). Si oui, on renvoie
-  // cette commande avec un statut 200 (au lieu de 201) pour indiquer que la
-  // commande a été créée lors d'une requête précédente. Cela protège contre
-  // les doublons en cas de retry réseau ou double-clic côté client.
-  if (idempotenceKey) {
-    const { data: existingCmd, error: existingErr } = await supabase
-      .from("commandes")
-      .select(
-        "id, pressing_id, numero_commande, montant_total, montant_paye, statut, statut_paiement"
-      )
-      .eq("pressing_id", pressingId)
-      .eq("idempotence_key", idempotenceKey)
-      .maybeSingle();
-    if (existingErr) {
-      console.error(
-        "[api/admin/commandes] Erreur SELECT idempotence lookup:",
-        existingErr
-      );
-      // Sécurité (audit #8) : masque le message Supabase au client.
-      return NextResponse.json(
-        { success: false, error: "Erreur interne du serveur" },
-        { status: 500 }
-      );
-    }
-    if (existingCmd) {
-      // Replay idempotent : même payload réponse qu'un 201, mais code 200.
-      return NextResponse.json(
-        { success: true, data: existingCmd },
-        { status: 200 }
-      );
-    }
-    // Sinon, on continue normalement avec la création.
-  }
-
-  // Validation des articles
+  // ---------- 3b. Validation articles (shape + enums) ----------
   const rawArticles = Array.isArray(body.articles) ? body.articles : [];
   if (rawArticles.length === 0) {
     return NextResponse.json(
@@ -517,7 +346,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const articles: ArticleInput[] = [];
+  const articles: ArticleInputRpc[] = [];
   for (let i = 0; i < rawArticles.length; i++) {
     const a = rawArticles[i] as Record<string, unknown>;
     if (!a || typeof a !== "object") {
@@ -617,9 +446,7 @@ export async function POST(request: NextRequest) {
         ? a.description_etat.trim().slice(0, 500)
         : null;
 
-    // Article personnalisé (« Ajouter un linge / vêtement » du POS) :
-    // l'opérateur saisit un nom libre + un prix libre pour le service choisi.
-    // On valide que prix_unitaire est un entier ≥ 0 quand is_custom=true.
+    // Article personnalisé : prix_unitaire est requis et doit être ≥ 0.
     const isCustom = a.is_custom === true;
     let prixUnitaireCustom: number | undefined;
     if (isCustom) {
@@ -644,17 +471,17 @@ export async function POST(request: NextRequest) {
       catalogue_article_id: catalogueArticleId,
       catalogue_article_nom: catalogueArticleNom,
       couleur: couleur as CouleurValid,
-      couleur_libre: couleurLibre ?? undefined,
+      couleur_libre: couleurLibre,
       etat: etat as EtatValid,
-      description_etat: descriptionEtat ?? undefined,
+      description_etat: descriptionEtat,
       quantite,
       is_custom: isCustom || undefined,
       prix_unitaire: prixUnitaireCustom,
     });
   }
 
-  // Validation remise (optionnelle)
-  let remise: RemiseInput | null = null;
+  // ---------- 3c. Validation remise (shape) ----------
+  let remise: RemiseInputRpc | null = null;
   if (body.remise !== null && body.remise !== undefined) {
     const r = body.remise as Record<string, unknown>;
     if (!r || typeof r !== "object") {
@@ -689,8 +516,8 @@ export async function POST(request: NextRequest) {
     remise = { type: rType as RemiseTypeValid, valeur: rValeur };
   }
 
-  // Validation acompte (optionnel)
-  let acompte: AcompteInput | null = null;
+  // ---------- 3d. Validation acompte (shape) ----------
+  let acompte: AcompteInputRpc | null = null;
   if (body.acompte !== null && body.acompte !== undefined) {
     const ac = body.acompte as Record<string, unknown>;
     if (!ac || typeof ac !== "object") {
@@ -736,677 +563,85 @@ export async function POST(request: NextRequest) {
     };
   }
 
-  // ---------- 2. Vérifie que le client appartient au pressing ----------
-  const { data: clientRow } = await supabase
-    .from("clients")
-    .select("id")
-    .eq("id", clientId)
-    .maybeSingle();
-  if (!clientRow) {
-    return NextResponse.json(
-      { success: false, error: "Client introuvable dans votre pressing" },
-      { status: 404 }
-    );
-  }
+  // ---------- 4. Extraction IP + user-agent pour audit_log ----------
+  const ipAddress = extractIpAddress(request);
+  const userAgent = request.headers.get("user-agent");
 
-  // ---------- 3. Fetch services pour les articles (verify actif + pressing) ----------
-  const serviceIds = Array.from(new Set(articles.map((a) => a.service_id)));
-  const { data: services, error: servicesErr } = await supabase
-    .from("services")
-    .select("id, type, prix, actif")
-    .in("id", serviceIds);
-
-  if (servicesErr) {
-    console.error(
-      "[api/admin/commandes] Erreur SELECT services:",
-      servicesErr
-    );
-    return NextResponse.json(
-      { success: false, error: "Erreur lors de la vérification des services" },
-      { status: 500 }
-    );
-  }
-
-  const serviceMap = new Map<
-    string,
-    { type: string; prix: number; actif: boolean }
-  >();
-  for (const s of services ?? []) {
-    serviceMap.set(s.id, { type: s.type, prix: s.prix, actif: s.actif });
-  }
-
-  // Vérifie que tous les services existent + sont actifs
-  for (let i = 0; i < articles.length; i++) {
-    const svc = serviceMap.get(articles[i].service_id);
-    if (!svc) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Article ${i + 1} : service introuvable dans votre pressing`,
-        },
-        { status: 400 }
-      );
-    }
-    if (!svc.actif) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Article ${i + 1} : service inactif, impossible de l'utiliser`,
-        },
-        { status: 400 }
-      );
-    }
-  }
-
-  // ---------- 3b. Vérifie que tous les catalogue_article_id existent + actifs ----------
-  // LOT 15 : valide les FK vers catalogue_articles pour éviter d'insérer des
-  // références orphelines. Le catalogue est global (pas de pressing_id).
-  const catalogueIds = Array.from(
-    new Set(articles.map((a) => a.catalogue_article_id))
-  );
-  const { data: catalogueRows, error: catalogueErr } = await supabase
-    .from("catalogue_articles")
-    .select("id, nom, actif")
-    .in("id", catalogueIds);
-
-  if (catalogueErr) {
-    console.error(
-      "[api/admin/commandes] Erreur SELECT catalogue_articles:",
-      catalogueErr
-    );
-    return NextResponse.json(
-      { success: false, error: "Erreur lors de la vérification du catalogue" },
-      { status: 500 }
-    );
-  }
-
-  const catalogueMap = new Map<
-    string,
-    { nom: string; actif: boolean }
-  >();
-  for (const c of catalogueRows ?? []) {
-    catalogueMap.set(c.id, { nom: c.nom, actif: c.actif });
-  }
-  for (let i = 0; i < articles.length; i++) {
-    const cat = catalogueMap.get(articles[i].catalogue_article_id);
-    if (!cat) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Article ${i + 1} : article du catalogue introuvable`,
-        },
-        { status: 400 }
-      );
-    }
-    if (!cat.actif) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Article ${i + 1} : article du catalogue inactif, impossible de l'utiliser`,
-        },
-        { status: 400 }
-      );
-    }
-    // Le nom vérifié côté serveur prime sur le snapshot client (sécurité).
-    // EXCEPTION : pour les articles personnalisés (is_custom=true), on garde
-    // le nom saisi par l'opérateur (ex : "Boubou traditionnel") — l'UUID
-    // catalogue pointe vers un article « fourre-tout » (houssse-vetement-perso)
-    // et ne doit PAS écraser le nom métier saisi au POS.
-    if (!articles[i].is_custom) {
-      articles[i].catalogue_article_nom = cat.nom;
-    }
-  }
-
-  // ---------- 3c. Fetch tarifs spécifiques par article (override prix service) ----------
-  // Pour chaque couple (catalogue_article_id × type_service) présent dans la
-  // commande, on cherche un tarif spécifique dans tarifs_articles. Si présent,
-  // son prix remplace service.prix pour le calcul du montant_total et l'INSERT
-  // de commande_lignes.prix_unitaire. Sinon, fallback sur service.prix.
-  const tarifKeys = new Set<string>();
-  for (const a of articles) {
-    const svc = serviceMap.get(a.service_id);
-    if (svc) {
-      tarifKeys.add(`${a.catalogue_article_id}::${svc.type}`);
-    }
-  }
-  const tarifByArticleType = new Map<string, number>();
-  if (tarifKeys.size > 0) {
-    const catalogueArticleIds = Array.from(
-      new Set(articles.map((a) => a.catalogue_article_id))
-    );
-    const { data: tarifs, error: tarifsErr } = await supabase
-      .from("tarifs_articles")
-      .select("catalogue_article_id, type_service, prix, actif")
-      .eq("pressing_id", pressingId)
-      .in("catalogue_article_id", catalogueArticleIds);
-    if (tarifsErr) {
-      console.error(
-        "[api/admin/commandes] Erreur SELECT tarifs_articles:",
-        tarifsErr
-      );
-      // Non-bloquant : on fallback sur service.prix si tarifs injoignables.
-    } else if (tarifs) {
-      for (const t of tarifs) {
-        if (t.actif === false) continue;
-        tarifByArticleType.set(
-          `${t.catalogue_article_id}::${t.type_service}`,
-          t.prix
-        );
-      }
-    }
-  }
-
-  /**
-   * Résout le prix unitaire d'un article : tarif spécifique si configuré,
-   * sinon fallback sur service.prix. Garantit que le prix facturé correspond
-   * toujours à ce que l'utilisateur a vu dans le POS (data.ts applique la
-   * même logique côté client).
-   *
-   * EXCEPTION : pour les articles personnalisés (is_custom=true), on utilise
-   * directement `prix_unitaire` (saisi librement par l'opérateur au POS via
-   * le dialogue « Ajouter un linge / vêtement ») — on ignore les tarifs et
-   * service.prix.
-   */
-  function resolvePrixUnitaire(article: ArticleInput): number {
-    if (article.is_custom) {
-      return Math.trunc(article.prix_unitaire ?? 0);
-    }
-    const svc = serviceMap.get(article.service_id);
-    if (!svc) return 0;
-    const tarifPrix = tarifByArticleType.get(
-      `${article.catalogue_article_id}::${svc.type}`
-    );
-    return Math.trunc(tarifPrix ?? svc.prix ?? 0);
-  }
-
-  // ---------- 4. Calcul montant_total_avant_remise ----------
-  const montantTotalAvantRemise = articles.reduce(
-    (sum, a) => sum + resolvePrixUnitaire(a) * a.quantite,
-    0
-  );
-
-  // ---------- 5. Calcul montant_remise (ATOMIQUE côté serveur, migration 036) ----------
-  // Le serveur est l'unique autorité financière. Le frontend ne fournit que
-  // le type + la valeur (ou rien pour fidelite — calculée séparément).
-  // La RPC calculer_remise_atomique valide :
-  //   - le rôle (manager/réceptionniste requis pour remise commerciale)
-  //   - le % max configuré (pressing_remise_config.remise_pourcentage_max)
-  //   - le seuil exceptionnel (manager requis au-delà)
-  //   - le refus de 100% (utilise article_gratuit sinon)
-  //   - le clamp au sous-total pour montant_fixe
-  //   - l'index article pour article_gratuit
-  let montantRemise = 0;
-  let remiseType: RemiseTypeValid = "aucune";
-  let remiseValeur = 0;
-
-  if (remise && remise.type !== "aucune") {
-    // Pour la remise fidélité, le serveur calcule le % à partir des points
-    // du client — le frontend ne choisit JAMAIS la valeur.
-    let remiseTypeForRpc = remise.type;
-    let remiseValeurForRpc = remise.valeur;
-
-    if (remise.type === "fidelite") {
-      // Calcule le % automatiquement (0/3/5 selon palier).
-      const pctFidelite = await calculerRemiseFideliteAuto(
-        pressingId,
-        clientId
-      );
-      remiseValeurForRpc = pctFidelite;
-      // Si 0%, on skip la remise (pas d'erreur — client pas éligible).
-      if (pctFidelite === 0) {
-        remiseType = "aucune";
-        remiseValeur = 0;
-        montantRemise = 0;
-      } else {
-        // Appelle la RPC pour valider + calculer.
-        const remiseResult = await calculerRemiseAtomique({
-          pressing_id: pressingId,
-          montant_avant_remise: montantTotalAvantRemise,
-          remise_type: "fidelite",
-          remise_valeur: pctFidelite,
-          role_utilisateur: me.role,
-          articles_json: null,
-        });
-        if (!remiseResult.success) {
-          return NextResponse.json(
-            {
-              success: false,
-              error: remiseResult.error || "Remise fidélité invalide.",
-              code: remiseResult.code,
-              details: remiseResult.details,
-            },
-            {
-              status:
-                remiseResult.code === "ROLE_INSUFFISANT" ||
-                remiseResult.code === "FIDELITE_PCT_INVALIDE"
-                  ? 403
-                  : 400,
-            }
-          );
-        }
-        montantRemise = remiseResult.montant_remise ?? 0;
-        remiseType = "fidelite";
-        remiseValeur = remiseResult.remise_valeur_appliquee ?? pctFidelite;
-      }
-    } else {
-      // Remise commerciale (pourcentage / montant_fixe / article_gratuit).
-      // Prépare le JSON des articles pour article_gratuit (index validation).
-      const articlesJson =
-        remise.type === "article_gratuit"
-          ? articles.map((a) => ({
-              prix_unitaire: resolvePrixUnitaire(a),
-              quantite: a.quantite,
-            }))
-          : null;
-
-      const remiseResult = await calculerRemiseAtomique({
-        pressing_id: pressingId,
-        montant_avant_remise: montantTotalAvantRemise,
-        remise_type: remiseTypeForRpc,
-        remise_valeur: remiseValeurForRpc,
-        role_utilisateur: me.role,
-        articles_json: articlesJson,
-      });
-      if (!remiseResult.success) {
-        // Mappe les codes d'erreur aux statuts HTTP.
-        const code = remiseResult.code;
-        const status =
-          code === "ROLE_INSUFFISANT" ||
-          code === "REMISE_EXCEPTIONNELLE_REQUIERT_MANAGER"
-            ? 403
-            : code === "POURCENTAGE_100_REFUSE" ||
-              code === "POURCENTAGE_DEPASSE_MAX" ||
-              code === "POURCENTAGE_INVALIDE" ||
-              code === "MONTANT_FIXE_INVALIDE" ||
-              code === "INDEX_ARTICLE_INVALIDE" ||
-              code === "ARTICLES_MANQUANTS" ||
-              code === "TYPE_REMISE_INVALIDE" ||
-              code === "MONTANT_INVALIDE"
-            ? 400
-            : 500;
-        return NextResponse.json(
-          {
-            success: false,
-            error: remiseResult.error || "Remise invalide.",
-            code,
-            details: remiseResult.details,
-          },
-          { status }
-        );
-      }
-      montantRemise = remiseResult.montant_remise ?? 0;
-      remiseType = (remiseResult.remise_type_appliquee as RemiseTypeValid) ?? remise.type;
-      remiseValeur = remiseResult.remise_valeur_appliquee ?? remise.valeur;
-    }
-
-    // Audit log pour chaque remise appliquée (non-nulle).
-    if (montantRemise > 0) {
-      const isExceptionnelle =
-        remiseType === "pourcentage" && remiseValeur > 20; // seuil défaut
-      await logAudit({
-        pressing_id: pressingId,
-        user_id: null, // sera rempli plus bas si possible
-        action: isExceptionnelle
-          ? "appliquer_remise_exceptionnelle"
-          : "appliquer_remise",
-        entity_type: "remise",
-        entity_id: null, // pas encore d'ID commande
-        before_state: null,
-        after_state: {
-          remise_type: remiseType,
-          remise_valeur: remiseValeur,
-          montant_remise: montantRemise,
-          montant_total_avant_remise: montantTotalAvantRemise,
-          client_id: clientId,
-        },
-        req: request,
-      });
-    }
-  }
-
-  // ---------- 6. montant_total ----------
-  const montantTotal = Math.max(0, montantTotalAvantRemise - montantRemise);
-
-  // ---------- 7. Validation acompte <= montant_total ----------
-  if (acompte && acompte.montant > montantTotal) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: `acompte.montant (${acompte.montant}) ne peut pas dépasser le montant_total (${montantTotal})`,
-      },
-      { status: 400 }
-    );
-  }
-
-  // ---------- 8. Détermine statut_paiement + montant_paye ----------
-  const montantPaye = acompte?.montant ?? 0;
-  let statutPaiement: "non_paye" | "partiel" | "paye";
-  if (!acompte) {
-    statutPaiement = "non_paye";
-  } else if (acompte.montant >= montantTotal) {
-    statutPaiement = "paye";
-  } else {
-    statutPaiement = "partiel";
-  }
-
-  // ---------- 9. INSERT commande (avec retry sur collision numero_commande) ----------
-  // #1 — La colonne `numero_commande` est UNIQUE. Le format CMD-YYYYMMDD-XXXXXX
-  // (6 chiffres aléatoires) rend la collision très improbable, mais on gère
-  // quand même le cas en régénérant le numéro et en réessayant jusqu'à 5 fois.
-  // On vérifie le code d'erreur PostgREST 23505 (unique_violation) ou un
-  // message contenant "unique" / "duplicate" / "déjà".
-  interface NewCommandeRow {
-    id: string;
-    numero_commande: string;
-    montant_total: number;
-    montant_paye: number;
-    statut: string;
-    statut_paiement: string;
-  }
-  const nowIso = new Date().toISOString();
-  const MAX_NUMERO_RETRIES = 5;
-  let newCommande: NewCommandeRow | null = null;
-  let lastInsertCmdErr: unknown = null;
-  // Track si on a déjà tenté un reload du cache PostgREST (pour éviter les
-  // loops infinies : on reload au max une fois sur l'ensemble des retries).
-  let schemaReloaded = false;
-
-  for (let attempt = 1; attempt <= MAX_NUMERO_RETRIES; attempt++) {
-    const numeroCommande = generateNumeroCommande();
-    const { data: inserted, error: insertErr } = await supabase
-      .from("commandes")
-      .insert({
-        pressing_id: pressingId,
-        client_id: clientId,
-        numero_commande: numeroCommande,
-        statut: "recu",
-        statut_paiement: statutPaiement,
-        montant_total: montantTotal,
-        montant_paye: montantPaye,
-        remise_type: remiseType,
-        remise_valeur: remiseType === "aucune" ? 0 : remiseValeur,
-        montant_total_avant_remise: montantTotalAvantRemise,
-        montant_remise: montantRemise,
-        // #12 — Server-side timestamp (UTC) — could also rely on DB DEFAULT NOW()
-        // (la colonne date_reception a DEFAULT NOW() dans 002_tables.sql:254).
-        // On garde la valeur explicite pour compatibilité avec l'existant et
-        // pour que le timestamp soit cohérent avec `nowIso` utilisé pour
-        // l'acompte (paiements.date_paiement) ci-dessous.
-        date_reception: nowIso,
-        date_pret_prevue: datePretPrevue,
-        // #8 — date_retrait calculée côté serveur (+7j normal, +3j express).
-        // Voir calcul + haut dans le handler.
-        date_retrait: dateRetraitIso,
-        livraison: false,
-        frais_livraison: 0,
-        notes: notes,
-        priorite: priorite,
-        // #15 — idempotence_key : incluse uniquement si non-null pour éviter
-        // PGRST204 si la colonne n'existe pas encore en base (migration 024
-        // non appliquée). Si la clé est null, l'omet du payload → la DB
-        // applique DEFAULT NULL (colonne nullable). Résilience défense-en-profondeur.
-        ...(idempotenceKey ? { idempotence_key: idempotenceKey } : {}),
-        cree_par: personnelId,
-      })
-      .select(
-        "id, numero_commande, montant_total, montant_paye, statut, statut_paiement"
-      )
-      .single();
-
-    if (!insertErr && inserted) {
-      newCommande = inserted as NewCommandeRow;
-      break;
-    }
-
-    lastInsertCmdErr = insertErr;
-
-    // Si c'est une collision sur numero_commande, on retry avec un nouveau n°.
-    if (isUniqueViolation(insertErr) && attempt < MAX_NUMERO_RETRIES) {
-      console.warn(
-        `[api/admin/commandes] Collision numero_commande (tentative ${attempt}/${MAX_NUMERO_RETRIES}), régénération...`,
-        insertErr
-      );
-      continue;
-    }
-
-    // PGRST204 / 22P02 = cache PostgREST stale (ex: colonne idempotence_key
-    // ou enum 'annule' pas encore dans le cache après une migration).
-    // On tente un reload du cache + retry unique. Voir migration 033 +
-    // src/lib/supabase/reload-schema.ts.
-    if (
-      !schemaReloaded &&
-      isPostgrestSchemaCacheError(insertErr) &&
-      attempt < MAX_NUMERO_RETRIES
-    ) {
-      console.warn(
-        `[api/admin/commandes] Erreur cache PostgREST détectée (tentative ${attempt}/${MAX_NUMERO_RETRIES}), reload + retry...`,
-        insertErr
-      );
-      await reloadPostgrestSchema();
-      schemaReloaded = true;
-      continue; // retry avec le même numero_commande (pas de collision)
-    }
-
-    // Erreur non récupérable ou nombre de tentatives épuisé : on sort.
-    break;
-  }
-
-  if (!newCommande) {
-    console.error(
-      "[api/admin/commandes] Erreur INSERT commandes (après retries):",
-      lastInsertCmdErr
-    );
-    // Sécurité (audit #8) : on ne renvoie pas err.message au client.
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Erreur interne du serveur",
-      },
-      { status: 500 }
-    );
-  }
-
-  const commandeId = newCommande.id;
-  const numeroCommandeFinal = newCommande.numero_commande;
-  const shortCommandeId = commandeId.slice(0, 8);
-
-  // ---------- 10. INSERT lignes + articles_vetements ----------
-  for (let ligneIndex = 0; ligneIndex < articles.length; ligneIndex++) {
-    const article = articles[ligneIndex];
-    const prixUnitaire = resolvePrixUnitaire(article);
-    const montantLigne = prixUnitaire * article.quantite;
-
-    // Description lisible : "Costumes & Vêtements de Cérémonie blanc — bon"
-    // (utilise le nom du catalogue validé côté serveur, LOT 15)
-    const descParts: string[] = [
-      article.catalogue_article_nom,
-      article.couleur === "autre" && article.couleur_libre
-        ? article.couleur_libre
-        : article.couleur,
-    ];
-    descParts.push("—");
-    descParts.push(article.etat);
-    if (article.description_etat) {
-      descParts.push("—");
-      descParts.push(article.description_etat);
-    }
-    const description = descParts.join(" ");
-
-    // LOT 15 : la colonne `type_vetement` a été renommée `type_vetement_legacy`
-    // par la migration 014. On ne l'insère plus (NULL). L'info article est
-    // portée par `description` (lisible) et par `catalogue_article_id` sur
-    // les articles_vetements individuels (FK).
-    const { data: newLigne, error: insertLigneErr } = await supabase
-      .from("commande_lignes")
-      .insert({
-        commande_id: commandeId,
-        service_id: article.service_id,
-        description,
-        quantite: article.quantite,
-        prix_unitaire: prixUnitaire,
-        montant_ligne: montantLigne,
-      })
-      .select("id")
-      .single();
-
-    if (insertLigneErr || !newLigne) {
-      console.error(
-        "[api/admin/commandes] Erreur INSERT commande_lignes:",
-        insertLigneErr
-      );
-      await rollbackCommande(supabase, commandeId);
-      // Sécurité (audit #8) : on ne renvoie pas err.message au client.
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Erreur interne du serveur",
-        },
-        { status: 500 }
-      );
-    }
-
-    const ligneId = newLigne.id as string;
-
-    // INSERT N articles_vetements (1 par unité de quantite)
-    // NB: on type en `unknown[]` pour éviter les conflits avec le fichier
-    // database.types.ts (obsolète — schéma appliqué en DB plus récent).
-    const articleRows: Record<string, unknown>[] = [];
-    for (let i = 0; i < article.quantite; i++) {
-      articleRows.push({
-        commande_id: commandeId,
-        ligne_id: ligneId,
-        code_qr: `${shortCommandeId}-${ligneIndex}-${i}`,
-        catalogue_article_id: article.catalogue_article_id,
-        couleur: article.couleur,
-        couleur_libre: article.couleur_libre ?? null,
-        etat: article.etat,
-        description_etat: article.description_etat ?? null,
-        statut: "recu",
-      });
-    }
-
-    const { error: insertArticlesErr } = await supabase
-      .from("articles_vetements")
-      .insert(articleRows as never);
-
-    if (insertArticlesErr) {
-      console.error(
-        "[api/admin/commandes] Erreur INSERT articles_vetements:",
-        insertArticlesErr
-      );
-      await rollbackCommande(supabase, commandeId);
-      // Sécurité (audit #8) : on ne renvoie pas err.message au client.
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Erreur interne du serveur",
-        },
-        { status: 500 }
-      );
-    }
-  }
-
-  // ---------- 11. INSERT acompte (si fourni) ----------
-  if (acompte) {
-    const { error: insertPaiementErr } = await supabase
-      .from("paiements")
-      .insert({
-        commande_id: commandeId,
-        montant: acompte.montant,
-        methode: acompte.methode,
-        reference: acompte.reference ?? null,
-        // #12 — Server-side timestamp (UTC) — could also rely on DB DEFAULT NOW()
-        // (la colonne date_paiement a DEFAULT NOW() dans 002_tables.sql:325).
-        // On garde la valeur explicite pour cohérence avec date_reception.
-        date_paiement: nowIso,
-        enregistre_par: personnelId,
-        est_acompte: true,
-      });
-
-    if (insertPaiementErr) {
-      console.error(
-        "[api/admin/commandes] Erreur INSERT paiements:",
-        insertPaiementErr
-      );
-      await rollbackCommande(supabase, commandeId);
-      // Sécurité (audit #8) : on ne renvoie pas err.message au client.
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Erreur interne du serveur",
-        },
-        { status: 500 }
-      );
-    }
-  }
-
-  // ---------- 12. Réponse succès ----------
-  // `pressing_id` est inclus dans la réponse pour que le client (wizard Étape 4)
-  // puisse générer le QR Code sans avoir à refetch la commande. Le QR encode
-  // un payload JSON `{ commande_id, numero_commande, pressing_id }` qui sera
-  // utilisé par le scanner de l'application mobile / borne de retrait.
-  // #8 — `date_pret_prevue` et `date_retrait` sont renvoyées pour que le
-  // client puisse les afficher immédiatement (sans refetch) sur le ticket
-  // et l'écran de confirmation.
-
-  // ---------- 12b. AUDIT-B-13 — Journalisation create_commande ----------
-  // Best-effort : ne bloque jamais le flux métier. logAudit catch toutes
-  // les erreurs en interne (console.error) et retourne false en cas d'échec.
-  //
-  // Récupère l'auth.users.id pour audit_log.user_id (FK → auth.users(id)).
-  // `getCurrentPersonnel` ne l'expose pas dans AuthPersonnel (seulement
-  // personnel.id), on le récupère ici via getUser(). On le fait EN FIN de
-  // handler pour éviter l'appel réseau sur les chemins d'erreur (400/404/500).
-  let authUserId: string | null = null;
-  try {
-    const {
-      data: { user: authUser },
-    } = await supabase.auth.getUser();
-    authUserId = authUser?.id ?? null;
-  } catch {
-    // Ne doit pas arriver (déjà authentifié plus haut), mais défensif.
-    authUserId = null;
-  }
-
-  await logAudit({
+  // ---------- 5. Appel à la RPC atomique ----------
+  // Toute la logique métier (lookup services/catalogue/tarifs, calcul
+  // montants, INSERTs, audit) s'exécute en une transaction SQL.
+  // En cas d'erreur à n'importe quelle étape → ROLLBACK automatique.
+  const result = await createCommandeAtomique({
     pressing_id: pressingId,
     user_id: authUserId,
-    action: "create_commande",
-    entity_type: "commande",
-    entity_id: commandeId,
-    after_state: {
-      id: commandeId,
-      pressing_id: pressingId,
-      client_id: clientId,
-      numero_commande: numeroCommandeFinal,
-      statut: "recu",
-      statut_paiement: statutPaiement,
-      montant_total: montantTotal,
-      montant_paye: montantPaye,
-      priorite: priorite,
-      date_pret_prevue: datePretPrevue,
-      date_retrait: dateRetraitIso,
-      notes: notes,
-    },
-    req: request,
+    personnel_id: personnelId,
+    role: me.role,
+    client_id: clientId,
+    date_pret_prevue: datePretPrevue,
+    notes,
+    priorite,
+    idempotence_key: idempotenceKey,
+    articles,
+    remise,
+    acompte,
+    ip_address: ipAddress,
+    user_agent: userAgent,
   });
 
+  // ---------- 6. Mapping du résultat RPC → réponse HTTP ----------
+  if (!result.success) {
+    const status = codeRpcToHttpStatus(result.code);
+    // Sécurité (audit #8) : masque les messages DB bruts pour les 500.
+    const isClientError = status >= 400 && status < 500;
+    const responseBody: Record<string, unknown> = {
+      success: false,
+      code: result.code,
+    };
+    if (isClientError) {
+      // Messages métier actionnables (peuvent être affichés au client).
+      responseBody.error = result.error || "Requête invalide.";
+      if (result.details) responseBody.details = result.details;
+    } else {
+      // Erreur serveur — message générique, log complet côté serveur.
+      console.error(
+        "[api/admin/commandes] RPC create_commande_atomic a échoué:",
+        result.code,
+        result.error,
+        result.details
+      );
+      responseBody.error = "Erreur interne du serveur";
+    }
+    return NextResponse.json(responseBody, { status });
+  }
+
+  // ---------- 7. Succès : 201 (création) ou 200 (replay idempotent) ----------
+  const status = result.code === "IDEMPOTENT_REPLAY" ? 200 : 201;
   return NextResponse.json(
     {
       success: true,
-      data: {
-        id: commandeId,
-        pressing_id: pressingId,
-        numero_commande: numeroCommandeFinal,
-        montant_total: montantTotal,
-        montant_paye: montantPaye,
-        statut: "recu",
-        statut_paiement: statutPaiement,
-        priorite: priorite,
-        date_pret_prevue: datePretPrevue,
-        date_retrait: dateRetraitIso,
-      },
+      data: result.data,
     },
-    { status: 201 }
+    { status }
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  HELPERS                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Extrait l'adresse IP du client depuis une NextRequest.
+ *
+ * Priorité : X-Forwarded-For (proxy/Vercel) > x-real-ip > fallback null.
+ * Pour X-Forwarded-For, on prend le premier IP de la liste (client original).
+ */
+function extractIpAddress(req: NextRequest): string | null {
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) {
+    const first = xff.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  const realIp = req.headers.get("x-real-ip");
+  if (realIp) return realIp.trim();
+  return null;
 }
