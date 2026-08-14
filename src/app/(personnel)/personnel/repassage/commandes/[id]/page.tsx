@@ -8,6 +8,14 @@
  * pressing_id) et délègue le rendu interactif au Client Component
  * <CommandeDetail basePath="/personnel/repassage" />.
  *
+ * 🔒 FILTRAGE PAR ASSIGNATION (serveur-side) :
+ *   Le repassage connecté ne voit QUE les articles qui lui sont assignés
+ *   (assigne_a === me.id). Les articles assignés à un autre repassage,
+ *   un autre rôle, ou non assignés, sont exclus AVANT que les données
+ *   n'atteignent le navigateur. Le filtrage se fait dans ce Server
+ *   Component — le Client Component <CommandeDetail> ne reçoit jamais les
+ *   articles d'un autre employé.
+ *
  * `basePath` est transmis pour que :
  *   - le bouton "Retour aux commandes" pointe vers
  *     /personnel/repassage/commandes
@@ -29,6 +37,7 @@ import { ArrowLeft, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { getCurrentPersonnel } from "@/lib/auth/roles";
 import { fetchCommandeDetail } from "@/lib/queries/commande-detail";
 import { CommandeDetail } from "@/components/ogpressing/admin/commandes/commande-detail";
 import type { CommandeDetail as CommandeDetailData } from "@/components/ogpressing/admin/commandes/commande-print";
@@ -46,6 +55,12 @@ export default async function RepassageCommandeDetailPage({
 }: PageProps) {
   const { id: commandeId } = await params;
   const supabase = await getSupabaseServer();
+
+  // Récupère le personnel connecté pour filtrer les articles par assignation.
+  // Le repassage ne doit voir QUE les articles qui lui sont assignés — le
+  // filtrage se fait côté serveur (Server Component) avant d'envoyer les
+  // données au Client Component <CommandeDetail>.
+  const me = await getCurrentPersonnel(supabase);
 
   const { commande, error } = await fetchCommandeDetail(supabase, commandeId);
 
@@ -159,10 +174,18 @@ export default async function RepassageCommandeDetailPage({
 
   const lignes =
     (commande.lignes as unknown as LigneRow[] | null) ?? [];
-  const articles =
+  const allArticles =
     (commande.articles as unknown as ArticleRow[] | null) ?? [];
   const paiements =
     (commande.paiements as unknown as PaiementRow[] | null) ?? [];
+
+  // 🔒 FILTRAGE SERVEUR-SIDE : le repassage ne voit QUE les articles qui lui
+  // sont assignés (assigne_a === me.id). Les articles assignés à un autre
+  // repassage ou non assignés sont exclus AVANT d'atteindre le navigateur.
+  // Si me est null (cas anormal), on n'affiche aucun article par sécurité.
+  const articles = me
+    ? allArticles.filter((a) => a.assigne_a === me.id)
+    : [];
 
   lignes.sort(
     (a, b) =>

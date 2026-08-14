@@ -1,28 +1,33 @@
 /**
  * e-pressing — /personnel/laveur/commandes (LAV-1)
  * --------------------------------------------------
- * Liste des commandes assignées au laveur (toutes les commandes du pressing
- * ayant potentiellement des articles à laver).
+ * Liste des commandes dont au moins un article est assigné au laveur
+ * connecté. Le filtrage par `assigne_a = me.id` se fait SERVEUR-SIDE
+ * via l'endpoint /api/personnel/taches — JAMAIS uniquement côté frontend.
  *
  * Fonctionnalités :
- *   - Header (titre + sous-titre "Laveur")
- *   - Filtres : Select statut (recu, en_traitement, lave) + recherche
- *     debouncée (300 ms) par numéro / client
- *   - Table desktop / cards mobile : Numéro, Client, Date réception,
- *     Articles (count), Statut, Action
- *   - Action "Marquer lavé" : pour chaque commande "recu" ou
- *     "en_traitement", fetch le détail, PATCH chaque article recu/en_traitement
- *     en "lave", toast succès, recharge la liste
+ *   - Header (titre "Mes commandes assignées" — réellement exact car
+ *     filtré par assignation) + sous-titre "Laveur"
+ *   - 3 StatCards : À traiter / En cours / Terminées (compteurs serveur)
+ *   - Filtres : Select statut commande + recherche debouncée (300 ms)
+ *   - Table desktop / cards mobile : N° ticket (lien cliquable vers le
+ *     détail), Client, Date réception, Mes articles (count), Statut, Action
+ *   - Action "Marquer lavé" : marque UNIQUEMENT les articles assignés au
+ *     laveur (mes_articles.ids_a_traiter) — n'affecte pas les articles
+ *     d'un autre laveur sur la même commande.
  *   - Pagination simple (Précédent / Suivant)
  *   - États loading (skeletons) + error (alerte + Réessayer) + empty
  *
- * 🔒 SÉCURITÉ : le layout (personnel)/layout.tsx vérifie déjà l'auth + le
- *    rôle. Les endpoints /api/admin/commandes acceptent tout personnel
- *    actif. La RLS isole par pressing_id.
+ * 🔒 SÉCURITÉ :
+ *   - Le layout (personnel)/layout.tsx vérifie déjà l'auth + le rôle.
+ *   - L'endpoint /api/personnel/taches filtre par assigne_a = me.id côté
+ *     serveur. Un laveur ne voit JAMAIS les tâches d'un autre laveur ni
+ *     d'un autre pressing (RLS).
+ *   - Le lien N° ticket pointe vers /personnel/laveur/commandes/[id].
  */
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -56,10 +61,8 @@ import { StatusBadge, EmptyState } from "@/components/shared";
 import {
   STATUT_LABELS,
   statutVariant,
-  type CommandeListItem,
 } from "@/components/ogpressing/admin/commandes/commandes-helpers";
 import { formatDateOnly, formatFCFA } from "@/lib/utils/format";
-import { cn } from "@/lib/utils";
 
 const BASE_PATH = "/personnel/laveur";
 const PAGE_SIZE = 10;
@@ -78,28 +81,44 @@ const STATUT_OPTIONS: { value: LaveurStatut; label: string }[] = [
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-interface CommandesApiResponse {
+interface MesArticlesBreakdown {
+  total: number;
+  a_traiter: number;
+  en_cours: number;
+  termines: number;
+  by_statut: Record<string, number>;
+  ids: string[];
+  ids_a_traiter: string[];
+}
+
+interface CommandeItem {
+  id: string;
+  numero_commande: string;
+  statut: string;
+  statut_paiement: string;
+  montant_total: number;
+  montant_paye: number;
+  date_reception: string | null;
+  date_pret_prevue: string | null;
+  priorite: string | null;
+  created_at: string;
+  client: { id: string; nom_complet: string; telephone: string | null } | null;
+  mes_articles: MesArticlesBreakdown;
+}
+
+interface TachesApiResponse {
   success: boolean;
-  data: CommandeListItem[];
+  data: CommandeItem[];
   total: number;
   page: number;
   pageSize: number;
   totalPages: number;
-  error?: string;
-}
-
-interface CommandeDetailArticle {
-  id: string;
-  statut: string;
-  type_vetement: string | null;
-}
-
-interface CommandeDetailApiResponse {
-  success: boolean;
-  data: {
-    id: string;
-    articles: CommandeDetailArticle[];
-  } | null;
+  counters: {
+    total_assignees: number;
+    a_traiter: number;
+    en_cours: number;
+    termines: number;
+  };
   error?: string;
 }
 
@@ -109,14 +128,10 @@ interface PatchArticleApiResponse {
   error?: string;
 }
 
-/** Comptage d'articles par commande (fetch parallèle, best-effort). */
-type ArticleCounts = Record<string, number>;
-
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-/** Construit l'URLSearchParams pour le GET /api/admin/commandes. */
 function buildListParams(opts: {
   statut: LaveurStatut;
   q: string;
@@ -136,69 +151,21 @@ function buildListParams(opts: {
 }
 
 /**
- * Fetch le détail d'une commande et renvoie le nombre d'articles à traiter
- * (statut "recu" ou "en_traitement"). Best-effort : renvoie 0 en cas
- * d'erreur.
+ * Marque les articles assignés au laveur (mes_articles.ids_a_traiter) comme
+ * "lave". N'affecte QUE les articles du laveur connecté — pas ceux d'un
+ * autre laveur sur la même commande.
  */
-async function fetchArticleCount(commandeId: string): Promise<number> {
-  try {
-    const res = await fetch(`/api/admin/commandes/${commandeId}`, {
-      cache: "no-store",
-    });
-    const json: CommandeDetailApiResponse = await res.json();
-    if (!json.success || !json.data) return 0;
-    const articles = json.data.articles ?? [];
-    return articles.filter(
-      (a) => a.statut === "recu" || a.statut === "en_traitement"
-    ).length;
-  } catch {
-    return 0;
-  }
-}
-
-/**
- * Récupère en parallèle le nombre d'articles à traiter pour chaque commande
- * de la page courante. Met à jour le state `articleCounts` (merge).
- */
-async function fetchArticleCounts(
-  commandes: CommandeListItem[]
-): Promise<ArticleCounts> {
-  const entries = await Promise.all(
-    commandes.map(async (c) => [c.id, await fetchArticleCount(c.id)] as const)
-  );
-  return Object.fromEntries(entries);
-}
-
-/**
- * Marque tous les articles "recu"/"en_traitement" d'une commande comme
- * "lave". Renvoie le nombre d'articles mis à jour.
- */
-async function markCommandeLavee(commandeId: string): Promise<number> {
-  // 1. Fetch détail commande pour récupérer les articles
-  const detailRes = await fetch(`/api/admin/commandes/${commandeId}`, {
-    cache: "no-store",
-  });
-  const detailJson: CommandeDetailApiResponse = await detailRes.json();
-  if (!detailJson.success || !detailJson.data) {
-    throw new Error(
-      detailJson.error || "Impossible de charger le détail de la commande"
-    );
+async function markMesArticlesLaves(
+  commandeId: string,
+  articleIds: string[]
+): Promise<number> {
+  if (articleIds.length === 0) {
+    throw new Error("Aucun article à marquer comme lavé.");
   }
 
-  const aTraiter = (detailJson.data.articles ?? []).filter(
-    (a) => a.statut === "recu" || a.statut === "en_traitement"
-  );
-
-  if (aTraiter.length === 0) {
-    throw new Error(
-      "Aucun article à marquer comme lavé dans cette commande"
-    );
-  }
-
-  // 2. PATCH chaque article en "lave" (parallèle)
   const results = await Promise.allSettled(
-    aTraiter.map((a) =>
-      fetch(`/api/admin/commandes/${commandeId}/articles/${a.id}`, {
+    articleIds.map((aid) =>
+      fetch(`/api/admin/commandes/${commandeId}/articles/${aid}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ statut: "lave" }),
@@ -206,9 +173,10 @@ async function markCommandeLavee(commandeId: string): Promise<number> {
     )
   );
 
-  const failed = results.filter((r) => r.status !== "fulfilled" || !r.value.success);
+  const failed = results.filter(
+    (r) => r.status !== "fulfilled" || !r.value.success
+  );
   if (failed.length === results.length) {
-    // Tous ont échoué
     const firstFulfilled = results.find(
       (r): r is PromiseFulfilledResult<PatchArticleApiResponse> =>
         r.status === "fulfilled" && !r.value.success
@@ -221,7 +189,6 @@ async function markCommandeLavee(commandeId: string): Promise<number> {
 
   const successCount = results.length - failed.length;
   if (failed.length > 0) {
-    // Succès partiel
     toast.warning(`${successCount} article(s) marqué(s) lavé(s)`, {
       description: `${failed.length} article(s) n'ont pas pu être mis à jour.`,
     });
@@ -240,23 +207,23 @@ export default function LaveurCommandesPage() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
 
   // --- Données liste ---
-  const [commandes, setCommandes] = useState<CommandeListItem[]>([]);
+  const [commandes, setCommandes] = useState<CommandeItem[]>([]);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // --- Articles count par commande (fetch lazily après chargement liste) ---
-  const [articleCounts, setArticleCounts] = useState<ArticleCounts>({});
+  // --- Compteurs (depuis l'API, serveur-side) ---
+  const [counters, setCounters] = useState({
+    total_assignees: 0,
+    a_traiter: 0,
+    en_cours: 0,
+    termines: 0,
+  });
 
-  // --- Loading + action states ---
+  // --- Action state ---
   const [markingId, setMarkingId] = useState<string | null>(null);
-
-  // --- Totaux KPI (calculés depuis la liste totale non paginée) ---
-  const [kpiALaver, setKpiALaver] = useState(0);
-  const [kpiEnCours, setKpiEnCours] = useState(0);
-  const [kpiLavees, setKpiLavees] = useState(0);
 
   /* -------------------- Debounce recherche -------------------- */
   useEffect(() => {
@@ -269,34 +236,7 @@ export default function LaveurCommandesPage() {
     setPage(1);
   }, [statutFilter, debouncedQuery]);
 
-  /* -------------------- Fetch KPIs (totaux par statut) -------------------- */
-  const fetchKpis = useCallback(async () => {
-    try {
-      const [recuRes, enTraitementRes, laveRes] = await Promise.all([
-        fetch(`/api/admin/commandes?statut=recu&pageSize=1`, {
-          cache: "no-store",
-        }),
-        fetch(`/api/admin/commandes?statut=en_traitement&pageSize=1`, {
-          cache: "no-store",
-        }),
-        fetch(`/api/admin/commandes?statut=lave&pageSize=1`, {
-          cache: "no-store",
-        }),
-      ]);
-      const [recu, enT, lave] = await Promise.all([
-        recuRes.json() as Promise<CommandesApiResponse>,
-        enTraitementRes.json() as Promise<CommandesApiResponse>,
-        laveRes.json() as Promise<CommandesApiResponse>,
-      ]);
-      setKpiALaver((recu.total ?? 0) + (enT.total ?? 0));
-      setKpiEnCours(enT.total ?? 0);
-      setKpiLavees(lave.total ?? 0);
-    } catch {
-      // Silent fail — les KPIs sont indicatifs
-    }
-  }, []);
-
-  /* -------------------- Fetch liste paginée -------------------- */
+  /* -------------------- Fetch liste (endpoint filtré serveur) -------------------- */
   const fetchCommandes = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -306,19 +246,27 @@ export default function LaveurCommandesPage() {
         q: debouncedQuery,
         page,
       });
-      const res = await fetch(`/api/admin/commandes?${params.toString()}`, {
-        cache: "no-store",
-      });
-      const json: CommandesApiResponse = await res.json();
+      const res = await fetch(
+        `/api/personnel/taches?${params.toString()}`,
+        { cache: "no-store" }
+      );
+      const json: TachesApiResponse = await res.json();
       if (!json.success) {
         throw new Error(
-          json.error || "Erreur lors de la récupération des commandes"
+          json.error || "Erreur lors de la récupération des tâches"
         );
       }
       setCommandes(json.data ?? []);
       setTotal(json.total ?? 0);
       setTotalPages(json.totalPages ?? 0);
-      setArticleCounts({});
+      setCounters(
+        json.counters ?? {
+          total_assignees: 0,
+          a_traiter: 0,
+          en_cours: 0,
+          termines: 0,
+        }
+      );
     } catch (err) {
       console.error("[laveur/commandes] Erreur fetch:", err);
       if (err instanceof TypeError && err.message.includes("fetch")) {
@@ -339,37 +287,23 @@ export default function LaveurCommandesPage() {
     fetchCommandes();
   }, [fetchCommandes]);
 
-  /* -------------------- Fetch KPI au montage -------------------- */
-  useEffect(() => {
-    fetchKpis();
-  }, [fetchKpis]);
-
-  /* -------------------- Fetch article counts après chargement liste -------------------- */
-  useEffect(() => {
-    if (loading || commandes.length === 0) return;
-    let cancelled = false;
-    (async () => {
-      const counts = await fetchArticleCounts(commandes);
-      if (!cancelled) {
-        setArticleCounts(counts);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [commandes, loading]);
-
   /* -------------------- Action : Marquer lavé -------------------- */
-  async function handleMarquerLave(cmd: CommandeListItem) {
+  async function handleMarquerLave(cmd: CommandeItem) {
     if (markingId) return;
+    const idsATraiter = cmd.mes_articles?.ids_a_traiter ?? [];
+    if (idsATraiter.length === 0) {
+      toast.error("Aucun article à traiter", {
+        description: "Tous vos articles assignés sont déjà lavés ou plus avancés.",
+      });
+      return;
+    }
     setMarkingId(cmd.id);
     try {
-      const count = await markCommandeLavee(cmd.id);
+      const count = await markMesArticlesLaves(cmd.id, idsATraiter);
       toast.success("Articles marqués comme lavés", {
         description: `${count} article(s) mis à jour pour la commande ${cmd.numero_commande}.`,
       });
-      // Recharge la liste + les KPIs (la commande va passer à "lave" si tous les articles le sont)
-      await Promise.all([fetchCommandes(), fetchKpis()]);
+      await fetchCommandes();
     } catch (err) {
       const message =
         err instanceof Error && err.message
@@ -382,10 +316,10 @@ export default function LaveurCommandesPage() {
   }
 
   /* -------------------- Indique si une commande est "marquable" -------------------- */
-  const isMarkable = (cmd: CommandeListItem) =>
-    cmd.statut === "recu" || cmd.statut === "en_traitement";
+  const isMarkable = (cmd: CommandeItem) =>
+    (cmd.mes_articles?.ids_a_traiter?.length ?? 0) > 0;
 
-  /* -------------------- Sous-composant : 3 StatCards (vue d'ensemble) -------------------- */
+  /* -------------------- Sous-composant : 3 StatCards -------------------- */
   function renderStatCards() {
     if (loading && commandes.length === 0) {
       return (
@@ -399,27 +333,27 @@ export default function LaveurCommandesPage() {
     return (
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
         <StatCard
-          label="À laver"
-          value={kpiALaver}
+          label="À traiter"
+          value={counters.a_traiter}
           icon={Shirt}
           accent="warning"
-          description="Reçues + en traitement"
+          description="Articles reçus / en traitement"
           delay={0}
         />
         <StatCard
-          label="En cours de lavage"
-          value={kpiEnCours}
+          label="En cours"
+          value={counters.en_cours}
           icon={Loader2}
           accent="primary"
-          description="Statut « en traitement »"
+          description="Articles en cours de lavage"
           delay={60}
         />
         <StatCard
-          label="Lavées"
-          value={kpiLavees}
+          label="Terminées"
+          value={counters.termines}
           icon={CheckCircle}
           accent="secondary"
-          description="Statut « lavé »"
+          description="Articles lavés et au-delà"
           delay={120}
         />
       </div>
@@ -474,19 +408,18 @@ export default function LaveurCommandesPage() {
   }
 
   /* -------------------- Sous-composant : Ligne desktop -------------------- */
-  function renderDesktopRow(cmd: CommandeListItem) {
+  function renderDesktopRow(cmd: CommandeItem) {
     const markable = isMarkable(cmd);
     const isMarking = markingId === cmd.id;
-    const articleCount = articleCounts[cmd.id];
+    const myArticleCount = cmd.mes_articles?.total ?? 0;
 
     return (
       <tr key={cmd.id} className="group transition-colors hover:bg-accent/40">
         <td className="px-4 py-3">
           <Link
-            href="#"
-            onClick={(e) => e.preventDefault()}
-            className="font-mono text-xs font-medium text-foreground group-hover:text-primary"
-            title="Détail non disponible pour le laveur — utilisez « Marquer lavé »"
+            href={`${BASE_PATH}/commandes/${cmd.id}`}
+            className="font-mono text-xs font-medium text-foreground underline-offset-2 group-hover:text-primary group-hover:underline"
+            title={`Ouvrir le détail de la commande ${cmd.numero_commande}`}
           >
             {cmd.numero_commande}
           </Link>
@@ -507,14 +440,12 @@ export default function LaveurCommandesPage() {
           {formatDateOnly(cmd.date_reception ?? cmd.created_at)}
         </td>
         <td className="px-4 py-3 text-sm text-foreground">
-          {articleCount === undefined ? (
-            <Skeleton className="h-4 w-8 rounded" />
-          ) : articleCount === 0 ? (
+          {myArticleCount === 0 ? (
             <span className="text-muted-foreground">—</span>
           ) : (
             <span className="inline-flex items-center gap-1">
               <Shirt className="size-3.5 text-muted-foreground" />
-              {articleCount}
+              {myArticleCount}
             </span>
           )}
         </td>
@@ -558,10 +489,10 @@ export default function LaveurCommandesPage() {
   }
 
   /* -------------------- Sous-composant : Card mobile -------------------- */
-  function renderMobileCard(cmd: CommandeListItem) {
+  function renderMobileCard(cmd: CommandeItem) {
     const markable = isMarkable(cmd);
     const isMarking = markingId === cmd.id;
-    const articleCount = articleCounts[cmd.id];
+    const myArticleCount = cmd.mes_articles?.total ?? 0;
 
     return (
       <li key={cmd.id}>
@@ -569,9 +500,12 @@ export default function LaveurCommandesPage() {
           <CardContent className="space-y-3 p-4">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="font-mono text-xs font-semibold text-foreground">
+                <Link
+                  href={`${BASE_PATH}/commandes/${cmd.id}`}
+                  className="font-mono text-xs font-semibold text-foreground underline-offset-2 hover:text-primary hover:underline"
+                >
                   {cmd.numero_commande}
-                </p>
+                </Link>
                 <p className="mt-0.5 truncate text-sm font-medium text-foreground">
                   {cmd.client?.nom_complet ?? "—"}
                 </p>
@@ -595,11 +529,9 @@ export default function LaveurCommandesPage() {
               </span>
               <span className="inline-flex items-center gap-1">
                 <Shirt className="size-3.5" />
-                {articleCount === undefined
-                  ? "…"
-                  : articleCount === 0
+                {myArticleCount === 0
                   ? "—"
-                  : `${articleCount} article${articleCount > 1 ? "s" : ""}`}
+                  : `${myArticleCount} article${myArticleCount > 1 ? "s" : ""}`}
               </span>
               <span className="font-semibold text-foreground">
                 {formatFCFA(cmd.montant_total)}
@@ -673,13 +605,13 @@ export default function LaveurCommandesPage() {
       return (
         <EmptyState
           icon={Shirt}
-          title="Aucune commande à laver"
+          title="Aucune commande assignée"
           description={
             debouncedQuery
               ? "Aucune commande ne correspond à votre recherche. Modifiez vos critères ou effacez la recherche."
               : statutFilter === "tous"
-              ? "Aucune commande reçue, en traitement ou lavée pour le moment. Les nouvelles commandes apparaîtront ici."
-              : `Aucune commande avec le statut « ${STATUT_LABELS[statutFilter] ?? statutFilter} ».`
+              ? "Aucune commande ne vous est assignée pour le moment. Les nouvelles tâches assignées par votre manager apparaîtront ici."
+              : `Aucune commande avec le statut « ${STATUT_LABELS[statutFilter] ?? statutFilter} » ne vous est assignée.`
           }
         />
       );
@@ -701,7 +633,7 @@ export default function LaveurCommandesPage() {
                   Date réception
                 </th>
                 <th className="px-4 py-3 font-semibold text-foreground">
-                  Articles
+                  Mes articles
                 </th>
                 <th className="px-4 py-3 font-semibold text-foreground">
                   Statut
@@ -789,7 +721,8 @@ export default function LaveurCommandesPage() {
           <CardTitle className="text-base">Filtrer les commandes</CardTitle>
           <CardDescription>
             Recherchez par numéro de ticket ou par nom de client, et filtrez
-            par statut de commande.
+            par statut de commande. Seules les commandes vous étant assignées
+            apparaissent.
           </CardDescription>
         </CardHeader>
         <CardContent>{renderFilters()}</CardContent>
@@ -800,7 +733,7 @@ export default function LaveurCommandesPage() {
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-foreground">
             {statutFilter === "tous"
-              ? "Toutes les commandes"
+              ? "Toutes mes commandes"
               : STATUT_LABELS[statutFilter] ?? "Commandes"}
           </h2>
           {markingId && (

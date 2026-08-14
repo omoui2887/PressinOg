@@ -93,7 +93,11 @@ export type AuditAction =
   | "annuler_paiement"
   // Remise (moteur financier atomique — migration 035/036)
   | "appliquer_remise"
-  | "appliquer_remise_exceptionnelle";
+  | "appliquer_remise_exceptionnelle"
+  // Assignation (moteur d'assignation — migration 037)
+  | "assignment_created"
+  | "assignment_changed"
+  | "assignment_removed";
 
 /** Types d'entité touchées. */
 export type AuditEntityType =
@@ -103,7 +107,8 @@ export type AuditEntityType =
   | "abonnement"
   | "paiement"
   | "paiement_annulation"
-  | "remise";
+  | "remise"
+  | "article";
 
 // ---------------------------------------------------------------------------
 // Implémentation

@@ -191,3 +191,39 @@ export const CAN_APPLIQUER_REMISE_EXCEPTIONNELLE: PersonnelRole[] = ["manager"];
  * La RPC SQL `annuler_paiement` vérifie ce rôle côté DB (defense-in-depth).
  */
 export const CAN_ANNULER_PAIEMENT: PersonnelRole[] = ["manager"];
+
+/* -------------------------------------------------------------------------- */
+/*  AUTORISATIONS ASSIGNATION (moteur d'assignation — migration 037)           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Rôles autorisés à assigner / réassigner / désassigner un article de
+ * production à un employé. Seul le manager peut répartir le travail
+ * entre les employés de production.
+ * La RPC SQL `assigner_article_atomic` vérifie ce rôle côté DB
+ * (defense-in-depth) — un laveur qui tenterait d'appeler la RPC
+ * directement se ferait refuser par le SQL.
+ */
+export const CAN_ASSIGNER_ARTICLES: PersonnelRole[] = ["manager"];
+
+/**
+ * Rôles de production qui peuvent RECEVOIR une assignation de tâche.
+ * caissier, receptionniste et comptable sont des rôles non-production
+ * et ne peuvent JAMAIS être assignés à une tâche de lavage/repassage/
+ * livraison. Le manager est inclus car il peut intervenir manuellement
+ * sur n'importe quel poste.
+ */
+export const ROLES_PRODUCTION_ASSIGNABLES: ReadonlySet<PersonnelRole> =
+  new Set(["manager", "laveur", "repassage", "livreur"]);
+
+/**
+ * Vérifie qu'un rôle est un rôle de production assignable (peut recevoir
+ * une tâche). Utilisé côté TS pour filtrer la liste du personnel dans
+ * le dropdown d'assignation (la RPC SQL vérifie aussi côté DB).
+ */
+export function isRoleProductionAssignable(
+  role: PersonnelRole | string | null | undefined
+): boolean {
+  if (!role) return false;
+  return ROLES_PRODUCTION_ASSIGNABLES.has(role as PersonnelRole);
+}

@@ -18,7 +18,7 @@
  *   - repassage      : tableau de bord, mes commandes, casiers
  *   - livreur        : tableau de bord, commandes à livrer
  *   - comptable      : tableau de bord, rapports, clients (lecture)
- *   - manager        : tableau de bord, nouvelle commande, commandes, casiers, clients, stock, rapports, scanner QR
+ *   - manager        : tableau de bord, nouvelle commande, commandes, file de production, casiers, clients, stock, rapports, scanner QR
  */
 import {
   LayoutDashboard,
@@ -30,6 +30,7 @@ import {
   BarChart3,
   Package,
   Archive,
+  ClipboardList,
   type LucideIcon,
 } from "lucide-react";
 import type { DashboardNavItem } from "@/components/ogpressing/dashboard-layout";
@@ -172,6 +173,11 @@ export const NAV_ITEMS_BY_ROLE: Record<PersonnelRole, PersonnelNavItem[]> = {
       icon: List,
     },
     {
+      href: "/personnel/manager/production",
+      label: "File de production",
+      icon: ClipboardList,
+    },
+    {
       href: "/personnel/manager/casiers",
       label: "Casiers",
       icon: Archive,
@@ -205,8 +211,14 @@ export const NAV_ITEMS_BY_ROLE: Record<PersonnelRole, PersonnelNavItem[]> = {
 export const MORE_ITEMS_BY_ROLE: Partial<
   Record<PersonnelRole, PersonnelNavItem[]>
 > = {
-  // Le Manager a 8 items → 5 principaux + 3 dans "Plus" (Casiers, Stock, Scanner QR)
+  // Le Manager a 9 items → 5 principaux + 4 dans "Plus"
+  // (File de production, Casiers, Stock, Scanner QR)
   manager: [
+    {
+      href: "/personnel/manager/production",
+      label: "File de production",
+      icon: ClipboardList,
+    },
     {
       href: "/personnel/manager/casiers",
       label: "Casiers",
