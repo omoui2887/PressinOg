@@ -39,6 +39,7 @@
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { createMiddlewareClient } from "@/lib/supabase/middleware";
+import { isEnvConfigured } from "@/lib/env";
 
 // Force le rendu dynamique (route ne doit jamais être mise en cache statiquement
 // car elle dépend des cookies et des query params à chaque appel).
@@ -120,6 +121,21 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   //    createMiddlewareClient retourne { supabase, responseRef } où
   //    responseRef.current est la NextResponse qui contiendra les cookies
   //    de session posés par setAll (cf. src/lib/supabase/middleware.ts).
+  //
+  // 🔒 Garde-fou env : si les vars Supabase ne sont pas configurées (absentes
+  //    ou placeholders), createMiddlewareClient lèverait une Error qui
+  //    casserait cette route. On redirige à la place vers /login avec un
+  //    code d'erreur clair — cohérent avec le comportement du middleware.
+  if (!isEnvConfigured()) {
+    console.error(
+      "[/auth/callback][FATAL] Supabase env vars manquantes — " +
+        "redirection vers /login (config_incomplete)."
+    );
+    return NextResponse.redirect(
+      `${origin}/login?error=config_incomplete`
+    );
+  }
+
   const { supabase, responseRef } = createMiddlewareClient(request);
 
   // 4. Échange du code PKCE contre une session.

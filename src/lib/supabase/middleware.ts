@@ -31,6 +31,7 @@ import { createServerClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import { fetchWithTimeout } from "@/lib/supabase/error-handling";
+import { isEnvConfigured } from "@/lib/env";
 
 /* ========================================================================== */
 /*  CONSTANTES — POLITIQUE DE ROUTING (DENY-BY-DEFAULT)                       */
@@ -765,13 +766,17 @@ export async function updateSession(
   // AVANT : ce bloc retournait NextResponse.next() pour TOUTES les routes,
   // ce qui désactivait silencieusement l'auth en cas de var d'env manquante
   // (vulnérabilité CRITIQUE — voir AUDIT_SECURITE.md Conclusion #3).
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (
-    !supabaseUrl ||
-    !supabaseAnonKey ||
-    supabaseAnonKey === "REPLACE_WITH_ANON_KEY"
-  ) {
+  //
+  // 🔧 FIX (env-guard) : on délègue à `isEnvConfigured()` (src/lib/env.ts)
+  // qui détecte TOUS les patterns de placeholders connus :
+  //   - vars absentes / vides (undefined, "")
+  //   - REPLACE_WITH_ANON_KEY, REPLACE_WITH_SERVICE_ROLE_KEY
+  //   - your-supabase-url, https://your-project.supabase.co
+  // Avant on ne vérifiait que l'anon key === "REPLACE_WITH_ANON_KEY", ce
+  // qui laissait passer d'autres placeholders (ex: URL placeholder avec
+  // anon key non-placeholder) → createServerClient reçevait des valeurs
+  // invalides → "Your project's URL and Key are required" runtime error.
+  if (!isEnvConfigured()) {
     const pathname = request.nextUrl.pathname;
     // Politique deny-by-default (Issue #18) :
     //   - Route protégée (PROTECTED_PREFIXES) → fail-closed : redirect
