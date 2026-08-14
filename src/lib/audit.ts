@@ -97,7 +97,10 @@ export type AuditAction =
   // Assignation (moteur d'assignation — migration 037)
   | "assignment_created"
   | "assignment_changed"
-  | "assignment_removed";
+  | "assignment_removed"
+  // Casiers (système de casiers uniques — migration 039)
+  | "casier_assign"
+  | "casier_release";
 
 /** Types d'entité touchées. */
 export type AuditEntityType =
@@ -108,7 +111,8 @@ export type AuditEntityType =
   | "paiement"
   | "paiement_annulation"
   | "remise"
-  | "article";
+  | "article"
+  | "casier";
 
 // ---------------------------------------------------------------------------
 // Implémentation

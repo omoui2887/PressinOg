@@ -1,195 +1,246 @@
 /**
- * e-pressing — API /api/admin/casiers (GET)
- * --------------------------------------------------
- * Liste les casiers de stockage pour linges propres du pressing connecté.
+ * e-pressing — API /api/admin/casiers (GET) — Système de casiers uniques
+ * ---------------------------------------------------------------------
+ * Liste les casiers du pressing connecté avec leur état (libre/occupé).
  *
- * Retourne 2 listes :
- *   1. `occupees` : casiers actuellement occupés (articles avec zone_stockage
- *      non-null, statut "pret"). Pour chaque casier : code, article (id,
- *      description), commande (id, numéro), client (nom, téléphone),
- *      date de rangement, personnel qui a rangé.
- *   2. `libres` : casiers suggérés disponibles (basés sur un plan par défaut
- *      A1-A20, B1-B20, C1-C20, D1-D20 — 80 casiers). Sont exclus les casiers
- *      déjà occupés.
+ * Le frontend ne fait qu'AFFICHER les disponibilités — il ne peut PAS
+ * assigner/libérer directement (ça passe par POST/DELETE /assign qui
+ * appellent la RPC atomique).
+ *
+ * Query params :
+ *   - search  : filtre par code de casier (ex: "A1") ou nom de client
+ *   - statut  : "libre" | "occupe" | "tous" (défaut: "tous")
+ *   - zone    : filtre par zone (ex: "A")
  *
  * Réponse :
  *   {
  *     success: true,
  *     data: {
- *       occupees: CasierOccupe[],
- *       libres: string[],
- *       total_occupees: number,
+ *       casiers: CasierAvecEtat[],     // liste avec état libre/occupé
+ *       total: number,
  *       total_libres: number,
- *       migration_appliquee: boolean  // false si les colonnes casier n'existent pas
+ *       total_occupes: number,
+ *       taux_occupation: number,       // 0-100
+ *       zones: string[]                // zones disponibles (ex: ["A","B","C","D"])
  *     }
  *   }
  *
  * 🔒 SÉCURITÉ :
- *   - getSupabaseServer() (client anon + JWT) → RLS `isolation_pressing`.
- *   - Auth : n'importe quel personnel actif (manager, réceptionniste,
- *     repassage, laveur, livreur, caissier, comptable).
+ *   - getSupabaseServer() (anon + JWT) → RLS `isolation_pressing`.
+ *   - Auth : n'importe quel personnel actif (CAN_VOIR_CASIERS).
  *   - 401 si non authentifié, 403 si personnel inactif.
  *
  * 🗄️ ROBUSTESSE :
- *   - Si la migration 015 n'est pas appliquée (colonnes zone_stockage
- *     absentes), l'API renvoie `migration_appliquee: false` avec des listes
- *     vides. Le frontend peut afficher un message demandant d'appliquer
- *     la migration.
+ *   - Si la migration 039 n'est pas appliquée (table `casiers` absente),
+ *     l'API renvoie une réponse gracieuse avec `migration_appliquee: false`.
  */
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import {
+  CAN_VOIR_CASIERS,
+  getCurrentPersonnel,
+  hasRole,
+  isPersonnelActive,
+} from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
-/** Plan de casiers par défaut : 4 rangées (A, B, C, D) × 20 colonnes. */
-const PLAN_CASIERS_DEFAUT: string[] = (() => {
-  const rows = ["A", "B", "C", "D"];
-  const cols = 20;
-  const casiers: string[] = [];
-  for (const r of rows) {
-    for (let c = 1; c <= cols; c++) {
-      casiers.push(`${r}${c}`);
-    }
-  }
-  return casiers;
-})();
-
-interface CasierOccupe {
-  zone_stockage: string;
-  article_id: string;
-  article_description: string;
-  commande_id: string;
-  commande_numero: string;
-  client_nom: string | null;
-  client_telephone: string | null;
-  date_rangeement: string | null;
-  range_par_nom: string | null;
-  statut_article: string;
+interface CasierAvecEtat {
+  id: string;
+  code: string;
+  zone: string | null;
+  actif: boolean;
+  occupe: boolean;
+  // Si occupé :
+  article_id?: string;
+  article_description?: string | null;
+  commande_id?: string;
+  commande_numero?: string | null;
+  client_nom?: string | null;
+  client_telephone?: string | null;
+  date_rangeement?: string | null;
+  range_par_nom?: string | null;
+  statut_article?: string | null;
+  affectation_id?: string;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const supabase = await getSupabaseServer();
-  const { data: userData, error: userErr } = await supabase.auth.getUser();
-  if (userErr || !userData.user) {
+  const me = await getCurrentPersonnel(supabase);
+  if (!me) {
     return NextResponse.json(
       { success: false, error: "Non authentifié" },
       { status: 401 }
     );
   }
-
-  // Vérifie que l'appelant est un personnel actif
-  const { data: me } = await supabase
-    .from("personnel")
-    .select("id, actif, statut_compte, pressing_id")
-    .eq("user_id", userData.user.id)
-    .maybeSingle();
-
-  if (!me) {
-    return NextResponse.json(
-      { success: false, error: "Accès refusé — personnel introuvable" },
-      { status: 403 }
-    );
-  }
-  if (me.actif !== true || me.statut_compte !== "actif") {
+  if (!isPersonnelActive(me)) {
     return NextResponse.json(
       { success: false, error: "Accès refusé — compte inactif" },
       { status: 403 }
     );
   }
+  if (!hasRole(me, CAN_VOIR_CASIERS)) {
+    return NextResponse.json(
+      { success: false, error: "Accès refusé — rôle insuffisant" },
+      { status: 403 }
+    );
+  }
 
-  // --- Tentative 1 : requête avec colonnes casier (migration 015 appliquée) ---
-  // On sélectionne tous les articles avec zone_stockage non-null, en joinant
-  // la commande + client + personnel qui a rangé. RLS isole par pressing.
-  const { data: articlesRiche, error: errRiche } = await supabase
-    .from("articles_vetements")
+  // --- Parse query params ---
+  const { searchParams } = new URL(request.url);
+  const search = (searchParams.get("search") ?? "").trim().toLowerCase();
+  const statutFiltre = (searchParams.get("statut") ?? "tous").toLowerCase();
+  const zoneFiltre = (searchParams.get("zone") ?? "").trim().toUpperCase();
+
+  // --- Tentative : requête sur la table `casiers` (migration 039) ---
+  // On fetch tous les casiers du pressing + LEFT JOIN l'affectation active +
+  // l'article + la commande + le client + le personnel.
+  const { data: casiersData, error: casiersErr } = await supabase
+    .from("casiers")
     .select(
       `id,
-       zone_stockage,
-       date_rangeement,
-       statut,
-       catalogue_article_id,
-       ligne_id,
-       commande:commandes(
+       code,
+       zone,
+       actif,
+       casier_affectations!left(
          id,
-         numero_commande,
-         client:clients(nom_complet, telephone)
-       ),
-       range_par:personnel!articles_vetements_rangee_par_fkey(nom_complet),
-       ligne:commande_lignes(description)`
+         statut,
+         affecte_le,
+         affecte_par,
+         article:articles_vetements(
+           id,
+           statut,
+           zone_stockage,
+           date_rangeement,
+           ligne:commande_lignes(description),
+           commande:commandes(
+             id,
+             numero_commande,
+             client:clients(nom_complet, telephone)
+           ),
+           range_par:personnel!articles_vetements_rangee_par_fkey(nom_complet)
+         )
+       )`
     )
-    .not("zone_stockage", "is", null)
-    .order("zone_stockage", { ascending: true })
+    .eq("pressing_id", me.pressing_id)
+    .order("code", { ascending: true })
     .limit(500);
 
-  if (errRiche) {
-    // La colonne zone_stockage n'existe probablement pas (migration 015
-    // non appliquée). On renvoie une réponse gracieuse indiquant que la
-    // fonctionnalité n'est pas encore active.
+  if (casiersErr) {
+    // La table `casiers` n'existe probablement pas (migration 039 non appliquée).
     console.warn(
-      "[api/admin/casiers] Requête riche échouée (migration 015 non appliquée ?) :",
-      errRiche.message
+      "[api/admin/casiers] Table `casiers` introuvable (migration 039 non appliquée ?) :",
+      casiersErr.message
     );
     return NextResponse.json({
       success: true,
       data: {
-        occupees: [],
-        libres: [],
-        total_occupees: 0,
+        casiers: [],
+        total: 0,
         total_libres: 0,
+        total_occupes: 0,
+        taux_occupation: 0,
+        zones: [],
         migration_appliquee: false,
-        plan_defaut: PLAN_CASIERS_DEFAUT,
       },
     });
   }
 
-  // --- Construction de la liste des casiers occupés ---
-  const occupees: CasierOccupe[] = (articlesRiche ?? []).map((row) => {
+  // --- Construction de la liste avec état libre/occupé ---
+  const casiers: CasierAvecEtat[] = (casiersData ?? []).map((row) => {
     const r = row as unknown as {
       id: string;
-      zone_stockage: string;
-      date_rangeement: string | null;
-      statut: string;
-      catalogue_article_id: string | null;
-      ligne_id: string | null;
-      commande: {
+      code: string;
+      zone: string | null;
+      actif: boolean;
+      casier_affectations: Array<{
         id: string;
-        numero_commande: string;
-        client: { nom_complet: string; telephone: string } | null;
-      } | null;
-      range_par: { nom_complet: string } | null;
-      ligne: { description: string | null } | null;
+        statut: string;
+        affecte_le: string;
+        affecte_par: string | null;
+        article: {
+          id: string;
+          statut: string;
+          zone_stockage: string | null;
+          date_rangeement: string | null;
+          ligne: { description: string | null } | null;
+          commande: {
+            id: string;
+            numero_commande: string;
+            client: { nom_complet: string; telephone: string } | null;
+          } | null;
+          range_par: { nom_complet: string } | null;
+        } | null;
+      }> | null;
     };
+
+    // Trouve l'affectation active (statut='actif')
+    const activeAff = (r.casier_affectations ?? []).find(
+      (a) => a.statut === "actif"
+    );
+
+    const occupe = !!activeAff?.article;
+    const art = activeAff?.article;
+
     return {
-      zone_stockage: r.zone_stockage,
-      article_id: r.id,
-      article_description: r.ligne?.description ?? "—",
-      commande_id: r.commande?.id ?? "",
-      commande_numero: r.commande?.numero_commande ?? "—",
-      client_nom: r.commande?.client?.nom_complet ?? null,
-      client_telephone: r.commande?.client?.telephone ?? null,
-      date_rangeement: r.date_rangeement,
-      range_par_nom: r.range_par?.nom_complet ?? null,
-      statut_article: r.statut,
+      id: r.id,
+      code: r.code,
+      zone: r.zone,
+      actif: r.actif,
+      occupe,
+      article_id: art?.id,
+      article_description: art?.ligne?.description ?? null,
+      commande_id: art?.commande?.id,
+      commande_numero: art?.commande?.numero_commande,
+      client_nom: art?.commande?.client?.nom_complet ?? null,
+      client_telephone: art?.commande?.client?.telephone ?? null,
+      date_rangeement: art?.date_rangeement ?? activeAff?.affecte_le ?? null,
+      range_par_nom: art?.range_par?.nom_complet ?? null,
+      statut_article: art?.statut,
+      affectation_id: activeAff?.id,
     };
   });
 
-  // --- Calcul des casiers libres (plan par défaut - occupés) ---
-  const occupeSet = new Set(occupees.map((c) => c.zone_stockage));
-  const libres = PLAN_CASIERS_DEFAUT.filter((c) => !occupeSet.has(c));
+  // --- Filtrage côté TS (search, statut, zone) ---
+  let filtered = casiers;
 
-  // On inclut aussi dans `occupees` les casiers personnalisés qui ne sont
-  // pas dans le plan par défaut (ex: "E5" si l'utilisateur a saisi un code
-  // hors plan). Ils sont juste affichés comme occupés sans être dans `libres`.
+  if (zoneFiltre) {
+    filtered = filtered.filter((c) => c.zone === zoneFiltre);
+  }
+
+  if (statutFiltre === "libre") {
+    filtered = filtered.filter((c) => !c.occupe && c.actif);
+  } else if (statutFiltre === "occupe") {
+    filtered = filtered.filter((c) => c.occupe);
+  }
+
+  if (search) {
+    filtered = filtered.filter(
+      (c) =>
+        c.code.toLowerCase().includes(search) ||
+        (c.client_nom ?? "").toLowerCase().includes(search) ||
+        (c.commande_numero ?? "").toLowerCase().includes(search) ||
+        (c.article_description ?? "").toLowerCase().includes(search)
+    );
+  }
+
+  // --- Stats ---
+  const total = casiers.length;
+  const totalOccupes = casiers.filter((c) => c.occupe).length;
+  const totalLibres = casiers.filter((c) => !c.occupe && c.actif).length;
+  const tauxOccupation = total > 0 ? Math.round((totalOccupes / total) * 100) : 0;
+  const zones = [...new Set(casiers.map((c) => c.zone).filter(Boolean))] as string[];
 
   return NextResponse.json({
     success: true,
     data: {
-      occupees,
-      libres,
-      total_occupees: occupees.length,
-      total_libres: libres.length,
+      casiers: filtered,
+      total,
+      total_libres: totalLibres,
+      total_occupes: totalOccupes,
+      taux_occupation: tauxOccupation,
+      zones,
       migration_appliquee: true,
-      plan_defaut: PLAN_CASIERS_DEFAUT,
     },
   });
 }

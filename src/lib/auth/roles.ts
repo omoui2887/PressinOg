@@ -227,3 +227,37 @@ export function isRoleProductionAssignable(
   if (!role) return false;
   return ROLES_PRODUCTION_ASSIGNABLES.has(role as PersonnelRole);
 }
+
+/* -------------------------------------------------------------------------- */
+/*  AUTORISATIONS CASIERS (système de casiers uniques — migration 039)         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Rôles autorisés à assigner / libérer manuellement un casier.
+ * Le manager (admin pressing) et le réceptionniste gèrent le rangement
+ * physique des articles dans les casiers de stockage. Le repassage est
+ * inclus car c'est lui qui range les articles propres après repassage.
+ * La RPC SQL `assigner_casier_atomic` vérifie ce rôle côté DB
+ * (defense-in-depth) si on lui passe p_role — mais ici on contrôle
+ * côté TS pour filtrer l'UI.
+ */
+export const CAN_GERER_CASIERS: PersonnelRole[] = [
+  "manager",
+  "receptionniste",
+  "repassage",
+];
+
+/**
+ * Rôles autorisés à consulter les casiers (lecture seule).
+ * Tous les rôles actifs peuvent voir l'état des casiers (utile pour
+ * le laveur, livreur, caissier qui cherchent un article).
+ */
+export const CAN_VOIR_CASIERS: PersonnelRole[] = [
+  "manager",
+  "receptionniste",
+  "caissier",
+  "laveur",
+  "repassage",
+  "livreur",
+  "comptable",
+];

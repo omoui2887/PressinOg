@@ -220,20 +220,41 @@ export async function POST(request: NextRequest) {
   }
 
   // --- Si "livrer" : passer tous les articles_vetements à "livre" ---
+  // IMPORTANT : on vide aussi zone_stockage / date_rangeement / rangee_par
+  // pour libérer les casiers physiques (cohérent avec la route retirer).
+  // Le trigger `trg_auto_liberer_casier` (migration 039) fait aussi cette
+  // libération au niveau DB (defense-in-depth), mais on le fait ici aussi
+  // pour la rétro-compatibilité (si la migration 039 n'est pas appliquée).
   if (action === "livrer") {
     const { error: artsErr } = await supabase
       .from("articles_vetements")
-      .update({ statut: "livre", updated_at: nowIso })
+      .update({
+        statut: "livre",
+        zone_stockage: null,
+        date_rangeement: null,
+        rangee_par: null,
+        updated_at: nowIso,
+      })
       .eq("commande_id", commandeId)
       .neq("statut", "livre"); // on évite l'UPDATE inutile des articles déjà livre
 
     if (artsErr) {
-      // Non bloquant : la commande est déjà marquée "livre", on logue
-      // l'erreur mais on renvoie le succès (la commande est livrée).
-      console.error(
-        "[api/personnel/livreur/livrer] Erreur UPDATE articles_vetements:",
-        artsErr
-      );
+      // La colonne zone_stockage n'existe peut-être pas (migration 015 non
+      // appliquée) → on retente avec un UPDATE simple (statut uniquement).
+      const { error: artsErrMin } = await supabase
+        .from("articles_vetements")
+        .update({ statut: "livre", updated_at: nowIso })
+        .eq("commande_id", commandeId)
+        .neq("statut", "livre");
+
+      if (artsErrMin) {
+        // Non bloquant : la commande est déjà marquée "livre", on logue
+        // l'erreur mais on renvoie le succès (la commande est livrée).
+        console.error(
+          "[api/personnel/livreur/livrer] Erreur UPDATE articles_vetements:",
+          artsErrMin
+        );
+      }
     }
   }
 
