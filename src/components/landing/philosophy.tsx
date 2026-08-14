@@ -20,6 +20,7 @@
 import { useEffect, useRef } from "react";
 import Image from "next/image";
 import { usePrefersReducedMotion } from "@/lib/motion/hooks";
+import { gsap } from "@/lib/gsap/client";
 
 const TEXTURE_IMAGE_URL =
   "https://images.unsplash.com/photo-1605000797499-95a51c5269ae?auto=format&fit=crop&w=1800&q=80";
@@ -33,50 +34,40 @@ export function Philosophy() {
     if (prefersReducedMotion) return;
     if (typeof window === "undefined") return;
     const isMobile = window.innerWidth < 768;
+    if (!rootRef.current) return;
 
-    let ctx: { revert: () => void } | undefined;
-    let cancelled = false;
+    const ctx = gsap.context(() => {
+      // Reveal ligne-par-ligne du manifeste
+      gsap.from("[data-philosophy-line]", {
+        y: 40,
+        opacity: 0,
+        duration: 1.1,
+        ease: "power3.out",
+        stagger: 0.18,
+        scrollTrigger: {
+          trigger: rootRef.current,
+          start: "top 70%",
+          once: true,
+        },
+      });
 
-    (async () => {
-      const gsap = (await import("gsap")).default;
-      const { ScrollTrigger } = await import("gsap/ScrollTrigger");
-      if (cancelled || !rootRef.current) return;
-      gsap.registerPlugin(ScrollTrigger);
-
-      ctx = gsap.context(() => {
-        // Reveal ligne-par-ligne du manifeste
-        gsap.from("[data-philosophy-line]", {
-          y: 40,
-          opacity: 0,
-          duration: 1.1,
-          ease: "power3.out",
-          stagger: 0.18,
+      // Parallax sur la texture (desktop seulement)
+      if (!isMobile && textureRef.current) {
+        gsap.to(textureRef.current, {
+          yPercent: 18,
+          ease: "none",
           scrollTrigger: {
             trigger: rootRef.current,
-            start: "top 70%",
-            once: true,
+            start: "top bottom",
+            end: "bottom top",
+            scrub: true,
           },
         });
-
-        // Parallax sur la texture (desktop seulement)
-        if (!isMobile && textureRef.current) {
-          gsap.to(textureRef.current, {
-            yPercent: 18,
-            ease: "none",
-            scrollTrigger: {
-              trigger: rootRef.current,
-              start: "top bottom",
-              end: "bottom top",
-              scrub: true,
-            },
-          });
-        }
-      }, rootRef);
-    })();
+      }
+    }, rootRef);
 
     return () => {
-      cancelled = true;
-      ctx?.revert();
+      ctx.revert();
     };
   }, [prefersReducedMotion]);
 

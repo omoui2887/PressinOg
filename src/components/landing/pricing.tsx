@@ -23,6 +23,7 @@ import {
   type PlanId,
 } from "@/lib/stores/inscription-store";
 import { cn } from "@/lib/utils";
+import { gsap } from "@/lib/gsap/client";
 
 type Plan = {
   id: PlanId;
@@ -203,35 +204,25 @@ export function Pricing() {
     if (prefersReducedMotion) return;
     if (typeof window === "undefined") return;
     if (window.innerWidth < 768) return;
+    if (!rootRef.current) return;
 
-    let ctx: { revert: () => void } | undefined;
-    let cancelled = false;
-
-    (async () => {
-      const gsap = (await import("gsap")).default;
-      const { ScrollTrigger } = await import("gsap/ScrollTrigger");
-      if (cancelled || !rootRef.current) return;
-      gsap.registerPlugin(ScrollTrigger);
-
-      ctx = gsap.context(() => {
-        gsap.from("[data-pricing-card]", {
-          y: 60,
-          opacity: 0,
-          duration: 0.9,
-          ease: "power3.out",
-          stagger: 0.15,
-          scrollTrigger: {
-            trigger: rootRef.current,
-            start: "top 75%",
-            once: true,
-          },
-        });
-      }, rootRef);
-    })();
+    const ctx = gsap.context(() => {
+      gsap.from("[data-pricing-card]", {
+        y: 60,
+        opacity: 0,
+        duration: 0.9,
+        ease: "power3.out",
+        stagger: 0.15,
+        scrollTrigger: {
+          trigger: rootRef.current,
+          start: "top 75%",
+          once: true,
+        },
+      });
+    }, rootRef);
 
     return () => {
-      cancelled = true;
-      ctx?.revert();
+      ctx.revert();
     };
   }, [prefersReducedMotion]);
 

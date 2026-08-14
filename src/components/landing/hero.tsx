@@ -16,13 +16,15 @@
  *     Essai 7 jours gratuit
  *
  * Animation GSAP fade-up (y: 40 → 0, opacity 0 → 1) avec stagger 0.08 sur
- * titre L1, L2, sous-titre, CTA, badges. Dynamic import + usePrefersReducedMotion.
+ * titre L1, L2, sous-titre, CTA, badges. Import statique via @/lib/gsap/client
+ * + usePrefersReducedMotion.
  */
 "use client";
 
 import { useEffect, useRef } from "react";
 import Image from "next/image";
 import { usePrefersReducedMotion } from "@/lib/motion/hooks";
+import { gsap } from "@/lib/gsap/client";
 
 const HERO_IMAGE_URL =
   "https://images.unsplash.com/photo-1582735689369-4fe89db7114c?auto=format&fit=crop&w=2000&q=80";
@@ -42,28 +44,21 @@ export function Hero() {
     if (typeof window === "undefined") return;
     // Pas d'animation GSAP sur mobile (< 768px) : on garde la simplicité.
     if (window.innerWidth < 768) return;
+    if (!rootRef.current) return;
 
-    let ctx: { revert: () => void } | undefined;
-    let cancelled = false;
-
-    (async () => {
-      const gsap = (await import("gsap")).default;
-      if (cancelled || !rootRef.current) return;
-      ctx = gsap.context(() => {
-        gsap.from("[data-hero-anim]", {
-          y: 40,
-          opacity: 0,
-          duration: 1,
-          ease: "power3.out",
-          stagger: 0.08,
-          delay: 0.15,
-        });
-      }, rootRef);
-    })();
+    const ctx = gsap.context(() => {
+      gsap.from("[data-hero-anim]", {
+        y: 40,
+        opacity: 0,
+        duration: 1,
+        ease: "power3.out",
+        stagger: 0.08,
+        delay: 0.15,
+      });
+    }, rootRef);
 
     return () => {
-      cancelled = true;
-      ctx?.revert();
+      ctx.revert();
     };
   }, [prefersReducedMotion]);
 

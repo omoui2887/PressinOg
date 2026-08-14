@@ -22,6 +22,7 @@
 import { useEffect, useRef } from "react";
 import { usePrefersReducedMotion } from "@/lib/motion/hooks";
 import { cn } from "@/lib/utils";
+import { gsap, ScrollTrigger } from "@/lib/gsap/client";
 
 /* ============================================================
    ANIMATION GRAPHIQUES — Une par carte
@@ -257,104 +258,94 @@ export function Protocol() {
     if (prefersReducedMotion) return;
     if (typeof window === "undefined") return;
     const isMobile = window.innerWidth < 768;
+    if (!cardsRef.current) return;
 
-    let ctx: { revert: () => void } | undefined;
-    let cancelled = false;
+    const ctx = gsap.context(() => {
+      const cards = gsap.utils.toArray<HTMLElement>("[data-protocol-card]");
 
-    (async () => {
-      const gsap = (await import("gsap")).default;
-      const { ScrollTrigger } = await import("gsap/ScrollTrigger");
-      if (cancelled || !cardsRef.current) return;
-      gsap.registerPlugin(ScrollTrigger);
-
-      ctx = gsap.context(() => {
-        const cards = gsap.utils.toArray<HTMLElement>("[data-protocol-card]");
-
-        if (isMobile) {
-          // Mobile : simple fade-in au scroll, pas de pin/stack
-          cards.forEach((card) => {
-            gsap.from(card, {
-              y: 50,
-              opacity: 0,
-              duration: 0.8,
-              ease: "power3.out",
-              scrollTrigger: {
-                trigger: card,
-                start: "top 80%",
-                once: true,
-              },
-            });
+      if (isMobile) {
+        // Mobile : simple fade-in au scroll, pas de pin/stack
+        cards.forEach((card) => {
+          gsap.from(card, {
+            y: 50,
+            opacity: 0,
+            duration: 0.8,
+            ease: "power3.out",
+            scrollTrigger: {
+              trigger: card,
+              start: "top 80%",
+              once: true,
+            },
           });
-          return;
+        });
+        return;
+      }
+
+      // Desktop : effet sticky stack
+      // Chaque carte est initialement positionnée en absolute à top:0
+      // dans un conteneur dont la hauteur = nbCartes * 100vh.
+      cards.forEach((card, idx) => {
+        if (idx === 0) {
+          gsap.set(card, { y: 0, opacity: 1, scale: 1, filter: "blur(0px)" });
+        } else {
+          gsap.set(card, {
+            y: window.innerHeight * 0.5,
+            opacity: 0,
+            scale: 1,
+            filter: "blur(0px)",
+          });
         }
+      });
 
-        // Desktop : effet sticky stack
-        // Chaque carte est initialement positionnée en absolute à top:0
-        // dans un conteneur dont la hauteur = nbCartes * 100vh.
-        cards.forEach((card, idx) => {
-          if (idx === 0) {
-            gsap.set(card, { y: 0, opacity: 1, scale: 1, filter: "blur(0px)" });
-          } else {
-            gsap.set(card, {
-              y: window.innerHeight * 0.5,
-              opacity: 0,
-              scale: 1,
-              filter: "blur(0px)",
-            });
-          }
-        });
-
-        ScrollTrigger.create({
-          trigger: cardsRef.current,
-          start: "top top",
-          end: `+=${cards.length * 100}%`,
-          pin: cardsRef.current,
-          pinSpacing: true,
-          scrub: 1,
-          onUpdate: (self) => {
-            const progress = self.progress;
-            const seg = 1 / cards.length;
-            cards.forEach((card, idx) => {
-              if (idx === 0) {
-                // La première carte recule au fur et à mesure
-                const recede = gsap.utils.clamp(
-                  0,
-                  1,
-                  progress / seg
-                );
-                gsap.set(card, {
-                  opacity: 1 - recede * 0.5,
-                  scale: 1 - recede * 0.1,
-                  filter: `blur(${recede * 20}px)`,
-                });
-              } else {
-                // Les cartes suivantes montent et prennent la place
-                const enter = gsap.utils.clamp(
-                  0,
-                  1,
-                  (progress - (idx - 1) * seg) / seg
-                );
-                const recede = gsap.utils.clamp(
-                  0,
-                  1,
-                  (progress - idx * seg) / seg
-                );
-                gsap.set(card, {
-                  y: (1 - enter) * window.innerHeight * 0.5,
-                  opacity: enter * (1 - recede * 0.5),
-                  scale: 1 - recede * 0.1,
-                  filter: `blur(${recede * 20}px)`,
-                });
-              }
-            });
-          },
-        });
-      }, rootRef);
-    })();
+      ScrollTrigger.create({
+        trigger: cardsRef.current,
+        start: "top top",
+        end: `+=${cards.length * 100}%`,
+        pin: cardsRef.current,
+        pinSpacing: true,
+        scrub: 1,
+        onUpdate: (self) => {
+          const progress = self.progress;
+          const seg = 1 / cards.length;
+          cards.forEach((card, idx) => {
+            if (idx === 0) {
+              // La première carte recule au fur et à mesure
+              const recede = gsap.utils.clamp(
+                0,
+                1,
+                progress / seg
+              );
+              gsap.set(card, {
+                opacity: 1 - recede * 0.5,
+                scale: 1 - recede * 0.1,
+                filter: `blur(${recede * 20}px)`,
+              });
+            } else {
+              // Les cartes suivantes montent et prennent la place
+              const enter = gsap.utils.clamp(
+                0,
+                1,
+                (progress - (idx - 1) * seg) / seg
+              );
+              const recede = gsap.utils.clamp(
+                0,
+                1,
+                (progress - idx * seg) / seg
+              );
+              gsap.set(card, {
+                y: (1 - enter) * window.innerHeight * 0.5,
+                opacity: enter * (1 - recede * 0.5),
+                scale: 1 - recede * 0.1,
+                filter: `blur(${recede * 20}px)`,
+              });
+            }
+          });
+        },
+      });
+    }, rootRef);
 
     return () => {
-      cancelled = true;
-      ctx?.revert();
+      ctx.revert();
     };
   }, [prefersReducedMotion]);
 

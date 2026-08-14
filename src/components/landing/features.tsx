@@ -36,6 +36,7 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { usePrefersReducedMotion } from "@/lib/motion/hooks";
 import { cn } from "@/lib/utils";
+import { gsap } from "@/lib/gsap/client";
 
 /* ============================================================
    CARTE 1 — Suivi par Article (Diagnostic Mixer)
@@ -610,35 +611,25 @@ export function Features() {
     if (prefersReducedMotion) return;
     if (typeof window === "undefined") return;
     if (window.innerWidth < 768) return;
+    if (!rootRef.current) return;
 
-    let ctx: { revert: () => void } | undefined;
-    let cancelled = false;
-
-    (async () => {
-      const gsap = (await import("gsap")).default;
-      const { ScrollTrigger } = await import("gsap/ScrollTrigger");
-      if (cancelled || !rootRef.current) return;
-      gsap.registerPlugin(ScrollTrigger);
-
-      ctx = gsap.context(() => {
-        gsap.from("[data-feature-card]", {
-          y: 60,
-          opacity: 0,
-          duration: 0.9,
-          ease: "power3.out",
-          stagger: 0.15,
-          scrollTrigger: {
-            trigger: rootRef.current,
-            start: "top 75%",
-            once: true,
-          },
-        });
-      }, rootRef);
-    })();
+    const ctx = gsap.context(() => {
+      gsap.from("[data-feature-card]", {
+        y: 60,
+        opacity: 0,
+        duration: 0.9,
+        ease: "power3.out",
+        stagger: 0.15,
+        scrollTrigger: {
+          trigger: rootRef.current,
+          start: "top 75%",
+          once: true,
+        },
+      });
+    }, rootRef);
 
     return () => {
-      cancelled = true;
-      ctx?.revert();
+      ctx.revert();
     };
   }, [prefersReducedMotion]);
 

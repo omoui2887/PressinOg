@@ -23,6 +23,7 @@ import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { usePrefersReducedMotion } from "@/lib/motion/hooks";
 import { useInscriptionStore, PLAN_LABELS } from "@/lib/stores/inscription-store";
+import { gsap } from "@/lib/gsap/client";
 
 // Lazy-load du formulaire : on diffère son JS (react-hook-form + zod +
 // tous les composants shadcn/ui) hors du First Paint de la landing.
@@ -73,6 +74,9 @@ export function InscriptionSection() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    // Détection de montage client pour éviter les mismatches d'hydratation
+    // avec selectedPlan (store Zustand). Pattern canonique React 19.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, []);
 
@@ -80,35 +84,25 @@ export function InscriptionSection() {
     if (prefersReducedMotion) return;
     if (typeof window === "undefined") return;
     if (window.innerWidth < 768) return;
+    if (!rootRef.current) return;
 
-    let ctx: { revert: () => void } | undefined;
-    let cancelled = false;
-
-    (async () => {
-      const gsap = (await import("gsap")).default;
-      const { ScrollTrigger } = await import("gsap/ScrollTrigger");
-      if (cancelled || !rootRef.current) return;
-      gsap.registerPlugin(ScrollTrigger);
-
-      ctx = gsap.context(() => {
-        gsap.from("[data-inscription-anim]", {
-          y: 40,
-          opacity: 0,
-          duration: 1,
-          ease: "power3.out",
-          stagger: 0.1,
-          scrollTrigger: {
-            trigger: rootRef.current,
-            start: "top 75%",
-            once: true,
-          },
-        });
-      }, rootRef);
-    })();
+    const ctx = gsap.context(() => {
+      gsap.from("[data-inscription-anim]", {
+        y: 40,
+        opacity: 0,
+        duration: 1,
+        ease: "power3.out",
+        stagger: 0.1,
+        scrollTrigger: {
+          trigger: rootRef.current,
+          start: "top 75%",
+          once: true,
+        },
+      });
+    }, rootRef);
 
     return () => {
-      cancelled = true;
-      ctx?.revert();
+      ctx.revert();
     };
   }, [prefersReducedMotion]);
 
