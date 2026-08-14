@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# e-pressing / OgPressing — pre-commit secret scanner
+# Blocks commit if critical/high severity secrets are detected.
+bun run scripts/security-scan-secrets.ts --staged
