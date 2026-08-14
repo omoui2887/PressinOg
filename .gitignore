@@ -75,3 +75,6 @@ tool-results/
 /*.jpg
 /*.jpeg
 /*.webp
+
+# Git backup directories (contain full history with secrets)
+.git-backup*
