@@ -43,6 +43,7 @@ import {
   Printer,
   Receipt,
   StickyNote,
+  Trash2,
   User,
   Wallet,
 } from "lucide-react";
@@ -106,6 +107,11 @@ import {
   type CommandeDetail as CommandeDetailData,
 } from "./commande-print";
 import { EncaisserPaiementDialog } from "./encaisser-paiement-dialog";
+import { AnnulerPaiementDialog } from "./annuler-paiement-dialog";
+import {
+  CAN_ANNULER_PAIEMENT,
+  type PersonnelRole,
+} from "@/lib/auth/roles";
 
 interface CommandeDetailProps {
   commande: CommandeDetailData;
@@ -160,6 +166,14 @@ export function CommandeDetail({
   // disparaît si la commande est soldée.
   const [encaisserOpen, setEncaisserOpen] = useState(false);
 
+  // État du dialog d'annulation de paiement (migration 043 — reversal entry).
+  // Ouvert via le bouton "Annuler" présent sur chaque ligne de paiement actif
+  // (statut_row !== "annule"), uniquement pour les rôles CAN_ANNULER_PAIEMENT
+  // (manager, comptable) et si la commande n'est pas elle-même annulée.
+  const [annulerPaiementId, setAnnulerPaiementId] = useState<string | null>(
+    null
+  );
+
   // État du dialog de saisie du casier (ouvert quand l'utilisateur
   // sélectionne "pret" dans le Select de statut d'un article). On ne
   // PATCH pas immédiatement : on ouvre le dialog pour demander le code
@@ -190,6 +204,14 @@ export function CommandeDetail({
     "caissier",
     "super_admin",
   ].includes(effectiveRole);
+
+  // Rôles autorisés à annuler un paiement financier (reversal entry,
+  // migration 043). CAN_ANNULER_PAIEMENT = ["manager", "comptable"].
+  // On désactive aussi l'action si la commande elle-même est annulée
+  // (la RPC SQL le refuserait de toute façon — defense-in-depth).
+  const canAnnulerPaiement =
+    CAN_ANNULER_PAIEMENT.includes(effectiveRole as PersonnelRole) &&
+    commande.statut !== "annule";
 
   // La commande peut être marquée comme « retirée » uniquement si elle est
   // `pret` (le client vient la chercher au pressing) ou `en_livraison` (le
@@ -931,21 +953,111 @@ export function CommandeDetail({
                       <th className="px-3 py-2 text-right font-semibold text-foreground">
                         Montant
                       </th>
+                      {(canAnnulerPaiement ||
+                        commande.paiements.some(
+                          (p) => p.statut_row === "annule"
+                        )) && (
+                        <th className="px-3 py-2 text-right font-semibold text-foreground">
+                          Actions
+                        </th>
+                      )}
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {commande.paiements.map((p) => (
-                      <tr key={p.id}>
-                        <td className="px-3 py-2 text-muted-foreground">
-                          {formatDateOnly(p.date_paiement)}
-                        </td>
-                        <td className="px-3 py-2 text-foreground">
+                    {commande.paiements.map((p) => {
+                      const isAnnule = p.statut_row === "annule";
+                      const showActionsCol =
+                        canAnnulerPaiement ||
+                        commande.paiements.some(
+                          (pp) => pp.statut_row === "annule"
+                        );
+                      return (
+                        <tr key={p.id}>
+                          <td className="px-3 py-2 text-muted-foreground">
+                            {formatDateOnly(p.date_paiement)}
+                          </td>
+                          <td className="px-3 py-2 text-foreground">
+                            {methodePaiementLabel(p.methode)}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                            {p.reference ?? "—"}
+                          </td>
+                          <td className="px-3 py-2">
+                            {p.est_acompte ? (
+                              <Badge variant="outline" className="text-xs">
+                                Acompte
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className="text-xs text-secondary"
+                              >
+                                Solde
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right font-medium text-foreground">
+                            <span
+                              className={
+                                isAnnule
+                                  ? "line-through text-muted-foreground"
+                                  : ""
+                              }
+                            >
+                              {formatFCFA(p.montant)}
+                            </span>
+                          </td>
+                          {showActionsCol && (
+                            <td className="px-3 py-2 text-right">
+                              {isAnnule ? (
+                                <Badge
+                                  variant="destructive"
+                                  className="text-xs"
+                                >
+                                  Annulé
+                                </Badge>
+                              ) : canAnnulerPaiement ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    setAnnulerPaiementId(p.id)
+                                  }
+                                  className="h-7 gap-1.5 px-2 text-xs text-danger hover:bg-danger/10 hover:text-danger"
+                                >
+                                  <Trash2 className="size-3.5" />
+                                  Annuler
+                                </Button>
+                              ) : null}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile : cards */}
+              <ul className="divide-y rounded-lg border md:hidden">
+                {commande.paiements.map((p) => {
+                  const isAnnule = p.statut_row === "annule";
+                  return (
+                    <li key={p.id} className="space-y-1.5 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-foreground">
                           {methodePaiementLabel(p.methode)}
-                        </td>
-                        <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
-                          {p.reference ?? "—"}
-                        </td>
-                        <td className="px-3 py-2">
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {isAnnule && (
+                            <Badge
+                              variant="destructive"
+                              className="text-xs"
+                            >
+                              Annulé
+                            </Badge>
+                          )}
                           {p.est_acompte ? (
                             <Badge variant="outline" className="text-xs">
                               Acompte
@@ -958,52 +1070,44 @@ export function CommandeDetail({
                               Solde
                             </Badge>
                           )}
-                        </td>
-                        <td className="px-3 py-2 text-right font-medium text-foreground">
-                          {formatFCFA(p.montant)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Mobile : cards */}
-              <ul className="divide-y rounded-lg border md:hidden">
-                {commande.paiements.map((p) => (
-                  <li key={p.id} className="space-y-1.5 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium text-foreground">
-                        {methodePaiementLabel(p.methode)}
-                      </span>
-                      {p.est_acompte ? (
-                        <Badge variant="outline" className="text-xs">
-                          Acompte
-                        </Badge>
-                      ) : (
-                        <Badge
-                          variant="outline"
-                          className="text-xs text-secondary"
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="text-muted-foreground">
+                          {formatDateOnly(p.date_paiement)}
+                        </span>
+                        <span
+                          className={`font-semibold ${
+                            isAnnule
+                              ? "text-muted-foreground line-through"
+                              : "text-foreground"
+                          }`}
                         >
-                          Solde
-                        </Badge>
+                          {formatFCFA(p.montant)}
+                        </span>
+                      </div>
+                      {p.reference && (
+                        <p className="font-mono text-[10px] text-muted-foreground">
+                          Réf. {p.reference}
+                        </p>
                       )}
-                    </div>
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="text-muted-foreground">
-                        {formatDateOnly(p.date_paiement)}
-                      </span>
-                      <span className="font-semibold text-foreground">
-                        {formatFCFA(p.montant)}
-                      </span>
-                    </div>
-                    {p.reference && (
-                      <p className="font-mono text-[10px] text-muted-foreground">
-                        Réf. {p.reference}
-                      </p>
-                    )}
-                  </li>
-                ))}
+                      {!isAnnule && canAnnulerPaiement && (
+                        <div className="pt-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setAnnulerPaiementId(p.id)}
+                            className="h-7 gap-1.5 px-2 text-xs text-danger hover:bg-danger/10 hover:text-danger"
+                          >
+                            <Trash2 className="size-3.5" />
+                            Annuler ce paiement
+                          </Button>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </>
           )}
@@ -1140,6 +1244,25 @@ export function CommandeDetail({
         montantTotal={commande.montant_total}
         montantPaye={commande.montant_paye}
         onSuccess={() => router.refresh()}
+      />
+
+      {/* Dialog d'annulation de paiement (migration 043 — reversal entry).
+          Permet au manager / comptable d'annuler un paiement financier
+          (erreur de saisie, doublon, remboursement, autre) avec confirmation
+          forte + motif + traçabilité audit. Après une annulation réussie,
+          router.refresh() recharge les données serveur (montant_paye,
+          statut_paiement, liste des paiements avec statut_row). */}
+      <AnnulerPaiementDialog
+        open={annulerPaiementId !== null}
+        onOpenChange={(o) => !o && setAnnulerPaiementId(null)}
+        paiement={
+          commande.paiements.find((p) => p.id === annulerPaiementId) ?? null
+        }
+        commandeId={commande.id}
+        onSuccess={() => {
+          setAnnulerPaiementId(null);
+          router.refresh();
+        }}
       />
     </div>
   );

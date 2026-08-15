@@ -186,11 +186,12 @@ export const CAN_APPLIQUER_REMISE_EXCEPTIONNELLE: PersonnelRole[] = ["manager"];
 
 /**
  * Rôles autorisés à ANNULER un paiement financier (reversal).
- * Seul le manager peut corriger une erreur de caisse — le caissier et
- * le réceptionniste peuvent encaisser mais pas annuler.
- * La RPC SQL `annuler_paiement` vérifie ce rôle côté DB (defense-in-depth).
+ * Le manager et le comptable peuvent corriger une erreur de caisse —
+ * le caissier et le réceptionniste peuvent encaisser mais pas annuler.
+ * La RPC SQL `annuler_paiement` vérifie ce rôle côté DB (defense-in-depth)
+ * et accepte désormais manager OU comptable (migration 043).
  */
-export const CAN_ANNULER_PAIEMENT: PersonnelRole[] = ["manager"];
+export const CAN_ANNULER_PAIEMENT: PersonnelRole[] = ["manager", "comptable"];
 
 /* -------------------------------------------------------------------------- */
 /*  AUTORISATIONS ASSIGNATION (moteur d'assignation — migration 037)           */

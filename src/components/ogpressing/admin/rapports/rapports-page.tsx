@@ -45,6 +45,7 @@ import {
 import { PeriodSelector } from "./period-selector";
 import { ClientsImpayesSection } from "./clients-impayes-section";
 import { RemisesSection } from "./remises-section";
+import { PaiementsFinancierSection } from "./paiements-financier-section";
 import { RapportExportButton } from "./rapport-export-button";
 
 // 🚀 PERF : Les 3 charts Recharts (~95KB gzippé) sont lazy-loadés via
@@ -366,6 +367,26 @@ export function RapportsPage({
 
       {/* Section remises appliquées */}
       <RemisesSection remises={data.remises_appliquees} loading={loading} />
+
+      {/* Section Immuable — Paiements & Annulations (migration 043)
+          Indépendante du fetch principal : la section gère son propre fetch
+          vers /api/admin/rapports/paiements-financier avec les bornes de
+          période courantes. On calcule les bornes ISO via computePeriode
+          pour que la section se recharge automatiquement quand l'utilisateur
+          change de période (sans attendre le fetch principal). */}
+      {(() => {
+        const periodeFinancier = computePeriode(
+          periode,
+          customStart,
+          customEnd
+        );
+        return (
+          <PaiementsFinancierSection
+            start={periodeFinancier.start}
+            end={periodeFinancier.end}
+          />
+        );
+      })()}
     </div>
   );
 }

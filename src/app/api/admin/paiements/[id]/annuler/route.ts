@@ -29,12 +29,17 @@ import {
   type PersonnelRole,
 } from "@/lib/auth/roles";
 import { logAudit } from "@/lib/audit";
-import { annulerPaiementAtomique } from "@/lib/financial/atomic";
+import {
+  annulerPaiementAtomique,
+  isTypeAnnulationValid,
+  type TypeAnnulationPaiement,
+} from "@/lib/financial/atomic";
 
 export const dynamic = "force-dynamic";
 
 interface AnnulerBody {
   motif?: unknown;
+  type?: unknown;
 }
 
 /**
@@ -156,6 +161,23 @@ export async function POST(
     );
   }
 
+  // --- Validation du type d'annulation (migration 043) ---
+  // Defaults to 'autre' if not provided (rétrocompatibilité).
+  let type: TypeAnnulationPaiement = "autre";
+  if (body.type !== undefined && body.type !== null) {
+    if (!isTypeAnnulationValid(body.type)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Type d'annulation invalide. Valeurs attendues : erreur_saisie, doublon, remboursement, autre.`,
+          code: "TYPE_INVALIDE",
+        },
+        { status: 400 }
+      );
+    }
+    type = body.type;
+  }
+
   // --- Appel à la RPC atomique annuler_paiement ---
   // La RPC vérifie (côté SQL) :
   //   - que le paiement existe et appartient au pressing
@@ -173,6 +195,7 @@ export async function POST(
     personnel_id: me.id,
     motif,
     role: me.role,
+    type,
   });
 
   if (!result.success || !result.data) {
@@ -206,7 +229,8 @@ export async function POST(
     }
     if (
       code === "MOTIF_REQUIS" ||
-      code === "MOTIF_TOO_LONG"
+      code === "MOTIF_TOO_LONG" ||
+      code === "TYPE_INVALIDE"
     ) {
       return NextResponse.json(
         { success: false, error: errorMessage, code, details },
@@ -237,12 +261,16 @@ export async function POST(
       paiement_id: paiementId,
       commande_id: annulationData.commande_id,
       montant_annule: annulationData.montant_annule,
+      statut_row_avant: "actif",
     },
     after_state: {
       paiement_id: paiementId,
       commande_id: annulationData.commande_id,
       motif,
+      type,
       annule_par: me.id,
+      annule_par_role: me.role,
+      statut_row_apres: "annule",
       nouveau_montant_paye: annulationData.nouveau_montant_paye,
       nouveau_statut_paiement: annulationData.nouveau_statut_paiement,
     },

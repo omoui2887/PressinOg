@@ -113,8 +113,8 @@ describe("Autorisations remises (roles.ts)", () => {
     expect(CAN_APPLIQUER_REMISE_EXCEPTIONNELLE).toEqual(["manager"]);
   });
 
-  it("seul le manager peut annuler un paiement", () => {
-    expect(CAN_ANNULER_PAIEMENT).toEqual(["manager"]);
+  it("manager et comptable peuvent annuler un paiement", () => {
+    expect(CAN_ANNULER_PAIEMENT).toEqual(["manager", "comptable"]);
     expect(CAN_ANNULER_PAIEMENT).not.toContain("caissier");
     expect(CAN_ANNULER_PAIEMENT).not.toContain("receptionniste");
   });

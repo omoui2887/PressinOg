@@ -112,6 +112,8 @@ export interface CommandeDetailPaiement {
   est_acompte: boolean;
   enregistre_par: string | null;
   notes: string | null;
+  /** 'actif' (valide) | 'annule' (annulé par reversal). Migration 035/043. */
+  statut_row?: "actif" | "annule";
   created_at: string;
 }
 

@@ -59,7 +59,7 @@ const COMMANDE_BASE = `
   updated_at,
   client:clients(id, nom_complet, telephone, email, adresse, points_fidelite),
   cree_par_personnel:personnel!commandes_cree_par_fkey(id, nom_complet),
-  paiements:paiements(id, montant, methode, reference, date_paiement, est_acompte, enregistre_par, notes, created_at)
+  paiements:paiements(id, montant, methode, reference, date_paiement, est_acompte, enregistre_par, notes, statut_row, created_at)
 `;
 
 // Variante sans la colonne `priorite` (migration 024 non appliquée).
@@ -90,7 +90,7 @@ const COMMANDE_BASE_SANS_PRIORITE = `
   updated_at,
   client:clients(id, nom_complet, telephone, email, adresse, points_fidelite),
   cree_par_personnel:personnel!commandes_cree_par_fkey(id, nom_complet),
-  paiements:paiements(id, montant, methode, reference, date_paiement, est_acompte, enregistre_par, notes, created_at)
+  paiements:paiements(id, montant, methode, reference, date_paiement, est_acompte, enregistre_par, notes, statut_row, created_at)
 `;
 
 // Relations imbriquées pour les lignes et articles — version « riche »

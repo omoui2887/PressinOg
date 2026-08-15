@@ -56,6 +56,31 @@ export interface EncaisserPaiementResult {
   };
 }
 
+/** Types d'annulation possibles (enum type_annulation_paiement — migration 043). */
+export type TypeAnnulationPaiement =
+  | "erreur_saisie"
+  | "doublon"
+  | "remboursement"
+  | "autre";
+
+/** Liste exhaustive des types valides (pour validation côté API). */
+export const TYPES_ANNULATION_VALIDES: readonly TypeAnnulationPaiement[] = [
+  "erreur_saisie",
+  "doublon",
+  "remboursement",
+  "autre",
+] as const;
+
+/** Guard runtime : vérifie qu'une valeur est un type d'annulation valide. */
+export function isTypeAnnulationValid(
+  value: unknown
+): value is TypeAnnulationPaiement {
+  return (
+    typeof value === "string" &&
+    TYPES_ANNULATION_VALIDES.includes(value as TypeAnnulationPaiement)
+  );
+}
+
 export interface AnnulerPaiementParams {
   paiement_id: string;
   pressing_id: string;
@@ -63,6 +88,11 @@ export interface AnnulerPaiementParams {
   personnel_id: string;
   motif: string;
   role: string;
+  /**
+   * Type d'annulation (migration 043) : erreur_saisie, doublon,
+   * remboursement, autre. Défaut 'autre' pour rétrocompatibilité.
+   */
+  type?: TypeAnnulationPaiement;
 }
 
 export interface AnnulerPaiementResult {
@@ -77,6 +107,8 @@ export interface AnnulerPaiementResult {
     nouveau_montant_paye: number;
     nouveau_statut_paiement: string;
     reste_a_payer: number;
+    /** Type d'annulation (présent depuis la migration 043). */
+    type?: TypeAnnulationPaiement;
   };
 }
 
@@ -170,6 +202,7 @@ export async function annulerPaiementAtomique(
       p_personnel_id: params.personnel_id,
       p_motif: params.motif,
       p_role: params.role,
+      p_type: params.type ?? "autre",
     });
 
     if (error) {
