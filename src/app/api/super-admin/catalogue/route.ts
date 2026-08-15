@@ -1,7 +1,8 @@
 /**
  * e-pressing — API /api/super-admin/catalogue (GET + POST)
  * --------------------------------------------------------
- * LOT 15.4 — Gestion du catalogue global d'articles par le Super Admin.
+ * LOT 15.4 + Migration 041 — Gestion du catalogue global d'articles
+ * par le Super Admin.
  *
  * 1) GET /api/super-admin/catalogue
  *    Liste TOUS les articles du catalogue (actifs ET inactifs), triés
@@ -19,6 +20,8 @@
  *        ordre_affichage?: number // défaut 0
  *      }
  *    Réponse : { success: true, data: CatalogueArticle }
+ *    Audit : journalise l'action `create_catalogue_article` (entity_type:
+ *    catalogue_article, pressing_id: NULL car global).
  *
  * 🔒 SÉCURITÉ :
  *   - Auth : Super Admin uniquement (vérification super_admins.actif=true).
@@ -35,6 +38,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { iconeUrlForSlug } from "@/lib/catalogue/catalogue-articles";
 import type { CatalogueArticle } from "@/lib/catalogue/catalogue-articles";
+import { logAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -60,10 +64,23 @@ function slugify(input: string): string {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Auth Super Admin (shared helper)                                   */
+/*  Auth Super Admin (shared helper — retourne userId pour audit)     */
 /* ------------------------------------------------------------------ */
 
-async function requireSuperAdmin() {
+interface EnsureSuperAdminOk {
+  supabase: Awaited<ReturnType<typeof getSupabaseServer>>;
+  userId: string;
+  forbidden: null;
+}
+interface EnsureSuperAdminForbidden {
+  supabase: Awaited<ReturnType<typeof getSupabaseServer>>;
+  userId: null;
+  forbidden: NextResponse;
+}
+
+async function ensureSuperAdmin(): Promise<
+  EnsureSuperAdminOk | EnsureSuperAdminForbidden
+> {
   const supabase = await getSupabaseServer();
   const {
     data: { user },
@@ -71,6 +88,7 @@ async function requireSuperAdmin() {
   if (!user) {
     return {
       supabase,
+      userId: null,
       forbidden: NextResponse.json(
         { success: false, error: "Non authentifié" },
         { status: 401 }
@@ -86,13 +104,14 @@ async function requireSuperAdmin() {
   if (!superAdminRow) {
     return {
       supabase,
+      userId: null,
       forbidden: NextResponse.json(
         { success: false, error: "Accès refusé — super admin requis" },
         { status: 403 }
       ),
     };
   }
-  return { supabase, forbidden: null };
+  return { supabase, userId: user.id, forbidden: null };
 }
 
 /* ------------------------------------------------------------------ */
@@ -100,7 +119,7 @@ async function requireSuperAdmin() {
 /* ------------------------------------------------------------------ */
 
 export async function GET() {
-  const auth = await requireSuperAdmin();
+  const auth = await ensureSuperAdmin();
   if (auth.forbidden) return auth.forbidden;
   const { supabase } = auth;
 
@@ -131,9 +150,9 @@ export async function GET() {
 /* ------------------------------------------------------------------ */
 
 export async function POST(request: NextRequest) {
-  const auth = await requireSuperAdmin();
+  const auth = await ensureSuperAdmin();
   if (auth.forbidden) return auth.forbidden;
-  const { supabase } = auth;
+  const { supabase, userId } = auth;
 
   let body: Record<string, unknown>;
   try {
@@ -248,6 +267,26 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+
+  // --- Audit logging (best-effort) ---
+  await logAudit({
+    pressing_id: null, // catalogue global, pas rattaché à un pressing
+    user_id: userId,
+    action: "create_catalogue_article",
+    entity_type: "catalogue_article",
+    entity_id: data.id,
+    before_state: null,
+    after_state: {
+      id: data.id,
+      slug: data.slug,
+      nom: data.nom,
+      categorie: data.categorie,
+      icone_url: data.icone_url,
+      ordre_affichage: data.ordre_affichage,
+      actif: data.actif,
+    },
+    req: request,
+  });
 
   return NextResponse.json(
     { success: true, data: data as CatalogueArticle },

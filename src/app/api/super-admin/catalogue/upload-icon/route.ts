@@ -25,6 +25,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { logAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -44,13 +45,25 @@ const MIME_TO_EXT: Record<string, string> = {
 
 const BUCKET_NAME = "catalogue-articles";
 
-async function requireSuperAdmin() {
+interface EnsureSuperAdminOk {
+  userId: string;
+  forbidden: null;
+}
+interface EnsureSuperAdminForbidden {
+  userId: null;
+  forbidden: NextResponse;
+}
+
+async function ensureSuperAdmin(): Promise<
+  EnsureSuperAdminOk | EnsureSuperAdminForbidden
+> {
   const supabase = await getSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) {
     return {
+      userId: null,
       forbidden: NextResponse.json(
         { success: false, error: "Non authentifié" },
         { status: 401 }
@@ -65,18 +78,20 @@ async function requireSuperAdmin() {
     .maybeSingle();
   if (!superAdminRow) {
     return {
+      userId: null,
       forbidden: NextResponse.json(
         { success: false, error: "Accès refusé — super admin requis" },
         { status: 403 }
       ),
     };
   }
-  return { forbidden: null };
+  return { userId: user.id, forbidden: null };
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireSuperAdmin();
+  const auth = await ensureSuperAdmin();
   if (auth.forbidden) return auth.forbidden;
+  const { userId } = auth;
 
   let formData: FormData;
   try {
@@ -167,6 +182,24 @@ export async function POST(request: NextRequest) {
   const { data: pubData } = supabaseAdmin.storage
     .from(BUCKET_NAME)
     .getPublicUrl(objectPath);
+
+  // --- Audit logging (best-effort) ---
+  await logAudit({
+    pressing_id: null,
+    user_id: userId,
+    action: "upload_catalogue_icon",
+    entity_type: "catalogue_article",
+    entity_id: null,
+    after_state: {
+      bucket: BUCKET_NAME,
+      path: objectPath,
+      public_url: pubData.publicUrl,
+      mime,
+      size_bytes: file.size,
+      original_filename: file.name,
+    },
+    req: request,
+  });
 
   return NextResponse.json(
     {

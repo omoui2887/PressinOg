@@ -27,7 +27,7 @@
  */
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import {
   Shirt,
@@ -36,6 +36,8 @@ import {
   Tags,
   RefreshCw,
   AlertCircle,
+  Search,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -43,14 +45,30 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { EmptyState } from "@/components/shared/empty-state";
 import { cn } from "@/lib/utils";
-import { getIconForCategorie } from "@/lib/catalogue/catalogue-articles";
+import {
+  getIconForCategorie,
+  CATALOGUE_CATEGORIES_NOMS,
+} from "@/lib/catalogue/catalogue-articles";
 import {
   groupArticlesByCategorie,
   type CatalogueArticle,
 } from "./catalogue-helpers";
 import { CatalogueForm } from "./catalogue-form";
+
+// ---------------------------------------------------------------
+// Filtres : valeurs possibles pour le filtre actif/inactif
+// ---------------------------------------------------------------
+type ActifFilter = "all" | "actif" | "inactif";
 
 // ---------------------------------------------------------------
 // Types réponse API
@@ -74,6 +92,11 @@ export function CataloguePage() {
   // États dialog
   const [addOpen, setAddOpen] = useState(false);
   const [editArticle, setEditArticle] = useState<CatalogueArticle | null>(null);
+
+  // États filtres : recherche texte + filtre catégorie + filtre actif/inactif
+  const [search, setSearch] = useState("");
+  const [categorieFilter, setCategorieFilter] = useState<string>("all");
+  const [actifFilter, setActifFilter] = useState<ActifFilter>("all");
 
   const fetchArticles = useCallback(async () => {
     setLoading(true);
@@ -172,11 +195,43 @@ export function CataloguePage() {
     }
   }
 
-  // Calcul des groupes (avec mémorisation légère via useCallback inutile ici
-  // car les articles changent souvent ; on recalcule à chaque render — OK
-  // pour 33-50 articles).
-  const grouped = groupArticlesByCategorie(articles);
+  // Liste filtrée selon la recherche + filtre catégorie + filtre actif.
+  // Memoïsée pour éviter de refiltrer à chaque re-render inutile.
+  const filteredArticles = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return articles.filter((a) => {
+      // Filtre actif/inactif
+      if (actifFilter === "actif" && !a.actif) return false;
+      if (actifFilter === "inactif" && a.actif) return false;
+      // Filtre catégorie
+      if (categorieFilter !== "all" && a.categorie !== categorieFilter)
+        return false;
+      // Recherche texte sur nom + slug
+      if (q) {
+        const nomMatch = a.nom.toLowerCase().includes(q);
+        const slugMatch = a.slug.toLowerCase().includes(q);
+        if (!nomMatch && !slugMatch) return false;
+      }
+      return true;
+    });
+  }, [articles, search, categorieFilter, actifFilter]);
+
+  // Liste des catégories présentes dans la base (pour le filtre Select).
+  // Inclut les catégories personnalisées ajoutées par le Super Admin.
+  const categoriesDisponibles = useMemo(() => {
+    const set = new Set<string>(CATALOGUE_CATEGORIES_NOMS);
+    for (const a of articles) set.add(a.categorie);
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "fr"));
+  }, [articles]);
+
+  // Groupement par catégorie de la liste filtrée
+  const grouped = groupArticlesByCategorie(filteredArticles);
   const totalActifs = articles.filter((a) => a.actif).length;
+  const totalFiltres = filteredArticles.length;
+  const hasFiltresActifs =
+    search.trim() !== "" ||
+    categorieFilter !== "all" ||
+    actifFilter !== "all";
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -198,6 +253,15 @@ export function CataloguePage() {
                 article{articles.length > 1 ? "s" : ""} ·{" "}
                 <span className="font-medium text-secondary">{totalActifs}</span>{" "}
                 actif{totalActifs > 1 ? "s" : ""}
+                {hasFiltresActifs && (
+                  <>
+                    {" "}·{" "}
+                    <span className="font-medium text-primary">
+                      {totalFiltres}
+                    </span>{" "}
+                    affiché{totalFiltres > 1 ? "s" : ""}
+                  </>
+                )}
               </>
             )}
           </p>
@@ -208,6 +272,91 @@ export function CataloguePage() {
         </Button>
       </div>
 
+      {/* Barre de filtres : recherche + catégorie + actif/inactif */}
+      {!loading && !error && articles.length > 0 && (
+        <Card className="gap-3 p-3 sm:p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            {/* Recherche texte */}
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Rechercher par nom ou slug…"
+                className="h-10 pl-9 pr-9"
+                aria-label="Rechercher un article"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
+                  aria-label="Effacer la recherche"
+                >
+                  <X className="size-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Filtre catégorie */}
+            <Select
+              value={categorieFilter}
+              onValueChange={setCategorieFilter}
+            >
+              <SelectTrigger
+                className="h-10 w-full sm:w-56"
+                aria-label="Filtrer par catégorie"
+              >
+                <SelectValue placeholder="Toutes les catégories" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Toutes les catégories</SelectItem>
+                {categoriesDisponibles.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Filtre actif/inactif */}
+            <Select
+              value={actifFilter}
+              onValueChange={(v) => setActifFilter(v as ActifFilter)}
+            >
+              <SelectTrigger
+                className="h-10 w-full sm:w-40"
+                aria-label="Filtrer par statut"
+              >
+                <SelectValue placeholder="Tous les statuts" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous les statuts</SelectItem>
+                <SelectItem value="actif">Actifs uniquement</SelectItem>
+                <SelectItem value="inactif">Inactifs uniquement</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Bouton réinitialiser filtres */}
+            {hasFiltresActifs && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-10"
+                onClick={() => {
+                  setSearch("");
+                  setCategorieFilter("all");
+                  setActifFilter("all");
+                }}
+              >
+                <X className="mr-1.5 size-3.5" />
+                Réinitialiser
+              </Button>
+            )}
+          </div>
+        </Card>
+      )}
+
       {/* États */}
       {loading ? (
         <CatalogueLoadingState />
@@ -215,6 +364,14 @@ export function CataloguePage() {
         <CatalogueErrorState message={error} onRetry={fetchArticles} />
       ) : articles.length === 0 ? (
         <CatalogueEmptyState onAdd={() => setAddOpen(true)} />
+      ) : filteredArticles.length === 0 ? (
+        <CatalogueNoResultsState
+          onReset={() => {
+            setSearch("");
+            setCategorieFilter("all");
+            setActifFilter("all");
+          }}
+        />
       ) : (
         // Liste regroupée par catégorie
         <div className="space-y-8">
@@ -435,5 +592,27 @@ function CatalogueEmptyState({ onAdd }: { onAdd: () => void }) {
         </Button>
       }
     />
+  );
+}
+
+function CatalogueNoResultsState({ onReset }: { onReset: () => void }) {
+  return (
+    <Card className="flex flex-col items-center justify-center gap-3 p-12 text-center">
+      <span className="flex size-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
+        <Search className="size-7" />
+      </span>
+      <div>
+        <p className="font-semibold text-foreground">
+          Aucun article ne correspond à vos critères
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Modifiez votre recherche ou vos filtres pour trouver des articles.
+        </p>
+      </div>
+      <Button onClick={onReset} variant="outline" className="gap-2">
+        <X className="size-4" />
+        Réinitialiser les filtres
+      </Button>
+    </Card>
   );
 }

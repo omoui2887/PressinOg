@@ -1,24 +1,37 @@
 /**
- * e-pressing — Super Admin → Catalogue (REDIRECT)
- * -----------------------------------------------
- * ⚠️ Cette route a été EXCLUE du compte Super Admin.
+ * e-pressing — Super Admin → Catalogue (page)
+ * -------------------------------------------
+ * Page /super-admin/catalogue : gestion du catalogue global d'articles.
  *
- * Le catalogue global d'articles est désormais un référentiel en lecture
- * seule (seedé par la migration 014, 33 articles initiaux). Il est
- * consommé par les autres comptes (admin, réceptionniste, manager) via
- * le sélecteur visuel `ArticleCatalogPicker` dans l'Étape 2 du wizard
- * "Nouvelle commande".
+ * Fonctionnalités (cf. CataloguePage component) :
+ *   - Liste de TOUS les articles (actifs + inactifs) regroupés par catégorie
+ *   - Recherche texte (nom + slug)
+ *   - Filtre par catégorie
+ *   - Filtre par statut (actif / inactif)
+ *   - Création / modification via dialog (CatalogueForm)
+ *   - Bascule actif/inactif (Switch optimiste + PATCH)
+ *   - Upload d'icône (PNG/JPG/WebP/SVG, max 5 MB)
+ *   - Ordre d'affichage éditable
+ *   - Slug auto-dérivé du nom (ou saisi manuellement)
  *
- * Le Super Admin n'a plus de page de gestion du catalogue : son rôle se
- * concentre sur la plateforme (pressings, demandes, abonnements).
+ * 🔒 SÉCURITÉ :
+ *   - Le layout (super-admin)/layout.tsx vérifie déjà super_admins.actif=true
+ *     avant de render cette page.
+ *   - Le middleware bloque /super-admin/* aux non-super_admins.
+ *   - Les routes API /api/super-admin/catalogue/* re-vérifient le rôle via
+ *     ensureSuperAdmin() (defense-in-depth) + RLS côté DB.
  *
- * Redirige toute tentative d'accès direct vers le tableau de bord Super
- * Admin pour éviter une 404 et garder l'utilisateur dans son espace.
+ * 📌 Aucune suppression physique possible :
+ *   - La route DELETE renvoie 405 Method Not Allowed.
+ *   - Pour "retirer" un article : PATCH { actif: false }.
+ *   - Les commandes historiques conservent leur snapshot
+ *     (migration 041 : catalogue_article_nom_snapshot,
+ *      catalogue_article_slug_snapshot, service_nom_snapshot, prix_unitaire).
  */
-import { redirect } from "next/navigation";
+import { CataloguePage } from "@/components/ogpressing/super-admin/catalogue/catalogue-page";
 
 export const dynamic = "force-dynamic";
 
 export default function SuperAdminCataloguePage() {
-  redirect("/super-admin/dashboard");
+  return <CataloguePage />;
 }

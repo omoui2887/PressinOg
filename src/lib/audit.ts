@@ -100,7 +100,13 @@ export type AuditAction =
   | "assignment_removed"
   // Casiers (système de casiers uniques — migration 039)
   | "casier_assign"
-  | "casier_release";
+  | "casier_release"
+  // Catalogue global (Super Admin — migration 041)
+  | "create_catalogue_article"
+  | "update_catalogue_article"
+  | "desactive_catalogue_article"
+  | "reactivate_catalogue_article"
+  | "upload_catalogue_icon";
 
 /** Types d'entité touchées. */
 export type AuditEntityType =
@@ -112,6 +118,7 @@ export type AuditEntityType =
   | "paiement_annulation"
   | "remise"
   | "article"
+  | "catalogue_article"
   | "casier";
 
 // ---------------------------------------------------------------------------

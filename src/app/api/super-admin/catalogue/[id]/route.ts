@@ -1,7 +1,7 @@
 /**
  * e-pressing — API /api/super-admin/catalogue/[id] (PATCH + DELETE)
  * -----------------------------------------------------------------
- * LOT 15.4 — Gestion d'un article individuel du catalogue.
+ * LOT 15.4 + Migration 041 — Gestion d'un article individuel du catalogue.
  *
  * 1) PATCH /api/super-admin/catalogue/[id]
  *    Met à jour un article existant. Body JSON (tous les champs optionnels) :
@@ -14,25 +14,51 @@
  *        slug?: string    // ⚠️ déconseillé (utilisé pour construire icone_url)
  *      }
  *    Réponse : { success: true, data: CatalogueArticle }
+ *    Audit : journalise `update_catalogue_article` avec before_state + after_state.
+ *      Si l'update change `actif` :
+ *        - true → false  → action `desactive_catalogue_article`
+ *        - false → true  → action `reactivate_catalogue_article`
  *
  * 2) DELETE /api/super-admin/catalogue/[id]
- *    Supprime un article. Refusé (409) si l'article est référencé par
- *    au moins une ligne dans `articles_vetements` (FK ON DELETE RESTRICT).
- *    Dans ce cas, le Super Admin doit d'abord désactiver l'article
- *    (actif=false) via PATCH plutôt que de le supprimer.
+ *    ⛔ REFUSÉ — 405 Method Not Allowed.
+ *    Un article du catalogue ne peut JAMAIS être supprimé physiquement
+ *    (spécification utilisateur : "Un article déjà utilisé dans des
+ *    commandes historiques ne doit jamais être supprimé physiquement.
+ *    Utiliser actif=false."). Les commandes historiques conservent leur
+ *    snapshot (migration 041 : catalogue_article_nom_snapshot,
+ *    catalogue_article_slug_snapshot, service_nom_snapshot, prix_unitaire).
+ *    Pour "retirer" un article du catalogue, le Super Admin doit le
+ *    désactiver via PATCH { actif: false }.
  *
- * 🔒 SÉCURITÉ : Super Admin uniquement (vérifié via requireSuperAdmin).
+ * 🔒 SÉCURITÉ : Super Admin uniquement (vérifié via ensureSuperAdmin).
+ *    Les pressings n'ont aucun endpoint pour modifier le catalogue —
+ *    l'isolation est garantie par le route group /api/super-admin/* +
+ *    la policy RLS `catalogue_articles_write_super_admin`.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { iconeUrlForSlug } from "@/lib/catalogue/catalogue-articles";
 import type { CatalogueArticle } from "@/lib/catalogue/catalogue-articles";
+import { logAudit, type AuditAction } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
 const SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-async function requireSuperAdmin() {
+interface EnsureSuperAdminOk {
+  supabase: Awaited<ReturnType<typeof getSupabaseServer>>;
+  userId: string;
+  forbidden: null;
+}
+interface EnsureSuperAdminForbidden {
+  supabase: Awaited<ReturnType<typeof getSupabaseServer>>;
+  userId: null;
+  forbidden: NextResponse;
+}
+
+async function ensureSuperAdmin(): Promise<
+  EnsureSuperAdminOk | EnsureSuperAdminForbidden
+> {
   const supabase = await getSupabaseServer();
   const {
     data: { user },
@@ -40,6 +66,7 @@ async function requireSuperAdmin() {
   if (!user) {
     return {
       supabase,
+      userId: null,
       forbidden: NextResponse.json(
         { success: false, error: "Non authentifié" },
         { status: 401 }
@@ -55,13 +82,14 @@ async function requireSuperAdmin() {
   if (!superAdminRow) {
     return {
       supabase,
+      userId: null,
       forbidden: NextResponse.json(
         { success: false, error: "Accès refusé — super admin requis" },
         { status: 403 }
       ),
     };
   }
-  return { supabase, forbidden: null };
+  return { supabase, userId: user.id, forbidden: null };
 }
 
 /* ------------------------------------------------------------------ */
@@ -72,9 +100,9 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireSuperAdmin();
+  const auth = await ensureSuperAdmin();
   if (auth.forbidden) return auth.forbidden;
-  const { supabase } = auth;
+  const { supabase, userId } = auth;
 
   const { id } = await params;
   if (!id || !/^[0-9a-f-]{36}$/i.test(id)) {
@@ -191,6 +219,22 @@ export async function PATCH(
     );
   }
 
+  // Récupère l'état AVANT pour audit + détection changement actif.
+  const { data: beforeRow } = await supabase
+    .from("catalogue_articles")
+    .select(
+      "id, slug, nom, categorie, icone_url, actif, ordre_affichage, created_at, updated_at"
+    )
+    .eq("id", id)
+    .maybeSingle();
+
+  if (!beforeRow) {
+    return NextResponse.json(
+      { success: false, error: "Article introuvable" },
+      { status: 404 }
+    );
+  }
+
   const { data, error } = await supabase
     .from("catalogue_articles")
     .update(update)
@@ -221,6 +265,35 @@ export async function PATCH(
     );
   }
 
+  // --- Audit logging ---
+  // Détermine l'action : si `actif` change, on journalise une action
+  // spécifique (desactive/reactivate) EN PLUS de update_catalogue_article
+  // pour faciliter le filtrage dans l'UI audit.
+  const actifChanged =
+    body.actif !== undefined && Boolean(beforeRow.actif) !== Boolean(data.actif);
+
+  const auditActions: AuditAction[] = ["update_catalogue_article"];
+  if (actifChanged) {
+    auditActions.push(
+      data.actif ? "reactivate_catalogue_article" : "desactive_catalogue_article"
+    );
+  }
+
+  await Promise.all(
+    auditActions.map((action) =>
+      logAudit({
+        pressing_id: null,
+        user_id: userId,
+        action,
+        entity_type: "catalogue_article",
+        entity_id: id,
+        before_state: beforeRow as Record<string, unknown>,
+        after_state: data as unknown as Record<string, unknown>,
+        req: request,
+      })
+    )
+  );
+
   return NextResponse.json({
     success: true,
     data: data as CatalogueArticle,
@@ -228,69 +301,30 @@ export async function PATCH(
 }
 
 /* ------------------------------------------------------------------ */
-/*  DELETE — Supprime un article                                       */
+/*  DELETE — ⛔ INTERDIT (405 Method Not Allowed)                     */
 /* ------------------------------------------------------------------ */
-
+// Un article du catalogue ne peut JAMAIS être supprimé physiquement.
+// Les commandes historiques référencent l'article via la FK
+// articles_vetements.catalogue_article_id (ON DELETE RESTRICT), et la
+// spécification exige la conservation du snapshot (nom, service, prix,
+// article). Pour "retirer" un article : PATCH { actif: false }.
+//
+// On vérifie quand même l'auth AVANT de renvoyer 405 — un manager ou un
+// anonyme ne doit pas savoir que l'endpoint existe (on renvoie 403/401
+// comme les autres méthodes, pour ne pas révéler la politique 405).
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  _ctx: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireSuperAdmin();
+  const auth = await ensureSuperAdmin();
   if (auth.forbidden) return auth.forbidden;
-  const { supabase } = auth;
 
-  const { id } = await params;
-  if (!id || !/^[0-9a-f-]{36}$/i.test(id)) {
-    return NextResponse.json(
-      { success: false, error: "id invalide" },
-      { status: 400 }
-    );
-  }
-
-  // Vérifie qu'aucun article_vetement ne référence cet article du catalogue
-  // (FK ON DELETE RESTRICT → la DB refuserait de toute façon, mais on
-  // renvoie un message clair avant la tentative).
-  const { count, error: countErr } = await supabase
-    .from("articles_vetements")
-    .select("id", { count: "exact", head: true })
-    .eq("catalogue_article_id", id);
-
-  if (countErr) {
-    console.error(
-      "[api/super-admin/catalogue/[id]] Erreur COUNT articles_vetements:",
-      countErr
-    );
-    return NextResponse.json(
-      { success: false, error: "Erreur lors de la vérification des références" },
-      { status: 500 }
-    );
-  }
-
-  if (count && count > 0) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: `Cet article est référencé par ${count} article(s) de commande. Désactivez-le (actif=false) plutôt que de le supprimer.`,
-      },
-      { status: 409 }
-    );
-  }
-
-  const { error: deleteErr } = await supabase
-    .from("catalogue_articles")
-    .delete()
-    .eq("id", id);
-
-  if (deleteErr) {
-    console.error(
-      "[api/super-admin/catalogue/[id]] Erreur DELETE:",
-      deleteErr
-    );
-    return NextResponse.json(
-      { success: false, error: "Erreur lors de la suppression de l'article" },
-      { status: 500 }
-    );
-  }
-
-  return NextResponse.json({ success: true });
+  return NextResponse.json(
+    {
+      success: false,
+      error:
+        "Suppression physique interdite. Utilisez PATCH { actif: false } pour désactiver l'article. Les commandes historiques conservent leur snapshot (migration 041).",
+    },
+    { status: 405 }
+  );
 }
