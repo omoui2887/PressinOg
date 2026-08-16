@@ -89,6 +89,10 @@ server.log
 *.swo
 *~
 
+# Runtime process IDs (dev server state — never commit)
+.zscripts/*.pid
+*.pid
+
 # ============================================================================
 # FRAMEWORK / BUILD ARTIFACTS
 # ============================================================================
