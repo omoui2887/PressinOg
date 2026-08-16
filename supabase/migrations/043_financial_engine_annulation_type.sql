@@ -234,8 +234,15 @@ REVOKE EXECUTE ON FUNCTION public.annuler_paiement(UUID, UUID, UUID, UUID, TEXT,
 --   une policy future autorisait le DELETE, le GRANT manque).
 
 -- 4a. Drop les policies existantes (FOR ALL couvrait DELETE).
+-- On drop aussi les 4 policies cibles (si elles existent déjà d'une
+-- migration précédente comme la 035) pour rendre la recréation
+-- idempotente — PostgreSQL ne supporte pas CREATE POLICY IF NOT EXISTS.
 DROP POLICY IF EXISTS "isolation_pressing" ON public.paiements;
 DROP POLICY IF EXISTS "super_admin_full_access" ON public.paiements;
+DROP POLICY IF EXISTS "paiements_select_own_pressing" ON public.paiements;
+DROP POLICY IF EXISTS "paiements_insert_own_pressing" ON public.paiements;
+DROP POLICY IF EXISTS "paiements_update_own_pressing" ON public.paiements;
+DROP POLICY IF EXISTS "paiements_no_delete_for_clients" ON public.paiements;
 
 -- 4b. Recrée les policies SELECT / INSERT / UPDATE (sans DELETE).
 --     Utilise la même logique d'isolation que la policy FOR ALL originale.
