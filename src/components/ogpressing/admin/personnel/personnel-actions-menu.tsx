@@ -172,12 +172,15 @@ export function PersonnelActionsMenu({
             throw new Error(data.error || "Erreur lors de la réinitialisation");
           }
           // Affiche les nouveaux identifiants dans un dialog
+          // IMPORTANT : on NE déclenche PAS onUpdated?.() ici car le reset
+          // password ne modifie aucune colonne affichée dans la liste, et
+          // un refetch ferait perdre l'état local du dialog (le composant
+          // est démonté puis remonté avec une nouvelle référence employe).
           if (data.credentials) {
             setResetCredentials(data.credentials);
             setResetDialogOpen(true);
           }
           toast.success("Mot de passe réinitialisé");
-          onUpdated?.();
         } else if (action === "resend_invitation") {
           const res = await fetch(`/api/admin/personnel/${employe.id}`, {
             method: "POST",

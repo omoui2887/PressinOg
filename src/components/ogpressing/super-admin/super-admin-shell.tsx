@@ -20,6 +20,7 @@
  *   CLIENTS
  *     - Pressings             → /super-admin/pressings
  *     - Abonnements           → /super-admin/abonnements
+ *     - Utilisateurs          → /super-admin/utilisateurs (gestion des comptes Auth)
  *
  *   CONFIGURATION
  *     - Catalogue             → /super-admin/catalogue
@@ -52,6 +53,7 @@ import {
   CreditCard,
   Building2,
   Shirt,
+  Users,
 } from "lucide-react";
 import {
   DashboardLayout,
@@ -87,6 +89,11 @@ const NAV_GROUPS: DashboardNavGroup[] = [
         href: "/super-admin/abonnements",
         label: "Abonnements",
         icon: CreditCard,
+      },
+      {
+        href: "/super-admin/utilisateurs",
+        label: "Utilisateurs",
+        icon: Users,
       },
     ],
   },

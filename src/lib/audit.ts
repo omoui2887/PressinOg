@@ -106,7 +106,9 @@ export type AuditAction =
   | "update_catalogue_article"
   | "desactive_catalogue_article"
   | "reactivate_catalogue_article"
-  | "upload_catalogue_icon";
+  | "upload_catalogue_icon"
+  // Authentification (Super Admin — reset password global)
+  | "reset_password_user";
 
 /** Types d'entité touchées. */
 export type AuditEntityType =
@@ -119,7 +121,8 @@ export type AuditEntityType =
   | "remise"
   | "article"
   | "catalogue_article"
-  | "casier";
+  | "casier"
+  | "auth_user";
 
 // ---------------------------------------------------------------------------
 // Implémentation
