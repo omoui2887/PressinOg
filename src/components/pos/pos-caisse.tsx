@@ -648,12 +648,10 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
           <OrderTable
             lines={s.cartLines}
             flashId={s.flashId}
-            onInc={s.incLine}
-            onDec={s.decLine}
-            onRemove={s.removeLine}
-            onQty={s.setQty}
-            onToggleExpress={s.toggleExpress}
-            onNote={s.setLineNote}
+            onRemoveGroup={s.removeLines}
+            onGroupQty={s.setGroupQty}
+            onToggleGroupExpress={s.toggleGroupExpress}
+            onGroupNote={s.setGroupNote}
           />
 
           <CustomerPanel

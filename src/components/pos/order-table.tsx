@@ -1,42 +1,54 @@
 /**
- * <OrderTable /> — Tableau de commande (en-tête bleu + lignes + état vide).
+ * <OrderTable /> — Tableau de commande groupé par linge.
+ * ======================================================
+ * Regroupe les lignes du panier par linge (catalogue_article) : un même
+ * linge avec plusieurs traitements (Lavage + Repassage + ...) s'affiche
+ * sur UNE SEULE ligne, avec les traitements listés en dessous du nom.
+ *
+ * En-tête : Action | Désignation | P.U | Qté | Total
  * Affiche le nombre total d'étiquettes QR à imprimer sous le tableau.
+ *
+ * Le regroupement est purement visuel — le store garde une PosCartLine par
+ * traitement (pour le payload API), c'est l'UI qui agrège pour l'affichage.
  */
 "use client";
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { QrCode, ShoppingCart } from "lucide-react";
 import type { PosCartLine } from "@/lib/pos/types";
-import { computeTotalEtiquettes } from "@/lib/pos/calc";
+import { computeTotalEtiquettes, groupCartLines } from "@/lib/pos/calc";
 import { OrderRow } from "./order-row";
 
 interface OrderTableProps {
   lines: PosCartLine[];
   flashId: string | null;
-  onInc: (id: string) => void;
-  onDec: (id: string) => void;
-  onRemove: (id: string) => void;
-  onQty: (id: string, qty: number) => void;
-  onToggleExpress: (id: string) => void;
-  onNote: (id: string, note: string) => void;
+  /** Supprime toutes les lignes d'un groupe (corbeille). */
+  onRemoveGroup: (lineIds: string[]) => void;
+  /** Définit la quantité sur toutes les lignes d'un groupe. */
+  onGroupQty: (lineIds: string[], qty: number) => void;
+  /** Bascule Express sur toutes les lignes d'un groupe. */
+  onToggleGroupExpress: (lineIds: string[]) => void;
+  /** Définit la note sur toutes les lignes d'un groupe. */
+  onGroupNote: (lineIds: string[], note: string) => void;
 }
 
 function OrderTableImpl({
   lines,
   flashId,
-  onInc,
-  onDec,
-  onRemove,
-  onQty,
-  onToggleExpress,
-  onNote,
+  onRemoveGroup,
+  onGroupQty,
+  onToggleGroupExpress,
+  onGroupNote,
 }: OrderTableProps) {
   const etiquettes = computeTotalEtiquettes(lines);
+  // Regroupe les lignes par linge (catalogue_article) pour l'affichage.
+  const groups = useMemo(() => groupCartLines(lines), [lines]);
+
   return (
     <div className="pos-panel overflow-hidden">
       <table className="w-full border-collapse">
         <thead>
           <tr className="pos-table-head">
-            <th className="w-[84px] px-1 py-1.5 text-center text-[10px] font-semibold uppercase tracking-wide">
+            <th className="w-[52px] px-1 py-1.5 text-center text-[10px] font-semibold uppercase tracking-wide">
               Action
             </th>
             <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wide">
@@ -69,18 +81,19 @@ function OrderTableImpl({
               </td>
             </tr>
           ) : (
-            lines.map((line) => (
-              <OrderRow
-                key={line.id}
-                line={line}
-                onInc={() => onInc(line.id)}
-                onDec={() => onDec(line.id)}
-                onRemove={() => onRemove(line.id)}
-                onQty={(q) => onQty(line.id, q)}
-                onToggleExpress={() => onToggleExpress(line.id)}
-                onNote={(n) => onNote(line.id, n)}
-              />
-            ))
+            groups.map((group) => {
+              const lineIds = group.lines.map((l) => l.id);
+              return (
+                <OrderRow
+                  key={group.key}
+                  group={group}
+                  onRemove={() => onRemoveGroup(lineIds)}
+                  onQty={(q) => onGroupQty(lineIds, q)}
+                  onToggleExpress={() => onToggleGroupExpress(lineIds)}
+                  onNote={(n) => onGroupNote(lineIds, n)}
+                />
+              );
+            })
           )}
         </tbody>
       </table>

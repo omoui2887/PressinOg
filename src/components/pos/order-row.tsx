@@ -1,19 +1,36 @@
 /**
- * <OrderRow /> — Ligne du panier.
- * Actions (−, corbeille, +) · Désignation · P.U · Qté · Total.
- * + Express (liseré or) + note courte par ligne.
+ * <OrderRow /> — Ligne groupée du panier (un linge par ligne).
+ * ============================================================
+ * Affiche UN linge par ligne, avec ses traitements (Lavage, Repassage,
+ * Nettoyage à sec, etc.) listés en dessous du nom du linge.
+ *
+ *   Désignation          | P.U        | Qté  | Total
+ *   ---------------------|------------|------|----------
+ *   Chemise              | 1 500 Fcfa |  2   | 3 000 Fcfa
+ *     • Lavage           |            |      |
+ *     • Repassage        |            |      |
+ *
+ * Le prix unitaire = somme des prix des traitements sélectionnés.
+ * La quantité s'applique au linge entier (tous les traitements partagés).
+ * Le total = P.U × Qté (avec majoration Express si activée).
+ *
+ * Colonne Action : UNIQUEMENT la corbeille (supprimer le linge).
  */
 "use client";
 import { memo, useState } from "react";
-import { Minus, Plus, Trash2, Zap, Pencil, Check } from "lucide-react";
-import type { PosCartLine } from "@/lib/pos/types";
+import { Trash2, Zap, Pencil, Check } from "lucide-react";
+import type { PosCartGroup } from "@/lib/pos/calc";
+import {
+  groupPrixUnitaire,
+  groupTotal,
+  groupQuantite,
+  groupIsExpress,
+  groupNote,
+} from "@/lib/pos/calc";
 import { formatFcfa } from "@/lib/pos/format";
-import { totalLine } from "@/lib/pos/calc";
 
 interface OrderRowProps {
-  line: PosCartLine;
-  onInc: () => void;
-  onDec: () => void;
+  group: PosCartGroup;
   onRemove: () => void;
   onQty: (qty: number) => void;
   onToggleExpress: () => void;
@@ -21,16 +38,19 @@ interface OrderRowProps {
 }
 
 function OrderRowImpl({
-  line,
-  onInc,
-  onDec,
+  group,
   onRemove,
   onQty,
   onToggleExpress,
   onNote,
 }: OrderRowProps) {
   const [editingNote, setEditingNote] = useState(false);
-  const [noteDraft, setNoteDraft] = useState(line.note ?? "");
+  const [noteDraft, setNoteDraft] = useState(groupNote(group) ?? "");
+
+  const isExpress = groupIsExpress(group);
+  const quantite = groupQuantite(group);
+  const prixUnitaire = groupPrixUnitaire(group);
+  const total = groupTotal(group);
 
   const saveNote = () => {
     onNote(noteDraft.trim());
@@ -40,66 +60,77 @@ function OrderRowImpl({
   return (
     <tr
       className="pos-table-row pos-express-line-when-active"
-      data-express={line.express}
-      style={line.express ? { boxShadow: "inset 3px 0 0 0 var(--pos-gold)" } : undefined}
+      data-express={isExpress}
+      style={isExpress ? { boxShadow: "inset 3px 0 0 0 var(--pos-gold)" } : undefined}
     >
-      {/* Action */}
+      {/* Action — UNIQUEMENT la corbeille */}
       <td className="px-1 py-1.5 text-center align-middle">
-        <div className="flex items-center justify-center gap-1">
-          <button
-            type="button"
-            onClick={onDec}
-            className="pos-action-btn"
-            data-variant="minus"
-            aria-label="Diminuer la quantité"
-          >
-            <Minus className="h-3 w-3" />
-          </button>
-          <button
-            type="button"
-            onClick={onRemove}
-            className="pos-action-btn"
-            data-variant="delete"
-            aria-label="Supprimer la ligne"
-          >
-            <Trash2 className="h-3 w-3" />
-          </button>
-          <button
-            type="button"
-            onClick={onInc}
-            className="pos-action-btn"
-            data-variant="plus"
-            aria-label="Augmenter la quantité"
-          >
-            <Plus className="h-3 w-3" />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="pos-action-btn"
+          data-variant="delete"
+          aria-label="Supprimer le linge"
+          title="Supprimer ce linge et tous ses traitements"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
       </td>
 
-      {/* Désignation : nom de l'article (principal) + service (secondaire) */}
+      {/* Désignation : nom du linge (principal) + liste des traitements (secondaire) */}
       <td className="px-2 py-1.5 align-middle">
         <div className="flex flex-col gap-0.5">
+          {/* Nom du linge (ligne principale) */}
           <div className="flex items-center gap-1">
-            <span className="line-clamp-2 text-[12px] font-medium leading-tight text-[var(--pos-text)]">
-              {line.article.catalogue_nom}
+            <span className="line-clamp-2 text-[12px] font-semibold leading-tight text-[var(--pos-text)]">
+              {group.catalogue_nom}
+              {group.is_custom && (
+                <span className="ml-1 text-[9px] font-normal uppercase text-[var(--pos-text-muted)]">
+                  (perso)
+                </span>
+              )}
             </span>
           </div>
-          {/* Service associé (secondaire, discret) */}
-          <span className="text-[10px] leading-tight text-[var(--pos-text-muted)]">
-            {line.article.service_nom}
-          </span>
-          {/* Express toggle + note */}
-          <div className="flex items-center gap-1.5">
+
+          {/* Liste des traitements en dessous du linge */}
+          {group.lines.length > 0 && (
+            <ul className="flex flex-col gap-0 pl-1">
+              {group.lines.map((line, idx) => (
+                <li
+                  key={line.id}
+                  className="flex items-center gap-1 text-[10px] leading-tight text-[var(--pos-text-muted)]"
+                >
+                  <span className="text-[var(--pos-primary)]">•</span>
+                  <span>{line.article.service_nom}</span>
+                  {line.article.tarifConfigure === false && (
+                    <span className="text-[8px] italic text-[var(--pos-danger)]">
+                      non configuré
+                    </span>
+                  )}
+                  {/* Prix individuel du traitement (si plusieurs traitements, aider la lisibilité) */}
+                  {group.lines.length > 1 && (
+                    <span className="pos-mono ml-auto text-[9px] text-[var(--pos-text-muted)]">
+                      {formatFcfa(line.article.prix)}
+                    </span>
+                  )}
+                  {idx < group.lines.length - 1 && null}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* Express toggle + note (niveau groupe) */}
+          <div className="flex items-center gap-1.5 pt-0.5">
             <button
               type="button"
               onClick={onToggleExpress}
               className={`flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-semibold transition ${
-                line.express
+                isExpress
                   ? "bg-[#FBF3DD] text-[var(--pos-gold)] ring-1 ring-[var(--pos-gold)]"
                   : "bg-[var(--pos-primary-50)] text-[var(--pos-text-muted)] hover:text-[var(--pos-gold)]"
               }`}
-              title="Article Express (majoration +25 %, retrait raccourci)"
-              aria-pressed={line.express}
+              title="Linge Express (majoration +25 %, retrait raccourci)"
+              aria-pressed={isExpress}
             >
               <Zap className="h-2.5 w-2.5" />
               EXPRESS
@@ -113,7 +144,7 @@ function OrderRowImpl({
                   onKeyDown={(e) => {
                     if (e.key === "Enter") saveNote();
                     if (e.key === "Escape") {
-                      setNoteDraft(line.note ?? "");
+                      setNoteDraft(groupNote(group) ?? "");
                       setEditingNote(false);
                     }
                   }}
@@ -133,40 +164,49 @@ function OrderRowImpl({
               <button
                 type="button"
                 onClick={() => {
-                  setNoteDraft(line.note ?? "");
+                  setNoteDraft(groupNote(group) ?? "");
                   setEditingNote(true);
                 }}
                 className="flex items-center gap-0.5 text-[9px] text-[var(--pos-text-muted)] hover:text-[var(--pos-primary)]"
                 title="Ajouter une note"
               >
                 <Pencil className="h-2.5 w-2.5" />
-                {line.note ? <span className="italic">{line.note}</span> : "note"}
+                {groupNote(group) ? (
+                  <span className="italic">{groupNote(group)}</span>
+                ) : (
+                  "note"
+                )}
               </button>
             )}
           </div>
         </div>
       </td>
 
-      {/* P.U */}
+      {/* P.U — somme des prix des traitements */}
       <td className="pos-mono px-2 py-1.5 text-right text-[12px] align-middle">
-        {formatFcfa(line.article.prix)}
+        <span className="font-medium">{formatFcfa(prixUnitaire)}</span>
+        {group.lines.length > 1 && (
+          <div className="text-[9px] text-[var(--pos-text-muted)]">
+            {group.lines.length} traitements
+          </div>
+        )}
       </td>
 
-      {/* Qté */}
+      {/* Qté — quantité du linge (appliquée à tous les traitements) */}
       <td className="px-1 py-1.5 text-center align-middle">
         <input
           type="number"
           min={1}
-          value={line.quantite}
+          value={quantite}
           onChange={(e) => onQty(parseInt(e.target.value, 10) || 0)}
           className="pos-mono h-6 w-10 rounded border border-[var(--pos-border)] text-center text-[12px] outline-none focus:border-[var(--pos-primary)]"
           aria-label="Quantité"
         />
       </td>
 
-      {/* Total */}
+      {/* Total — P.U × Qté (avec majoration Express si activée) */}
       <td className="pos-mono px-2 py-1.5 text-right text-[12px] font-semibold align-middle">
-        {formatFcfa(totalLine(line))}
+        {formatFcfa(total)}
       </td>
     </tr>
   );

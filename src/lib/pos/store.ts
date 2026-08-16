@@ -80,6 +80,18 @@ interface PosState {
   setQty: (id: string, qty: number) => void;
   toggleExpress: (id: string) => void;
   setLineNote: (id: string, note: string) => void;
+  // ---------- Actions groupées (par linge) ----------
+  // Un groupe = toutes les lignes partageant le même catalogue_article
+  // (plusieurs traitements d'un même linge). Ces actions synchronisent
+  // toutes les lignes du groupe d'un seul coup.
+  /** Supprime toutes les lignes d'un groupe (corbeille sur la ligne groupée). */
+  removeLines: (ids: string[]) => void;
+  /** Définit la même quantité sur toutes les lignes d'un groupe. */
+  setGroupQty: (ids: string[], qty: number) => void;
+  /** Bascule Express sur toutes les lignes d'un groupe (sync vers le même état). */
+  toggleGroupExpress: (ids: string[]) => void;
+  /** Définit la même note sur toutes les lignes d'un groupe. */
+  setGroupNote: (ids: string[], note: string) => void;
   clearCart: () => void;
 
   setClient: (c: PosClient | null) => void;
@@ -239,6 +251,54 @@ export const usePosStore = create<PosState>((set, get) => ({
         l.id === id ? { ...l, note: note || undefined } : l
       ),
     })),
+
+  // ---------- Actions groupées (par linge) ----------
+  // Synchronisent toutes les lignes d'un même linge (plusieurs traitements)
+  // d'un seul coup — l'UI affiche une seule ligne groupée par linge.
+  removeLines: (ids) =>
+    set((s) => {
+      const idSet = new Set(ids);
+      return { cartLines: s.cartLines.filter((l) => !idSet.has(l.id)) };
+    }),
+
+  setGroupQty: (ids, qty) =>
+    set((s) => {
+      const idSet = new Set(ids);
+      const q = Math.max(0, Math.trunc(qty));
+      return {
+        cartLines: s.cartLines
+          .map((l) => (idSet.has(l.id) ? { ...l, quantite: q } : l))
+          .filter((l) => l.quantite > 0),
+      };
+    }),
+
+  toggleGroupExpress: (ids) =>
+    set((s) => {
+      const idSet = new Set(ids);
+      // État cible : si TOUTES les lignes du groupe sont Express → false,
+      // sinon → true (sync vers le même état).
+      const groupLines = s.cartLines.filter((l) => idSet.has(l.id));
+      const allExpress =
+        groupLines.length > 0 && groupLines.every((l) => l.express);
+      const targetExpress = !allExpress;
+      const cartLines = s.cartLines.map((l) =>
+        idSet.has(l.id) ? { ...l, express: targetExpress } : l
+      );
+      return {
+        cartLines,
+        dateRetrait: recomputeRetraitFromState(s.dateDepot, cartLines),
+      };
+    }),
+
+  setGroupNote: (ids, note) =>
+    set((s) => {
+      const idSet = new Set(ids);
+      return {
+        cartLines: s.cartLines.map((l) =>
+          idSet.has(l.id) ? { ...l, note: note || undefined } : l
+        ),
+      };
+    }),
 
   clearCart: () =>
     set((s) => ({
