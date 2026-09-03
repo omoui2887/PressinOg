@@ -46,6 +46,7 @@ import {
   Trash2,
   User,
   Wallet,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -104,7 +105,9 @@ import {
   methodePaiementLabel,
   printCommandeLabels,
   printCommandeTicket,
+  printFacture,
   type CommandeDetail as CommandeDetailData,
+  type PressingInfo,
 } from "./commande-print";
 import { EncaisserPaiementDialog } from "./encaisser-paiement-dialog";
 import { AnnulerPaiementDialog } from "./annuler-paiement-dialog";
@@ -125,6 +128,8 @@ interface CommandeDetailProps {
    *  Optionnel : si non fourni, le filtrage workflow standard s'applique
    *  (matrice TRANSITIONS_ARTICLE_AUTORISEES). */
   role?: string;
+  /** Informations du pressing pour l'en-tête de la facture. */
+  pressing?: PressingInfo | null;
 }
 
 /**
@@ -145,6 +150,7 @@ export function CommandeDetail({
   commande,
   basePath = "/admin",
   role,
+  pressing,
 }: CommandeDetailProps) {
   const router = useRouter();
   // Copie locale des articles pour refléter les mises à jour de statut
@@ -538,6 +544,14 @@ export function CommandeDetail({
               Encaisser le solde
             </Button>
           )}
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => printFacture(commande, pressing)}
+          >
+            <FileText className="size-4" />
+            Facture
+          </Button>
           <Button
             variant="outline"
             size="sm"

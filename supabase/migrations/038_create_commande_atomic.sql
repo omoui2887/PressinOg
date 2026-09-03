@@ -205,7 +205,7 @@ CREATE OR REPLACE FUNCTION public.create_commande_atomic(
   p_notes              TEXT             DEFAULT NULL,
   p_priorite           TEXT             DEFAULT 'normal',
   p_idempotence_key    TEXT             DEFAULT NULL,
-  p_articles_json      JSONB,
+  p_articles_json      JSONB            DEFAULT NULL,
   p_remise             JSONB            DEFAULT NULL,
   p_acompte            JSONB            DEFAULT NULL,
   p_ip_address         INET             DEFAULT NULL,

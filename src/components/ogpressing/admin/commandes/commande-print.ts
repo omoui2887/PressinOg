@@ -24,7 +24,10 @@ import {
   TYPE_VETEMENT_LABELS,
 } from "@/components/ogpressing/admin/commande-wizard/article-labels";
 import { METHODE_PAIEMENT_LABELS } from "@/components/ogpressing/admin/commande-wizard/remise-labels";
-import { STATUT_PAIEMENT_LABELS } from "./commandes-helpers";
+import {
+  STATUT_PAIEMENT_LABELS,
+  STATUT_LABELS,
+} from "./commandes-helpers";
 
 // ============================================================
 // Types — shape du détail commande (GET /api/admin/commandes/[id])
@@ -697,4 +700,404 @@ export function printPaiementReceipt(
   </div>`;
 
   openPrintWindow(`Reçu ${commande.numero_commande}`, headHtml, bodyHtml);
+}
+
+// ============================================================
+// Facture imprimable — design moderne inspiré du modèle client
+// ============================================================
+
+/**
+ * Informations du pressing nécessaires pour l'en-tête de la facture.
+ * Récupérées depuis la table `pressing` (migration 002 + 010).
+ */
+export interface PressingInfo {
+  nom: string;
+  telephone: string | null;
+  email: string | null;
+  adresse: string | null;
+  ville: string | null;
+  commune: string | null;
+  logo_url: string | null;
+}
+
+/** Badge de statut paiement : libellé + couleur (vert si payé, sinon gris/jaune/rouge). */
+function paiementBadge(statut: string): { label: string; bg: string; fg: string } {
+  switch (statut) {
+    case "paye":
+      return { label: "Payée", bg: "#16a34a", fg: "#ffffff" };
+    case "partiel":
+      return { label: "Partiel", bg: "#d97706", fg: "#ffffff" };
+    case "non_paye":
+      return { label: "Impayée", bg: "#dc2626", fg: "#ffffff" };
+    default:
+      return { label: statut, bg: "#6b7280", fg: "#ffffff" };
+  }
+}
+
+/** Badge d'état commande : « Terminée » si retirée/livrée, sinon « En cours ». */
+function commandeEtatBadge(statut: string): { label: string; bg: string; fg: string } {
+  const termine = statut === "retire" || statut === "livre";
+  return termine
+    ? { label: "Terminée", bg: "#16a34a", fg: "#ffffff" }
+    : { label: "En cours", bg: "#6b7280", fg: "#ffffff" };
+}
+
+/**
+ * Imprime une facture au format A4 (portrait), design moderne et épuré.
+ *
+ * Structure (inspirée du modèle fourni par le client) :
+ *   1. En-tête 3 colonnes :
+ *      - Gauche  : logo + nom du pressing + adresse + téléphone + email
+ *      - Centre  : « À » + nom du client + adresse + téléphone + email
+ *      - Droite  : date de facturation, n° facture, badge statut paiement,
+ *                  n° commande, badge état commande, date de retrait
+ *   2. Tableau des prestations : Prestation | Prix unitaire | Qté | Total
+ *   3. Zone totaux (alignée à droite) : sous-total, remise éventuelle, montant total
+ *   4. Pied de page : remerciement + coordonnées du pressing
+ */
+export function printFacture(
+  detail: CommandeDetail,
+  pressing?: PressingInfo | null
+) {
+  const p = pressing ?? ({} as Partial<PressingInfo>);
+  const nomPressing = p.nom?.trim() || "e-pressing";
+
+  // Construction de l'adresse complète du pressing
+  const adresseParts = [
+    p.adresse,
+    [p.commune, p.ville].filter(Boolean).join(" — "),
+  ].filter(Boolean);
+  const adressePressing = adresseParts.join(", ");
+
+  // Coordonnées de contact du pressing
+  const contactLines: string[] = [];
+  if (adressePressing) contactLines.push(adressePressing);
+  if (p.telephone) contactLines.push(`Tél : ${p.telephone}`);
+  if (p.email) contactLines.push(p.email);
+
+  // Infos client (section « À »)
+  const client = detail.client;
+  const clientAdresseParts = [
+    client?.adresse,
+    client?.telephone ? `Tél : ${client.telephone}` : null,
+    client?.email,
+  ].filter(Boolean);
+
+  // Badge statut paiement
+  const pmtBadge = paiementBadge(detail.statut_paiement);
+  const etatBadge = commandeEtatBadge(detail.statut);
+
+  // Numéro de facture : on réutilise le numero_commande (unique, traçable)
+  const numeroFacture = detail.numero_commande;
+
+  // Date de facturation = date de réception (début de la commande)
+  const dateFacture = formatDateOnly(detail.date_reception) || formatDate(detail.created_at);
+  const dateRetrait =
+    formatDateOnly(detail.date_retrait) ||
+    formatDateOnly(detail.date_pret_prevue) ||
+    "—";
+
+  // Lignes du tableau des prestations
+  const lignesHtml = (detail.lignes ?? [])
+    .map((l) => {
+      // Désignation : description libre si présente, sinon nom du service,
+      // sinon type d'article dérivé du 1er article rattaché.
+      const firstArt = (detail.articles ?? []).find(
+        (a) => a.ligne_id === l.id
+      );
+      const designation =
+        l.description?.trim() ||
+        l.service?.nom ||
+        (firstArt ? typeLabel(firstArt) : "Prestation");
+      const pu = l.prix_unitaire;
+      const qte = l.quantite;
+      const total = l.montant_ligne ?? pu * qte;
+      return `<tr>
+        <td class="col-designation">${escapeHtml(designation)}</td>
+        <td class="col-prix">${escapeHtml(formatFCFA(pu))}</td>
+        <td class="col-qte">${escapeHtml(String(qte))}</td>
+        <td class="col-total">${escapeHtml(formatFCFA(total))}</td>
+      </tr>`;
+    })
+    .join("");
+
+  // Calculs totaux
+  const sousTotal =
+    detail.montant_total_avant_remise ??
+    (detail.lignes ?? []).reduce(
+      (sum, l) => sum + l.prix_unitaire * l.quantite,
+      0
+    );
+  const remiseMontant = detail.montant_remise ?? Math.max(0, sousTotal - detail.montant_total);
+  const fraisLivraison = detail.livraison ? (detail.frais_livraison ?? 0) : 0;
+  const resteAPayer = Math.max(0, detail.montant_total - detail.montant_paye);
+
+  // Bloc logo (si logo_url fournie)
+  const logoHtml = p.logo_url
+    ? `<img src="${escapeHtml(p.logo_url)}" alt="logo" class="logo" />`
+    : `<div class="logo-placeholder">${escapeHtml(nomPressing.charAt(0).toUpperCase())}</div>`;
+
+  // Construction des coordonnées pressing
+  const contactHtml = contactLines
+    .map((c) => `<div class="contact-line">${escapeHtml(c)}</div>`)
+    .join("");
+
+  // Construction des coordonnées client
+  const clientContactHtml = clientAdresseParts
+    .map((c) => `<div class="client-line">${escapeHtml(c)}</div>`)
+    .join("");
+
+  const headHtml = `
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      color: #111827;
+      background: #fff;
+    }
+    .page {
+      max-width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto;
+      padding: 14mm 14mm 12mm;
+    }
+    /* ---------- En-tête ---------- */
+    .header {
+      display: grid;
+      grid-template-columns: 1.3fr 1fr 1fr;
+      gap: 18px;
+      align-items: flex-start;
+      padding-bottom: 14px;
+      border-bottom: 3px solid #0f172a;
+      margin-bottom: 18px;
+    }
+    .brand-block { display: flex; flex-direction: column; gap: 6px; }
+    .brand-top { display: flex; align-items: center; gap: 10px; }
+    .logo {
+      width: 44px; height: 44px; border-radius: 9999px;
+      object-fit: cover; border: 2px solid #e5e7eb;
+    }
+    .logo-placeholder {
+      width: 44px; height: 44px; border-radius: 9999px;
+      background: #0f172a; color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; font-weight: 700;
+    }
+    .brand-name {
+      font-size: 17px; font-weight: 800; letter-spacing: 0.5px;
+      color: #0f172a; text-transform: uppercase; line-height: 1.15;
+    }
+    .contact-line { font-size: 11px; color: #4b5563; line-height: 1.5; }
+    .client-block .to-label {
+      font-size: 11px; font-weight: 700; color: #6b7280;
+      text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;
+    }
+    .client-name { font-size: 14px; font-weight: 700; color: #111827; margin-bottom: 3px; }
+    .client-line { font-size: 11px; color: #4b5563; line-height: 1.5; }
+    .meta-block { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+    .meta-row { display: flex; gap: 8px; align-items: center; font-size: 11px; }
+    .meta-label { color: #6b7280; }
+    .meta-value { font-weight: 600; color: #111827; }
+    .badge {
+      display: inline-flex; align-items: center; padding: 2px 10px;
+      border-radius: 9999px; font-size: 11px; font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+    .facture-title {
+      font-size: 13px; font-weight: 700; color: #0f172a;
+      text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px;
+    }
+    /* ---------- Tableau ---------- */
+    table {
+      width: 100%; border-collapse: collapse; margin-top: 8px;
+    }
+    thead th {
+      background: #0f172a; color: #fff;
+      font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      padding: 9px 12px; text-align: left;
+    }
+    thead th.col-prix, thead th.col-total { text-align: right; }
+    thead th.col-qte { text-align: center; }
+    tbody td {
+      padding: 10px 12px; font-size: 12px;
+      border-bottom: 1px solid #e5e7eb; color: #1f2937;
+    }
+    tbody tr:nth-child(even) td { background: #f9fafb; }
+    td.col-prix, td.col-total { text-align: right; font-variant-numeric: tabular-nums; }
+    td.col-qte { text-align: center; font-variant-numeric: tabular-nums; }
+    td.col-total { font-weight: 600; }
+    /* ---------- Totaux ---------- */
+    .totals-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
+    .totals {
+      width: 260px; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;
+    }
+    .totals-head {
+      background: #f3f4f6; padding: 8px 14px;
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.8px; color: #374151;
+    }
+    .totals .trow {
+      display: flex; justify-content: space-between;
+      padding: 7px 14px; font-size: 12px; border-top: 1px solid #f3f4f6;
+    }
+    .totals .trow:first-of-type { border-top: none; }
+    .totals .trow .l { color: #4b5563; }
+    .totals .trow .v { font-weight: 600; color: #111827; font-variant-numeric: tabular-nums; }
+    .totals .trow.grand .l { font-weight: 700; color: #0f172a; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+    .totals .trow.grand .v {
+      font-size: 16px; font-weight: 800; color: #0f172a;
+      background: #0f172a; color: #fff; padding: 4px 10px; border-radius: 4px;
+      margin: -4px -10px;
+    }
+    .totals .trow.grand {
+      background: #f9fafb; padding: 12px 14px; align-items: center;
+    }
+    /* ---------- Notes ---------- */
+    .notes {
+      margin-top: 18px; padding: 10px 14px; background: #fffbeb;
+      border-left: 3px solid #f59e0b; border-radius: 4px;
+      font-size: 11px; color: #92400e;
+    }
+    .notes-label { font-weight: 700; }
+    /* ---------- Footer ---------- */
+    .footer {
+      margin-top: 28px; padding-top: 14px;
+      border-top: 2px solid #e5e7eb;
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 10px; color: #6b7280;
+    }
+    .footer .thanks { font-weight: 600; color: #374151; }
+    @media print {
+      body { background: #fff; }
+      .page { max-width: none; min-height: 0; padding: 0; }
+      @page { size: A4 portrait; margin: 12mm; }
+    }
+  </style>`;
+
+  const bodyHtml = `
+  <div class="page">
+    <!-- En-tête -->
+    <div class="header">
+      <div class="brand-block">
+        <div class="brand-top">
+          ${logoHtml}
+          <div class="brand-name">${escapeHtml(nomPressing)}</div>
+        </div>
+        ${contactHtml}
+      </div>
+
+      <div class="client-block">
+        <div class="to-label">À</div>
+        <div class="client-name">${escapeHtml(client?.nom_complet ?? "Client")}</div>
+        ${clientContactHtml}
+      </div>
+
+      <div class="meta-block">
+        <div class="facture-title">Facture</div>
+        <div class="meta-row">
+          <span class="meta-label">Date :</span>
+          <span class="meta-value">${escapeHtml(dateFacture)}</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">N° :</span>
+          <span class="meta-value">${escapeHtml(numeroFacture)}</span>
+        </div>
+        <div class="meta-row">
+          <span class="badge" style="background:${pmtBadge.bg};color:${pmtBadge.fg};">${escapeHtml(pmtBadge.label)}</span>
+        </div>
+        <div class="meta-row" style="margin-top:6px;">
+          <span class="meta-label">Commande :</span>
+          <span class="meta-value">${escapeHtml(detail.numero_commande)}</span>
+        </div>
+        <div class="meta-row">
+          <span class="badge" style="background:${etatBadge.bg};color:${etatBadge.fg};">${escapeHtml(etatBadge.label)}</span>
+        </div>
+        <div class="meta-row" style="margin-top:6px;">
+          <span class="meta-label">Retrait :</span>
+          <span class="meta-value">${escapeHtml(dateRetrait)}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tableau des prestations -->
+    <table>
+      <thead>
+        <tr>
+          <th class="col-designation">Prestation</th>
+          <th class="col-prix">Prix unitaire</th>
+          <th class="col-qte">Qté</th>
+          <th class="col-total">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${lignesHtml || '<tr><td colspan="4" style="text-align:center;color:#9ca3af;">Aucune prestation</td></tr>'}
+      </tbody>
+    </table>
+
+    <!-- Totaux -->
+    <div class="totals-wrap">
+      <div class="totals">
+        <div class="totals-head">Totaux</div>
+        <div class="trow">
+          <span class="l">Sous-total</span>
+          <span class="v">${escapeHtml(formatFCFA(sousTotal))}</span>
+        </div>
+        ${
+          remiseMontant > 0
+            ? `<div class="trow">
+                <span class="l">Remise${detail.remise_type ? ` (${escapeHtml(detail.remise_type)})` : ""}</span>
+                <span class="v">−${escapeHtml(formatFCFA(remiseMontant))}</span>
+              </div>`
+            : ""
+        }
+        ${
+          fraisLivraison > 0
+            ? `<div class="trow">
+                <span class="l">Livraison</span>
+                <span class="v">${escapeHtml(formatFCFA(fraisLivraison))}</span>
+              </div>`
+            : ""
+        }
+        <div class="trow grand">
+          <span class="l">Montant total</span>
+          <span class="v">${escapeHtml(formatFCFA(detail.montant_total))}</span>
+        </div>
+        <div class="trow">
+          <span class="l">Payé</span>
+          <span class="v">${escapeHtml(formatFCFA(detail.montant_paye))}</span>
+        </div>
+        ${
+          resteAPayer > 0
+            ? `<div class="trow">
+                <span class="l">Reste à payer</span>
+                <span class="v">${escapeHtml(formatFCFA(resteAPayer))}</span>
+              </div>`
+            : ""
+        }
+      </div>
+    </div>
+
+    ${
+      detail.notes
+        ? `<div class="notes"><span class="notes-label">Note : </span>${escapeHtml(detail.notes)}</div>`
+        : ""
+    }
+
+    <!-- Pied de page -->
+    <div class="footer">
+      <div>
+        <div class="thanks">Merci de votre confiance</div>
+        <div>${escapeHtml(nomPressing)} — ${escapeHtml(p.ville || "Côte d'Ivoire")}</div>
+      </div>
+      <div style="text-align:right;">
+        ${p.telephone ? `<div>${escapeHtml(p.telephone)}</div>` : ""}
+        ${p.email ? `<div>${escapeHtml(p.email)}</div>` : ""}
+      </div>
+    </div>
+  </div>`;
+
+  openPrintWindow(`Facture ${detail.numero_commande}`, headHtml, bodyHtml);
 }
