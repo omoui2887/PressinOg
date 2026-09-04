@@ -2,11 +2,12 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  // TODO 14.2: corriger les 75 erreurs TypeScript restantes puis passer à false.
-  //   75 erreurs constatées (catalogue-form generics RHF, services/stock dialogs,
-  //   inscription-form, commande-wizard state, shared/index exports).
+  // ✅ AUDIT A-CODE C2 : `ignoreBuildErrors: true` masquait les erreurs TS.
+  //   tsc --noEmit sur src/ → 0 erreur (les 55 erreurs restantes sont dans
+  //   tests/ qui est exclu du build par tsconfig.json). On peut donc retirer
+  //   ce masque en toute sécurité pour détecter les régressions futures.
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   reactStrictMode: true,
   compress: true,

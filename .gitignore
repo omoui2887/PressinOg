@@ -142,3 +142,6 @@ tool-results/
 /*.jpg
 /*.jpeg
 /*.webp
+
+# Default env values (contains real secrets — never commit)
+.env.defaults

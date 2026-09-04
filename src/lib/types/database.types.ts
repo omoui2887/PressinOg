@@ -101,7 +101,10 @@ export type StatutCommande =
   | "pret"
   | "en_livraison"
   | "livre"
-  | "retire";
+  | "retire"
+  // ✅ AUDIT A-CODE H3 : statut 'annule' ajouté par migration 024.
+  //   Sans cette valeur, le type TS ne correspondait pas à l'enum DB.
+  | "annule";
 
 export type StatutPaiement = "non_paye" | "partiel" | "paye";
 

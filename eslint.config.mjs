@@ -8,40 +8,46 @@ const __dirname = dirname(__filename);
 
 const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
   rules: {
-    // TypeScript rules
+    // ✅ AUDIT A-CODE C1 : réactivation des règles critiques précédemment
+    //   désactivées. Les règles sont mises en "warn" (pas "error") pour ne
+    //   pas casser le build, mais elles apparaîtront dans `bun run lint`.
+    //   Règles de sécurité/correctness → error ; règles de style → warn.
+
+    // TypeScript rules — gardées off car trop de code legacy utilise `any`
+    // (audit A-CODE M5/M6). À actifier progressivement par module.
     "@typescript-eslint/no-explicit-any": "off",
-    "@typescript-eslint/no-unused-vars": "off",
+    "@typescript-eslint/no-unused-vars": "warn",
     "@typescript-eslint/no-non-null-assertion": "off",
-    "@typescript-eslint/ban-ts-comment": "off",
-    "@typescript-eslint/prefer-as-const": "off",
-    "@typescript-eslint/no-unused-disable-directive": "off",
-    
-    // React rules
-    "react-hooks/exhaustive-deps": "off",
+    "@typescript-eslint/ban-ts-comment": "warn",
+
+    // React rules — exhaustive-deps en warn (bugs subtils sinon)
+    "react-hooks/exhaustive-deps": "warn",
     "react-hooks/purity": "off",
     "react/no-unescaped-entities": "off",
     "react/display-name": "off",
     "react/prop-types": "off",
-    "react-compiler/react-compiler": "off",
-    
+
     // Next.js rules
     "@next/next/no-img-element": "off",
     "@next/next/no-html-link-for-pages": "off",
-    
-    // General JavaScript rules
-    "prefer-const": "off",
-    "no-unused-vars": "off",
+
+    // General JavaScript rules — correctness en error, style en warn
+    "prefer-const": "warn",
+    "no-unused-vars": "warn",
     "no-console": "off",
-    "no-debugger": "off",
-    "no-empty": "off",
-    "no-irregular-whitespace": "off",
-    "no-case-declarations": "off",
-    "no-fallthrough": "off",
-    "no-mixed-spaces-and-tabs": "off",
-    "no-redeclare": "off",
+    "no-debugger": "error",
+    "no-empty": "warn",
+    "no-irregular-whitespace": "warn",
+    "no-case-declarations": "warn",
+    "no-fallthrough": "error",
+    "no-mixed-spaces-and-tabs": "warn",
+    "no-redeclare": "error",
+    // no-undef désactivé car TypeScript gère déjà la vérification des
+    // variables non définies (et avec jsx: react-jsx, React n'est pas
+    // importé explicitement → faux positif sur les .tsx).
     "no-undef": "off",
-    "no-unreachable": "off",
-    "no-useless-escape": "off",
+    "no-unreachable": "error",
+    "no-useless-escape": "warn",
   },
 }, {
   ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills"]

@@ -84,6 +84,9 @@ export const STATUT_LABELS: Record<string, string> = {
   retire: "Retiré",
   livre: "Livré",
   en_livraison: "En livraison",
+  // ✅ AUDIT A-CODE H4 : statut 'annule' ajouté par migration 024.
+  //   Sans cette entrée, les commandes annulées affichaient le raw "annule".
+  annule: "Annulée",
 };
 
 /**
@@ -113,6 +116,9 @@ export function statutVariant(statut: string): StatusVariant {
     case "retire":
     case "livre":
       return "neutral";
+    // ✅ AUDIT A-CODE : statut 'annule' → danger (rouge)
+    case "annule":
+      return "danger";
     default:
       return "neutral";
   }

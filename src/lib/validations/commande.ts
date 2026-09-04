@@ -95,8 +95,20 @@ export const createCommandeSchema = z
  */
 export const patchCommandeSchema = z
   .object({
+    // ✅ AUDIT A-CODE H6 : "paye" est un StatutPaiement, pas un StatutCommande.
+    //   Remplacé par les vraies valeurs de l'enum statut_commande (migration 024).
     statut: z
-      .enum(["recu", "en_traitement", "pret", "livre", "paye", "annule"])
+      .enum([
+        "recu",
+        "en_traitement",
+        "lave",
+        "repasse",
+        "pret",
+        "en_livraison",
+        "livre",
+        "retire",
+        "annule",
+      ])
       .optional(),
     priorite: prioriteSchema.optional(),
     notes: z.string().max(2000).optional(),
