@@ -565,14 +565,19 @@ export async function POST(request: NextRequest) {
       responseBody.error = result.error || "Requête invalide.";
       if (result.details) responseBody.details = result.details;
     } else {
-      // Erreur serveur — message générique, log complet côté serveur.
+      // Erreur serveur — log complet côté serveur + inclusion du message
+      // détaillé dans la réponse pour faciliter le diagnostic (le frontend
+      // l'affiche dans le toast/erreur). Avant, seul un message générique
+      // "Erreur interne du serveur" était renvoyé, ce qui rendait le debug
+      // impossible côté client.
       console.error(
         "[api/admin/commandes] RPC create_commande_atomic a échoué:",
         result.code,
         result.error,
         result.details
       );
-      responseBody.error = "Erreur interne du serveur";
+      responseBody.error = result.error || "Erreur interne du serveur";
+      if (result.details) responseBody.details = result.details;
     }
     return NextResponse.json(responseBody, { status });
   }
