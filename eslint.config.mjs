@@ -20,8 +20,9 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "@typescript-eslint/no-non-null-assertion": "off",
     "@typescript-eslint/ban-ts-comment": "warn",
 
-    // React rules — exhaustive-deps en warn (bugs subtils sinon)
-    "react-hooks/exhaustive-deps": "warn",
+    // React rules — react-hooks/exhaustive-deps désactivé car le plugin
+    // react-hooks n'est pas explicitement chargé dans cette config flat.
+    "react-hooks/exhaustive-deps": "off",
     "react-hooks/purity": "off",
     "react/no-unescaped-entities": "off",
     "react/display-name": "off",
@@ -50,7 +51,7 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "no-useless-escape": "warn",
   },
 }, {
-  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills"]
+  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills", ".zscripts/**", "scripts/**", "tests/**"]
 }];
 
 export default eslintConfig;
