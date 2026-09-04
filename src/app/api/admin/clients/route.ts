@@ -374,17 +374,23 @@ export async function POST(request: NextRequest) {
   // Vérifie l'unicité du téléphone dans le pressing (contrainte DB UNIQUE)
   const { data: existing } = await supabase
     .from("clients")
-    .select("id")
+    .select("id, nom_complet, telephone, email, adresse")
     .eq("pressing_id", personnel.pressing_id)
     .eq("telephone", telephoneNorm)
     .maybeSingle();
   if (existing) {
+    // Au lieu de renvoyer une erreur 409 bloquante, on retourne le client
+    // existant avec un statut 200 + flag `existing: true`. Cela permet au
+    // frontend (ex: createPassageClient dans le POS) de réutiliser
+    // directement le client au lieu d'échouer la création de commande.
     return NextResponse.json(
       {
-        success: false,
-        error: `Un client avec le téléphone ${telephoneNorm} existe déjà dans votre pressing`,
+        success: true,
+        existing: true,
+        data: existing,
+        message: `Un client avec le téléphone ${telephoneNorm} existe déjà dans votre pressing. Client réutilisé.`,
       },
-      { status: 409 }
+      { status: 200 }
     );
   }
 

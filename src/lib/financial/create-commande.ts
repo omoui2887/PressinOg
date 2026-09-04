@@ -44,8 +44,10 @@ import type {
 
 export interface ArticleInputRpc {
   service_id: string;
-  catalogue_article_id: string;
-  catalogue_article_nom: string;
+  /** Optionnel (colonne nullable en DB). Si absent, services.prix est utilisé. */
+  catalogue_article_id?: string;
+  /** Optionnel. Si absent, le nom du service est utilisé comme fallback. */
+  catalogue_article_nom?: string;
   couleur: CouleurVetement;
   couleur_libre?: string | null;
   etat: EtatVetement;

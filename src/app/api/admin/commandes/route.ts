@@ -370,61 +370,24 @@ export async function POST(request: NextRequest) {
       typeof a.catalogue_article_id === "string"
         ? a.catalogue_article_id.trim()
         : "";
-    if (!catalogueArticleId) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Article ${i + 1} : catalogue_article_id est requis`,
-        },
-        { status: 400 }
-      );
-    }
+    // catalogue_article_id est OPTIONNEL (colonne nullable en DB).
+    // Si non fourni, la RPC utilisera services.prix comme fallback.
     const catalogueArticleNom =
       typeof a.catalogue_article_nom === "string"
         ? a.catalogue_article_nom.trim()
         : "";
-    if (!catalogueArticleNom) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Article ${i + 1} : catalogue_article_nom est requis`,
-        },
-        { status: 400 }
-      );
-    }
+    // catalogue_article_nom optionnel aussi (fallback sur nom du service côté RPC)
     const couleur = a.couleur;
-    if (
-      typeof couleur !== "string" ||
-      !(COULEUR_VALID as readonly string[]).includes(couleur)
-    ) {
-      return NextResponse.json(
-        { success: false, error: `Article ${i + 1} : couleur invalide` },
-        { status: 400 }
-      );
-    }
+    // Validation couleur : si absente/invalid, fallback sur 'autre'
+    let couleurValid: string = couleur && typeof couleur === "string" && (COULEUR_VALID as readonly string[]).includes(couleur) ? couleur : "autre";
     let couleurLibre: string | null = null;
     if (typeof a.couleur_libre === "string" && a.couleur_libre.trim()) {
       couleurLibre = a.couleur_libre.trim().slice(0, 100);
     }
-    if (couleur === "autre" && !couleurLibre) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Article ${i + 1} : couleur_libre est requis quand couleur='autre'`,
-        },
-        { status: 400 }
-      );
-    }
+    // couleur_libre non requis si couleur=autre (le fallback 'autre' sans couleur_libre est valide)
     const etat = a.etat;
-    if (
-      typeof etat !== "string" ||
-      !(ETAT_VALID as readonly string[]).includes(etat)
-    ) {
-      return NextResponse.json(
-        { success: false, error: `Article ${i + 1} : etat invalide` },
-        { status: 400 }
-      );
-    }
+    // Validation etat : si absent/invalid, fallback sur 'bon'
+    const etatValid: string = etat && typeof etat === "string" && (ETAT_VALID as readonly string[]).includes(etat) ? etat : "bon";
     const quantite =
       typeof a.quantite === "number" &&
       Number.isFinite(a.quantite) &&
@@ -468,11 +431,11 @@ export async function POST(request: NextRequest) {
 
     articles.push({
       service_id: serviceId,
-      catalogue_article_id: catalogueArticleId,
-      catalogue_article_nom: catalogueArticleNom,
-      couleur: couleur as CouleurValid,
+      catalogue_article_id: catalogueArticleId || undefined,
+      catalogue_article_nom: catalogueArticleNom || undefined,
+      couleur: couleurValid as CouleurValid,
       couleur_libre: couleurLibre,
-      etat: etat as EtatValid,
+      etat: etatValid as EtatValid,
       description_etat: descriptionEtat,
       quantite,
       is_custom: isCustom || undefined,

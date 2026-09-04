@@ -481,6 +481,7 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
       }),
     });
     const json = await res.json().catch(() => ({}));
+
     if (!res.ok || !json?.success) {
       throw new Error(
         typeof json?.error === "string"
@@ -488,6 +489,10 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
           : "Impossible de créer le client de passage."
       );
     }
+
+    // L'API peut retourner un client existant (existing: true) si le
+    // téléphone est déjà enregistré dans le pressing. Dans ce cas, on
+    // réutilise directement ce client au lieu d'en créer un nouveau.
     const c = json.data;
     return {
       id: c.id,
@@ -495,7 +500,7 @@ export function PosCaisse({ basePath }: PosCaisseProps) {
       telephone: c.telephone ?? tel,
       email: c.email ?? null,
       commune: c.commune ?? null,
-      solde_impaye: 0,
+      solde_impaye: c.solde_impaye ?? 0,
     };
   }
 
