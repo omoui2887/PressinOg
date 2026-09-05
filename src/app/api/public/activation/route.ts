@@ -428,6 +428,11 @@ export async function POST(req: NextRequest) {
     createdPressingId = pressing.id;
 
     /* --- Étape 4 : Créer le personnel (manager = admin du pressing) --- */
+    // ⚠️ FIX BUG ACTIVATION : la colonne modes_paiement_autorises a une
+    // DEFAULT value (["especes","mobile_money","carte_bancaire"]) qui
+    // viole la contrainte CHECK `check_modes_paiement_caissier_only`
+    // (modes_paiement_autorises IS NULL OR role = 'caissier') pour les
+    // non-caissiers. On met explicitement NULL pour les managers.
     const personnelInsert = await withSchemaCacheRetry<{ id: string }>(
       "INSERT personnel",
       requestId,
@@ -445,6 +450,9 @@ export async function POST(req: NextRequest) {
             statut_compte: "actif",
             date_activation: new Date().toISOString(),
             actif: true,
+            // modes_paiement_autorises = NULL pour les non-caissiers
+            // (sinon la DEFAULT value viole check_modes_paiement_caissier_only)
+            modes_paiement_autorises: null,
           })
           .select("id")
           .single()
