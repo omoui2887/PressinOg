@@ -985,18 +985,22 @@ export function printFacture(
       margin-top: 8px;
     }
     .category-card {
-      padding: 16px 20px;
+      padding: 18px 22px;
       background: #ffffff;
+      border-radius: 8px;
+      margin-bottom: 10px;
     }
     .category-card-alt {
-      background: #f0f4f8; /* bleu-gris très pâle */
+      background: #f0f7ff; /* bleu très pâle comme dans l'image de référence */
     }
     .category-title {
-      font-size: 16px;
+      font-size: 17px;
       font-weight: 700;
-      color: #1f2937;
-      margin-bottom: 10px;
+      color: #1e3a5f;
+      margin-bottom: 12px;
       letter-spacing: 0.2px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #e5e7eb;
     }
     .cat-header-row {
       display: grid;
@@ -1031,8 +1035,9 @@ export function printFacture(
       color: #4b5563;
     }
     .cat-bullet {
-      color: #6b7280;
-      font-size: 14px;
+      color: #4a90e2; /* bleu moyen comme dans l'image de référence */
+      font-size: 16px;
+      line-height: 1;
     }
     .cat-service-price, .cat-service-qte, .cat-service-total {
       text-align: right;
@@ -1052,26 +1057,28 @@ export function printFacture(
     }
     .cat-badges {
       display: flex;
-      gap: 12px;
-      margin-top: 8px;
-      padding-top: 6px;
-      font-size: 11px;
+      gap: 16px;
+      margin-top: 10px;
+      padding-top: 8px;
+      font-size: 12px;
       color: #6b7280;
     }
     .cat-badge-express, .cat-badge-note {
       display: inline-flex;
       align-items: center;
-      gap: 3px;
+      gap: 4px;
       font-weight: 500;
       letter-spacing: 0.3px;
     }
     .cat-badge-express {
       text-transform: uppercase;
-      color: #6b7280;
+      color: #f59e0b; /* orange pour EXPRESS (plus visible) */
+      font-weight: 600;
     }
     .cat-badge-note {
       color: #9ca3af;
       text-transform: lowercase;
+      font-style: italic;
     }
     /* ---------- Totaux ---------- */
     .totals-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
@@ -1108,12 +1115,22 @@ export function printFacture(
     .notes-label { font-weight: 700; }
     /* ---------- Footer ---------- */
     .footer {
-      margin-top: 28px; padding-top: 14px;
+      margin-top: auto; padding-top: 18px;
       border-top: 2px solid #e5e7eb;
-      display: flex; justify-content: space-between; align-items: center;
+      display: flex; justify-content: space-between; align-items: flex-start;
       font-size: 10px; color: #6b7280;
+      gap: 20px;
     }
-    .footer .thanks { font-weight: 600; color: #374151; }
+    .footer .thanks { font-weight: 600; color: #374151; font-size: 12px; }
+    .footer-left { flex: 1; }
+    .footer-right { text-align: right; }
+    .footer-conditions {
+      margin-top: 6px;
+      font-size: 9px;
+      color: #9ca3af;
+      line-height: 1.5;
+      max-width: 300px;
+    }
     @media print {
       body { background: #fff; }
       .page { max-width: none; min-height: 0; padding: 0; }
@@ -1222,13 +1239,19 @@ export function printFacture(
 
     <!-- Pied de page -->
     <div class="footer">
-      <div>
+      <div class="footer-left">
         <div class="thanks">Merci de votre confiance</div>
         <div>${escapeHtml(nomPressing)} — ${escapeHtml(p.ville || "Côte d'Ivoire")}</div>
+        <div class="footer-conditions">
+          En activant votre compte, vous acceptez les conditions d'utilisation d'e-pressing.
+          Les articles non retirés dans un délai de 30 jours seront stockés à vos risques et périls.
+          Conservez ce document pour le suivi de votre commande.
+        </div>
       </div>
-      <div style="text-align:right;">
+      <div class="footer-right">
         ${p.telephone ? `<div>${escapeHtml(p.telephone)}</div>` : ""}
         ${p.email ? `<div>${escapeHtml(p.email)}</div>` : ""}
+        <div style="margin-top:4px;font-size:9px;color:#9ca3af;">Document généré le ${escapeHtml(new Date().toLocaleDateString("fr-FR"))}</div>
       </div>
     </div>
   </div>`;
