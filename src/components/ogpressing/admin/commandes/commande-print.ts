@@ -315,7 +315,7 @@ export function printCommandeTicket(detail: CommandeDetail) {
       body { width: auto; padding: 0; }
     }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>`;
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>`;
 
   const bodyHtml = `
   <div class="header center">
@@ -388,8 +388,15 @@ export function printCommandeTicket(detail: CommandeDetail) {
   </div>
 
   <script>
-    try {
-      if (window.QRCode) {
+    // Attend que la librairie QRCode (CDN) soit chargée avant de rendre
+    // le QR Code. On utilise un polling léger car le script CDN peut
+    // mettre plus de temps à se charger que le setTimeout(250ms) de
+    // openPrintWindow qui déclenche l'impression.
+    function renderQR() {
+      try {
+        if (typeof window.QRCode === "undefined" || !window.QRCode.toCanvas) {
+          return false;
+        }
         QRCode.toCanvas(
           document.getElementById("qrcode-canvas"),
           ${JSON.stringify(qrPayload)},
@@ -398,10 +405,20 @@ export function printCommandeTicket(detail: CommandeDetail) {
             if (err) console.error(err);
           }
         );
+        return true;
+      } catch (e) {
+        console.error("QR render error", e);
+        return false;
       }
-    } catch (e) {
-      console.error("QR render error", e);
     }
+    // Retry pendant 3s max (toutes les 100ms) si la lib n'est pas encore prête.
+    var qrAttempts = 0;
+    var qrInterval = setInterval(function () {
+      qrAttempts++;
+      if (renderQR() || qrAttempts > 30) {
+        clearInterval(qrInterval);
+      }
+    }, 100);
   </script>`;
 
   openPrintWindow(`Ticket ${detail.numero_commande}`, headHtml, bodyHtml);
@@ -474,9 +491,15 @@ export function printCommandeLabels(detail: CommandeDetail) {
 
   const bodyHtml = `${labelsHtml}
   <script>
-    (function () {
+    // Attend que JsBarcode (CDN) soit chargé avant de rendre les codes-barres.
+    // Même logique de polling que pour le QR Code du ticket.
+    function renderBarcodes() {
       try {
+        if (typeof window.JsBarcode === "undefined") {
+          return false;
+        }
         var svgs = document.querySelectorAll("svg.barcode-svg");
+        if (svgs.length === 0) return true; // rien à rendre, considéré comme OK
         svgs.forEach(function (svg) {
           var code = svg.getAttribute("data-code");
           if (!code) return;
@@ -493,10 +516,19 @@ export function printCommandeLabels(detail: CommandeDetail) {
             console.warn("JsBarcode error", e);
           }
         });
+        return true;
       } catch (e) {
         console.error("Barcode init error", e);
+        return false;
       }
-    })();
+    }
+    var bcAttempts = 0;
+    var bcInterval = setInterval(function () {
+      bcAttempts++;
+      if (renderBarcodes() || bcAttempts > 30) {
+        clearInterval(bcInterval);
+      }
+    }, 100);
   </script>`;
 
   openPrintWindow(`Étiquettes ${detail.numero_commande}`, headHtml, bodyHtml);
