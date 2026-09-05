@@ -144,6 +144,7 @@ export interface CommandeDetail {
   cree_par: string | null;
   created_at: string;
   updated_at: string | null;
+  priorite?: string | null;
   client: CommandeDetailClient | null;
   cree_par_personnel: { id: string; nom_complet: string } | null;
   lignes: CommandeDetailLigne[];
