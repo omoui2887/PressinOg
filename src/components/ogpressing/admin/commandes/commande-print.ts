@@ -744,6 +744,46 @@ function commandeEtatBadge(statut: string): { label: string; bg: string; fg: str
 }
 
 /**
+ * Libellé FR d'une couleur de vêtement pour la facture.
+ * Réutilise COULEUR_LABELS mais avec une majuscule initiale.
+ */
+function couleurLabelForFacture(couleur: string, couleurLibre?: string | null): string | null {
+  if (!couleur) return null;
+  if (couleur === "autre" && couleurLibre) {
+    return couleurLibre.charAt(0).toUpperCase() + couleurLibre.slice(1);
+  }
+  const labels: Record<string, string> = {
+    blanc: "Blanc",
+    noir: "Noir",
+    bleu: "Bleu",
+    rouge: "Rouge",
+    vert: "Vert",
+    jaune: "Jaune",
+    gris: "Gris",
+    marron: "Marron",
+    autre: "Autre",
+  };
+  const label = labels[couleur] || couleur;
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+/**
+ * Libellé FR d'un état de vêtement pour la facture.
+ */
+function etatLabelForFacture(etat: string): string | null {
+  if (!etat) return null;
+  const labels: Record<string, string> = {
+    bon: "Bon",
+    correct: "Correct",
+    use: "Usé",
+    tache: "Taché",
+    abime: "Abîmé",
+  };
+  const label = labels[etat] || etat;
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+/**
  * Imprime une facture au format A4 (portrait), design moderne et épuré.
  *
  * Structure (inspirée du modèle fourni par le client) :
@@ -800,16 +840,22 @@ export function printFacture(
 
   // Lignes groupées par catégorie d'article (modèle de facture par cartes)
   // Chaque catégorie devient une "carte" avec son nom en titre, puis la
-  // liste des services associés. Alternance de fond blanc / bleu-gris clair.
+  // liste des services associés pour chaque vêtement. Alternance de fond
+  // blanc / bleu-gris clair.
+  // Chaque article est listé individuellement avec : nom + couleur, service,
+  // état, prix unitaire, quantité, total.
   const categoriesMap = new Map<
-    string, // nom de la catégorie (ex: "Chemises")
+    string, // nom de la catégorie (ex: "Costumes & Vêtements de Cérémonie")
     {
+      vetementNom: string; // nom complet du vêtement (ex: "Costumes & Vêtements de Cérémonie Blanc")
       serviceName: string;
       prixUnitaire: number;
       quantite: number;
       total: number;
       isExpress: boolean;
       note: string | null;
+      etat: string | null; // état du vêtement (ex: "Bon", "Correct")
+      couleur: string | null; // couleur du vêtement (ex: "Blanc")
     }[]
   >();
 
@@ -830,16 +876,31 @@ export function printFacture(
     const isExpress = detail.priorite === "express";
     const note = l.description?.trim() || null;
 
+    // Nom complet du vêtement : nom du catalogue + couleur si présente
+    const catalogueNom = firstArt?.catalogue_article?.nom || l.description?.trim() || "Vêtement";
+    const couleurLabel = firstArt?.couleur
+      ? couleurLabelForFacture(firstArt.couleur, firstArt.couleur_libre)
+      : null;
+    const vetementNom = couleurLabel
+      ? `${catalogueNom} ${couleurLabel}`
+      : catalogueNom;
+
+    // État du vêtement (libellé FR)
+    const etat = firstArt?.etat ? etatLabelForFacture(firstArt.etat) : null;
+
     if (!categoriesMap.has(categorie)) {
       categoriesMap.set(categorie, []);
     }
     categoriesMap.get(categorie)!.push({
+      vetementNom,
       serviceName,
       prixUnitaire: pu,
       quantite: qte,
       total,
       isExpress,
       note,
+      etat,
+      couleur: couleurLabel,
     });
   }
 
@@ -849,11 +910,18 @@ export function printFacture(
       const isAlt = idx % 2 === 1; // alternance de fond
       const servicesHtml = services
         .map(
-          (s) => `
+          (s, sIdx) => `
           <div class="cat-service-row">
-            <div class="cat-service-name">
-              <span class="cat-bullet">•</span>
-              ${escapeHtml(s.serviceName)}
+            <div class="cat-service-info">
+              <div class="cat-vetement-nom">
+                ${escapeHtml(s.vetementNom)}
+              </div>
+              <div class="cat-service-detail">
+                <span class="cat-bullet">•</span>
+                <span class="cat-service-label">Service :</span>
+                <span class="cat-service-value">${escapeHtml(s.serviceName)}</span>
+                ${s.etat ? `<span class="cat-etat-badge">État: ${escapeHtml(s.etat)}</span>` : ""}
+              </div>
             </div>
             <div class="cat-service-price">${escapeHtml(formatFCFA(s.prixUnitaire))}</div>
             <div class="cat-service-qte">${escapeHtml(String(s.quantite))}</div>
@@ -881,7 +949,7 @@ export function printFacture(
         <div class="category-card ${isAlt ? "category-card-alt" : ""}">
           <div class="category-title">${escapeHtml(categorieName)}</div>
           <div class="cat-header-row">
-            <div class="cat-col-service">Service</div>
+            <div class="cat-col-service">Vêtement & Service</div>
             <div class="cat-col-prix">Prix unitaire</div>
             <div class="cat-col-qte">Qté</div>
             <div class="cat-col-total">Total</div>
@@ -1024,15 +1092,48 @@ export function printFacture(
       grid-template-columns: 1fr auto auto auto;
       gap: 12px;
       align-items: center;
-      padding: 6px 0;
+      padding: 8px 0;
       font-size: 13px;
       color: #4b5563;
+      border-bottom: 1px solid #f3f4f6;
     }
-    .cat-service-name {
+    .cat-service-row:last-child {
+      border-bottom: none;
+    }
+    .cat-service-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .cat-vetement-nom {
+      font-weight: 600;
+      color: #111827;
+      font-size: 13px;
+    }
+    .cat-service-detail {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 4px;
+      font-size: 11px;
+      color: #6b7280;
+    }
+    .cat-service-label {
+      color: #9ca3af;
+    }
+    .cat-service-value {
+      font-weight: 500;
       color: #4b5563;
+    }
+    .cat-etat-badge {
+      margin-left: 8px;
+      display: inline-flex;
+      align-items: center;
+      background: #d1fae5;
+      color: #065f46;
+      padding: 1px 8px;
+      border-radius: 9999px;
+      font-size: 10px;
+      font-weight: 600;
     }
     .cat-bullet {
       color: #4a90e2; /* bleu moyen comme dans l'image de référence */
