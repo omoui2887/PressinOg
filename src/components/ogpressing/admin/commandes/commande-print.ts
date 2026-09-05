@@ -797,27 +797,97 @@ export function printFacture(
     formatDateOnly(detail.date_pret_prevue) ||
     "—";
 
-  // Lignes du tableau des prestations
-  const lignesHtml = (detail.lignes ?? [])
-    .map((l) => {
-      // Désignation : description libre si présente, sinon nom du service,
-      // sinon type d'article dérivé du 1er article rattaché.
-      const firstArt = (detail.articles ?? []).find(
-        (a) => a.ligne_id === l.id
-      );
-      const designation =
-        l.description?.trim() ||
-        l.service?.nom ||
-        (firstArt ? typeLabel(firstArt) : "Prestation");
-      const pu = l.prix_unitaire;
-      const qte = l.quantite;
-      const total = l.montant_ligne ?? pu * qte;
-      return `<tr>
-        <td class="col-designation">${escapeHtml(designation)}</td>
-        <td class="col-prix">${escapeHtml(formatFCFA(pu))}</td>
-        <td class="col-qte">${escapeHtml(String(qte))}</td>
-        <td class="col-total">${escapeHtml(formatFCFA(total))}</td>
-      </tr>`;
+  // Lignes groupées par catégorie d'article (modèle de facture par cartes)
+  // Chaque catégorie devient une "carte" avec son nom en titre, puis la
+  // liste des services associés. Alternance de fond blanc / bleu-gris clair.
+  const categoriesMap = new Map<
+    string, // nom de la catégorie (ex: "Chemises")
+    {
+      serviceName: string;
+      prixUnitaire: number;
+      quantite: number;
+      total: number;
+      isExpress: boolean;
+      note: string | null;
+    }[]
+  >();
+
+  for (const l of detail.lignes ?? []) {
+    // Détermine la catégorie : nom du catalogue de l'article rattaché,
+    // sinon description de la ligne, sinon "Divers".
+    const firstArt = (detail.articles ?? []).find(
+      (a) => a.ligne_id === l.id
+    );
+    const categorie =
+      firstArt?.catalogue_article?.nom ||
+      l.description?.trim() ||
+      "Divers";
+    const serviceName = l.service?.nom || "Prestation";
+    const pu = l.prix_unitaire;
+    const qte = l.quantite;
+    const total = l.montant_ligne ?? pu * qte;
+    const isExpress = detail.priorite === "express";
+    const note = l.description?.trim() || null;
+
+    if (!categoriesMap.has(categorie)) {
+      categoriesMap.set(categorie, []);
+    }
+    categoriesMap.get(categorie)!.push({
+      serviceName,
+      prixUnitaire: pu,
+      quantite: qte,
+      total,
+      isExpress,
+      note,
+    });
+  }
+
+  // Génère le HTML des cartes par catégorie
+  const lignesHtml = Array.from(categoriesMap.entries())
+    .map(([categorieName, services], idx) => {
+      const isAlt = idx % 2 === 1; // alternance de fond
+      const servicesHtml = services
+        .map(
+          (s) => `
+          <div class="cat-service-row">
+            <div class="cat-service-name">
+              <span class="cat-bullet">•</span>
+              ${escapeHtml(s.serviceName)}
+            </div>
+            <div class="cat-service-price">${escapeHtml(formatFCFA(s.prixUnitaire))}</div>
+            <div class="cat-service-qte">${escapeHtml(String(s.quantite))}</div>
+            <div class="cat-service-total">${escapeHtml(formatFCFA(s.total))}</div>
+          </div>`
+        )
+        .join("");
+      // Badges EXPRESS + note (affichés si la commande est express ou si note)
+      const badgesHtml =
+        services.some((s) => s.isExpress) || services.some((s) => s.note)
+          ? `<div class="cat-badges">
+              ${
+                services.some((s) => s.isExpress)
+                  ? `<span class="cat-badge-express">⚡ EXPRESS</span>`
+                  : ""
+              }
+              ${
+                services.some((s) => s.note)
+                  ? `<span class="cat-badge-note">✎ note</span>`
+                  : ""
+              }
+            </div>`
+          : "";
+      return `
+        <div class="category-card ${isAlt ? "category-card-alt" : ""}">
+          <div class="category-title">${escapeHtml(categorieName)}</div>
+          <div class="cat-header-row">
+            <div class="cat-col-service">Service</div>
+            <div class="cat-col-prix">Prix unitaire</div>
+            <div class="cat-col-qte">Qté</div>
+            <div class="cat-col-total">Total</div>
+          </div>
+          ${servicesHtml}
+          ${badgesHtml}
+        </div>`;
     })
     .join("");
 
@@ -909,26 +979,99 @@ export function printFacture(
       font-size: 13px; font-weight: 700; color: #0f172a;
       text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px;
     }
-    /* ---------- Tableau ---------- */
-    table {
-      width: 100%; border-collapse: collapse; margin-top: 8px;
+    /* ---------- Cartes par catégorie (modèle de facture) ---------- */
+    .categories-container {
+      margin-top: 8px;
     }
-    thead th {
-      background: #0f172a; color: #fff;
-      font-size: 11px; font-weight: 600;
-      text-transform: uppercase; letter-spacing: 0.5px;
-      padding: 9px 12px; text-align: left;
+    .category-card {
+      padding: 16px 20px;
+      background: #ffffff;
     }
-    thead th.col-prix, thead th.col-total { text-align: right; }
-    thead th.col-qte { text-align: center; }
-    tbody td {
-      padding: 10px 12px; font-size: 12px;
-      border-bottom: 1px solid #e5e7eb; color: #1f2937;
+    .category-card-alt {
+      background: #f0f4f8; /* bleu-gris très pâle */
     }
-    tbody tr:nth-child(even) td { background: #f9fafb; }
-    td.col-prix, td.col-total { text-align: right; font-variant-numeric: tabular-nums; }
-    td.col-qte { text-align: center; font-variant-numeric: tabular-nums; }
-    td.col-total { font-weight: 600; }
+    .category-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #1f2937;
+      margin-bottom: 10px;
+      letter-spacing: 0.2px;
+    }
+    .cat-header-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto auto;
+      gap: 12px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #9ca3af;
+      padding: 4px 0 6px 0;
+      border-bottom: 1px solid #e5e7eb;
+      margin-bottom: 4px;
+    }
+    .cat-col-prix, .cat-col-qte, .cat-col-total {
+      text-align: right;
+      min-width: 70px;
+    }
+    .cat-service-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto auto;
+      gap: 12px;
+      align-items: center;
+      padding: 6px 0;
+      font-size: 13px;
+      color: #4b5563;
+    }
+    .cat-service-name {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #4b5563;
+    }
+    .cat-bullet {
+      color: #6b7280;
+      font-size: 14px;
+    }
+    .cat-service-price, .cat-service-qte, .cat-service-total {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: #1f2937;
+    }
+    .cat-service-price {
+      font-weight: 500;
+    }
+    .cat-service-total {
+      font-weight: 600;
+      color: #111827;
+    }
+    .cat-service-qte {
+      color: #6b7280;
+      min-width: 24px;
+    }
+    .cat-badges {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+      padding-top: 6px;
+      font-size: 11px;
+      color: #6b7280;
+    }
+    .cat-badge-express, .cat-badge-note {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-weight: 500;
+      letter-spacing: 0.3px;
+    }
+    .cat-badge-express {
+      text-transform: uppercase;
+      color: #6b7280;
+    }
+    .cat-badge-note {
+      color: #9ca3af;
+      text-transform: lowercase;
+    }
     /* ---------- Totaux ---------- */
     .totals-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
     .totals {
@@ -1022,20 +1165,10 @@ export function printFacture(
       </div>
     </div>
 
-    <!-- Tableau des prestations -->
-    <table>
-      <thead>
-        <tr>
-          <th class="col-designation">Prestation</th>
-          <th class="col-prix">Prix unitaire</th>
-          <th class="col-qte">Qté</th>
-          <th class="col-total">Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${lignesHtml || '<tr><td colspan="4" style="text-align:center;color:#9ca3af;">Aucune prestation</td></tr>'}
-      </tbody>
-    </table>
+    <!-- Cartes des prestations par catégorie -->
+    <div class="categories-container">
+      ${lignesHtml || '<div style="text-align:center;color:#9ca3af;padding:20px;">Aucune prestation</div>'}
+    </div>
 
     <!-- Totaux -->
     <div class="totals-wrap">
