@@ -870,24 +870,30 @@ export function printFacture(
     formatDateOnly(detail.date_pret_prevue) ||
     "—";
 
-  // Lignes groupées par catégorie d'article (modèle de facture par cartes)
-  // Chaque catégorie devient une "carte" avec son nom en titre, puis la
-  // liste des services associés pour chaque vêtement. Alternance de fond
-  // blanc / bleu-gris clair.
-  // Chaque article est listé individuellement avec : nom + couleur, service,
-  // état, prix unitaire, quantité, total.
+  // Lignes groupées par catégorie, puis par vêtement.
+  // Structure hiérarchique 3 niveaux :
+  //   Catégorie (ex: "Costumes & Vêtements de Cérémonie")
+  //     └─ Vêtement (ex: "Costumes Blanc")
+  //          ├─ Service: Lavage      1000 FCFA   1   1000 FCFA
+  //          └─ Service: Repassage    500 FCFA   1    500 FCFA
+  //
+  // Chaque vêtement n'apparaît qu'UNE SEULE fois, avec tous ses services
+  // regroupés en dessous (au lieu d'avoir l'article répété pour chaque service).
   const categoriesMap = new Map<
     string, // nom de la catégorie (ex: "Costumes & Vêtements de Cérémonie")
     {
-      vetementNom: string; // nom complet du vêtement (ex: "Costumes & Vêtements de Cérémonie Blanc")
-      serviceName: string;
-      prixUnitaire: number;
-      quantite: number;
-      total: number;
+      vetementNom: string;
+      etat: string | null;
+      couleur: string | null;
+      services: {
+        serviceName: string;
+        prixUnitaire: number;
+        quantite: number;
+        total: number;
+      }[];
+      totalVetement: number;
       isExpress: boolean;
       note: string | null;
-      etat: string | null; // état du vêtement (ex: "Bon", "Correct")
-      couleur: string | null; // couleur du vêtement (ex: "Blanc")
     }[]
   >();
 
@@ -923,55 +929,85 @@ export function printFacture(
     if (!categoriesMap.has(categorie)) {
       categoriesMap.set(categorie, []);
     }
-    categoriesMap.get(categorie)!.push({
-      vetementNom,
+    const vetements = categoriesMap.get(categorie)!;
+
+    // Cherche si ce vêtement existe déjà dans la catégorie
+    let vetement = vetements.find((v) => v.vetementNom === vetementNom);
+    if (!vetement) {
+      vetement = {
+        vetementNom,
+        etat,
+        couleur: couleurLabel,
+        services: [],
+        totalVetement: 0,
+        isExpress,
+        note,
+      };
+      vetements.push(vetement);
+    }
+    // Ajoute le service sous ce vêtement
+    vetement.services.push({
       serviceName,
       prixUnitaire: pu,
       quantite: qte,
       total,
-      isExpress,
-      note,
-      etat,
-      couleur: couleurLabel,
     });
+    vetement.totalVetement += total;
   }
 
   // Génère le HTML des cartes par catégorie
   const lignesHtml = Array.from(categoriesMap.entries())
-    .map(([categorieName, services], idx) => {
+    .map(([categorieName, vetements], idx) => {
       const isAlt = idx % 2 === 1; // alternance de fond
-      const servicesHtml = services
+      // Génère le HTML pour chaque vêtement (avec ses services regroupés)
+      const vetementsHtml = vetements
         .map(
-          (s, sIdx) => `
-          <div class="cat-service-row">
-            <div class="cat-service-info">
+          (v) => {
+            // Liste des services sous ce vêtement
+            const servicesHtml = v.services
+              .map(
+                (s) => `
+              <div class="cat-service-row">
+                <div class="cat-service-detail">
+                  <span class="cat-bullet">•</span>
+                  <span class="cat-service-value">${escapeHtml(s.serviceName)}</span>
+                </div>
+                <div class="cat-service-price">${escapeHtml(formatFCFA(s.prixUnitaire))}</div>
+                <div class="cat-service-qte">${escapeHtml(String(s.quantite))}</div>
+                <div class="cat-service-total">${escapeHtml(formatFCFA(s.total))}</div>
+              </div>`
+              )
+              .join("");
+            // Badge état (affiché une seule fois par vêtement)
+            const etatBadge = v.etat
+              ? `<span class="cat-etat-badge">État: ${escapeHtml(v.etat)}</span>`
+              : "";
+            return `
+            <div class="vetement-block">
               <div class="cat-vetement-nom">
-                ${escapeHtml(s.vetementNom)}
+                ${escapeHtml(v.vetementNom)}
+                ${etatBadge}
               </div>
-              <div class="cat-service-detail">
-                <span class="cat-bullet">•</span>
-                <span class="cat-service-label">Service :</span>
-                <span class="cat-service-value">${escapeHtml(s.serviceName)}</span>
-                ${s.etat ? `<span class="cat-etat-badge">État: ${escapeHtml(s.etat)}</span>` : ""}
+              ${servicesHtml}
+              <div class="vetement-subtotal">
+                <span>Sous-total ${escapeHtml(v.vetementNom)} :</span>
+                <span class="vetement-subtotal-value">${escapeHtml(formatFCFA(v.totalVetement))}</span>
               </div>
-            </div>
-            <div class="cat-service-price">${escapeHtml(formatFCFA(s.prixUnitaire))}</div>
-            <div class="cat-service-qte">${escapeHtml(String(s.quantite))}</div>
-            <div class="cat-service-total">${escapeHtml(formatFCFA(s.total))}</div>
-          </div>`
+            </div>`;
+          }
         )
         .join("");
       // Badges EXPRESS + note (affichés si la commande est express ou si note)
       const badgesHtml =
-        services.some((s) => s.isExpress) || services.some((s) => s.note)
+        vetements.some((v) => v.isExpress) || vetements.some((v) => v.note)
           ? `<div class="cat-badges">
               ${
-                services.some((s) => s.isExpress)
+                vetements.some((v) => v.isExpress)
                   ? `<span class="cat-badge-express">⚡ EXPRESS</span>`
                   : ""
               }
               ${
-                services.some((s) => s.note)
+                vetements.some((v) => v.note)
                   ? `<span class="cat-badge-note">✎ note</span>`
                   : ""
               }
@@ -981,12 +1017,12 @@ export function printFacture(
         <div class="category-card ${isAlt ? "category-card-alt" : ""}">
           <div class="category-title">${escapeHtml(categorieName)}</div>
           <div class="cat-header-row">
-            <div class="cat-col-service">Vêtement & Service</div>
+            <div class="cat-col-service">Vêtement & Services</div>
             <div class="cat-col-prix">Prix unitaire</div>
             <div class="cat-col-qte">Qté</div>
             <div class="cat-col-total">Total</div>
           </div>
-          ${servicesHtml}
+          ${vetementsHtml}
           ${badgesHtml}
         </div>`;
     })
@@ -1124,29 +1160,37 @@ export function printFacture(
       grid-template-columns: 1fr auto auto auto;
       gap: 12px;
       align-items: center;
-      padding: 8px 0;
-      font-size: 13px;
+      padding: 6px 0 6px 16px;
+      font-size: 12px;
       color: #4b5563;
       border-bottom: 1px solid #f3f4f6;
     }
     .cat-service-row:last-child {
       border-bottom: none;
     }
-    .cat-service-info {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
+    .vetement-block {
+      margin-bottom: 14px;
+      padding-bottom: 8px;
+      border-bottom: 2px dotted #e5e7eb;
+    }
+    .vetement-block:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
     }
     .cat-vetement-nom {
       font-weight: 600;
       color: #111827;
-      font-size: 13px;
+      font-size: 14px;
+      padding: 8px 0 4px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
     .cat-service-detail {
       display: flex;
       align-items: center;
       gap: 4px;
-      font-size: 11px;
+      font-size: 12px;
       color: #6b7280;
     }
     .cat-service-label {
@@ -1155,6 +1199,22 @@ export function printFacture(
     .cat-service-value {
       font-weight: 500;
       color: #4b5563;
+    }
+    .vetement-subtotal {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 6px 0 0 16px;
+      font-size: 11px;
+      color: #6b7280;
+      font-style: italic;
+    }
+    .vetement-subtotal-value {
+      font-weight: 600;
+      color: #111827;
+      font-style: normal;
+      min-width: 80px;
+      text-align: right;
     }
     .cat-etat-badge {
       margin-left: 8px;
