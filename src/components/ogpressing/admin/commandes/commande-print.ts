@@ -252,31 +252,66 @@ export function printCommandeTicket(detail: CommandeDetail) {
     pressing_id: detail.pressing_id,
   });
 
-  const lignesHtml = (detail.lignes ?? [])
-    .map((l) => {
-      const svc = l.service?.nom ?? "—";
-      // Pour une ligne, on n'a plus de type_vetement direct (colonne
-      // renommée legacy). On privilégie la description libre si elle
-      // existe, sinon on dérive le nom du catalogue via le 1er article
-      // rattaché à cette ligne. Si rien n'est disponible, on affiche « — ».
-      const firstArt = (detail.articles ?? []).find(
-        (a) => a.ligne_id === l.id
-      );
-      const t =
-        l.description?.trim() ||
-        (firstArt ? typeLabel(firstArt) : "—");
+  // Regroupement des lignes par article (type de vêtement).
+  // Au lieu de lister un article par service (répétition), on regroupe :
+  //   Costume Blanc | Lavage + Repassage | 2 | 3000 FCFA
+  const articlesMap = new Map<
+    string, // nom de l'article (type + couleur)
+    {
+      services: string[];
+      quantite: number;
+      prixUnitaire: number;
+      total: number;
+    }
+  >();
+
+  for (const l of detail.lignes ?? []) {
+    const firstArt = (detail.articles ?? []).find(
+      (a) => a.ligne_id === l.id
+    );
+    const t =
+      l.description?.trim() ||
+      (firstArt ? typeLabel(firstArt) : "—");
+    const svc = l.service?.nom ?? "—";
+
+    if (!articlesMap.has(t)) {
+      articlesMap.set(t, {
+        services: [],
+        quantite: 0,
+        prixUnitaire: l.prix_unitaire,
+        total: 0,
+      });
+    }
+    const art = articlesMap.get(t)!;
+    // Ajoute le service s'il n'est pas déjà présent (évite les doublons)
+    if (!art.services.includes(svc)) {
+      art.services.push(svc);
+    }
+    // Additionne les quantités et montants
+    art.quantite += l.quantite;
+    art.total += l.montant_ligne ?? l.prix_unitaire * l.quantite;
+    // Garde le prix unitaire du premier service (ou moyenne si différents)
+    // Pour le ticket thermique, on affiche le prix unitaire moyen
+    if (art.services.length > 1) {
+      art.prixUnitaire = Math.round(art.total / art.quantite);
+    }
+  }
+
+  const lignesHtml = Array.from(articlesMap.entries())
+    .map(([articleNom, data]) => {
+      const servicesStr = data.services.join(" + ");
       return `<tr>
         <td style="padding:2px 4px;border-bottom:1px solid #eee;">${escapeHtml(
-          t
+          articleNom
         )}</td>
-        <td style="padding:2px 4px;border-bottom:1px solid #eee;">${escapeHtml(
-          svc
-        )}</td>
-        <td style="padding:2px 4px;border-bottom:1px solid #eee;text-align:right;">${escapeHtml(
-          String(l.quantite)
+        <td style="padding:2px 4px;border-bottom:1px solid #eee;font-size:10px;">${escapeHtml(
+          servicesStr
         )}</td>
         <td style="padding:2px 4px;border-bottom:1px solid #eee;text-align:right;">${escapeHtml(
-          formatFCFA(l.prix_unitaire)
+          String(data.quantite)
+        )}</td>
+        <td style="padding:2px 4px;border-bottom:1px solid #eee;text-align:right;">${escapeHtml(
+          formatFCFA(data.total)
         )}</td>
       </tr>`;
     })
@@ -347,10 +382,10 @@ export function printCommandeTicket(detail: CommandeDetail) {
   <table>
     <thead>
       <tr>
-        <th>Type</th>
-        <th>Service</th>
+        <th>Article</th>
+        <th>Services</th>
         <th style="text-align:right;">Qté</th>
-        <th style="text-align:right;">P.U.</th>
+        <th style="text-align:right;">Total</th>
       </tr>
     </thead>
     <tbody>
@@ -440,11 +475,11 @@ export function printCommandeLabels(detail: CommandeDetail) {
     .map((a, idx) => {
       const desc = articleDescription(a);
       const etat = etatLabel(a.etat);
-      // PRD §13.2 : code-barres = article_id + commande_id concaténés
-      // (avec séparateur `|` pour faciliter le parsing au scan). On n'utilise
-      // plus `articles_vetements.code_qr` (champ interne court) — un scanner
-      // externe peut désormais reconstruire les FK article + commande.
-      const barcodeValue = `${a.id}|${detail.id}`;
+      // Utilise le code_qr court de l'article (ex: "OGOU-ART-001") pour
+      // le code-barres. Ce code est beaucoup plus court que l'UUID complet
+      // (article_id|commande_id) et produit un code-barres compact.
+      // Fallback sur l'UUID si code_qr est absent.
+      const barcodeValue = a.code_qr || `${a.id}|${detail.id}`;
       return `<div class="label-sticker">
         <div class="brand">e-pressing</div>
         <div class="ticket-no">${escapeHtml(detail.numero_commande)}</div>
@@ -469,20 +504,20 @@ export function printCommandeLabels(detail: CommandeDetail) {
       background: #fff;
     }
     .label-sticker {
-      width: 100mm;
+      width: 70mm;
       max-width: 100%;
-      padding: 4mm;
+      padding: 3mm;
       text-align: center;
       page-break-after: always;
       border-bottom: 1px dashed #ccc;
     }
     .label-sticker:last-child { page-break-after: auto; }
-    .brand { font-size: 12px; font-weight: 700; letter-spacing: 1px; }
-    .ticket-no { font-size: 14px; font-weight: 700; margin: 2px 0; }
-    .article-info { font-size: 10px; margin: 2px 0; }
-    .article-index { font-size: 9px; color: #444; margin-bottom: 4px; }
+    .brand { font-size: 10px; font-weight: 700; letter-spacing: 1px; }
+    .ticket-no { font-size: 11px; font-weight: 700; margin: 1px 0; }
+    .article-info { font-size: 9px; margin: 1px 0; }
+    .article-index { font-size: 8px; color: #444; margin-bottom: 2px; }
     .barcode-svg { display: block; margin: 0 auto; }
-    .code-text { font-size: 9px; color: #444; margin-top: 2px; word-break: break-all; }
+    .code-text { font-size: 7px; color: #444; margin-top: 1px; word-break: break-all; }
     @media print {
       .label-sticker { border: none; }
     }
@@ -506,11 +541,12 @@ export function printCommandeLabels(detail: CommandeDetail) {
           try {
             window.JsBarcode(svg, code, {
               format: "CODE128",
-              width: 2,
-              height: 50,
+              width: 1,
+              height: 28,
               displayValue: true,
-              fontSize: 12,
-              margin: 4
+              fontSize: 8,
+              margin: 2,
+              textMargin: 1
             });
           } catch (e) {
             console.warn("JsBarcode error", e);
