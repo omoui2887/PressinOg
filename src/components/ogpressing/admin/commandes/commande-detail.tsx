@@ -255,11 +255,11 @@ export function CommandeDetail({
       if (!res.ok || !data.success) {
         throw new Error(
           data.error ||
-            `Échec du retrait (HTTP ${res.status}). Réessayez ou marquez les articles individuellement.`
+            `Échec du retrait (HTTP ${res.status}). Réessayez ou marquez les vêtements individuellement.`
         );
       }
       toast.success("Commande marquée comme retirée", {
-        description: `Le client a récupéré ses articles — n° ${commande.numero_commande}.`,
+        description: `Le client a récupéré ses vêtements — n° ${commande.numero_commande}.`,
       });
       setRetirerDialogOpen(false);
       // Recharge la page pour refléter le nouveau statut + date_retrait.
@@ -766,18 +766,18 @@ export function CommandeDetail({
         </Card>
       </div>
 
-      {/* Articles */}
+      {/* Vêtements / Linges */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Package className="size-4 text-primary" />
-            Articles ({articles.length})
+            Vêtements ({articles.length})
           </CardTitle>
         </CardHeader>
         <CardContent>
           {articles.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              Aucun article enregistré pour cette commande.
+              Aucun vêtement enregistré pour cette commande.
             </p>
           ) : (
             <ul className="space-y-3">

@@ -371,7 +371,7 @@ export function printCommandeTicket(detail: CommandeDetail) {
     <div><span class="label">Client :</span> <span class="value">${escapeHtml(
       detail.client?.nom_complet ?? "—"
     )}</span></div>
-    <div><span class="label">Articles :</span> <span class="value">${escapeHtml(
+    <div><span class="label">Vêtements :</span> <span class="value">${escapeHtml(
       String(detail.articles?.length ?? 0)
     )}</span></div>
     <div><span class="label">Date de retrait prévue :</span> <span class="value">${escapeHtml(
@@ -382,7 +382,7 @@ export function printCommandeTicket(detail: CommandeDetail) {
   <table>
     <thead>
       <tr>
-        <th>Article</th>
+        <th>Vêtement</th>
         <th>Services</th>
         <th style="text-align:right;">Qté</th>
         <th style="text-align:right;">Total</th>
@@ -418,7 +418,7 @@ export function printCommandeTicket(detail: CommandeDetail) {
   </div>
 
   <div class="footer">
-    Conservez ce ticket. Il sera demandé pour le retrait de vos articles.
+    Conservez ce ticket. Il sera demandé pour le retrait de vos vêtements.
     <br />Scannez le QR Code pour suivre l'état de votre commande.
   </div>
 
