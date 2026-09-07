@@ -255,11 +255,12 @@ export function printCommandeTicket(detail: CommandeDetail) {
   // Regroupement des lignes par article (type de vêtement).
   // Au lieu de lister un article par service (répétition), on regroupe :
   //   Costume Blanc | Lavage + Repassage | 2 | 3000 FCFA
+  // La quantité = nombre de VÊTEMENTS (pas la somme des quantités de service).
   const articlesMap = new Map<
     string, // nom de l'article (type + couleur)
     {
       services: string[];
-      quantite: number;
+      quantite: number; // nombre de vêtements (pas de services)
       prixUnitaire: number;
       total: number;
     }
@@ -275,9 +276,15 @@ export function printCommandeTicket(detail: CommandeDetail) {
     const svc = l.service?.nom ?? "—";
 
     if (!articlesMap.has(t)) {
+      // Compte le nombre d'articles physiques (vêtements) rattachés à
+      // cette ligne pour déterminer la quantité réelle de vêtements.
+      const nbVetements = (detail.articles ?? []).filter(
+        (a) => a.ligne_id === l.id
+      ).length || l.quantite;
+
       articlesMap.set(t, {
         services: [],
-        quantite: 0,
+        quantite: nbVetements,
         prixUnitaire: l.prix_unitaire,
         total: 0,
       });
@@ -287,11 +294,10 @@ export function printCommandeTicket(detail: CommandeDetail) {
     if (!art.services.includes(svc)) {
       art.services.push(svc);
     }
-    // Additionne les quantités et montants
-    art.quantite += l.quantite;
+    // Additionne les montants (mais PAS les quantités — la quantité
+    // reste le nombre de vêtements, pas le nombre de services)
     art.total += l.montant_ligne ?? l.prix_unitaire * l.quantite;
     // Garde le prix unitaire du premier service (ou moyenne si différents)
-    // Pour le ticket thermique, on affiche le prix unitaire moyen
     if (art.services.length > 1) {
       art.prixUnitaire = Math.round(art.total / art.quantite);
     }
