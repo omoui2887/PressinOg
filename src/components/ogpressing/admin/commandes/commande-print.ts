@@ -266,6 +266,14 @@ export function printCommandeTicket(detail: CommandeDetail) {
     }
   >();
 
+  // D'abord, on compte le nombre d'articles physiques par type de vêtement.
+  // On parcourt tous les articles et on les regroupe par leur type (description).
+  const articlesParType = new Map<string, number>();
+  for (const a of detail.articles ?? []) {
+    const desc = articleDescription(a);
+    articlesParType.set(desc, (articlesParType.get(desc) ?? 0) + 1);
+  }
+
   for (const l of detail.lignes ?? []) {
     const firstArt = (detail.articles ?? []).find(
       (a) => a.ligne_id === l.id
@@ -276,11 +284,24 @@ export function printCommandeTicket(detail: CommandeDetail) {
     const svc = l.service?.nom ?? "—";
 
     if (!articlesMap.has(t)) {
-      // Compte le nombre d'articles physiques (vêtements) rattachés à
-      // cette ligne pour déterminer la quantité réelle de vêtements.
-      const nbVetements = (detail.articles ?? []).filter(
-        (a) => a.ligne_id === l.id
-      ).length || l.quantite;
+      // Compte le nombre d'articles physiques (vêtements) de ce type.
+      // On cherche par articleDescription (qui donne "Type Couleur").
+      // Si le type correspond à une description d'article connue, on
+      // utilise le compte. Sinon, on fallback sur l.quantite.
+      let nbVetements = 0;
+      // Essaye de trouver les articles dont la description correspond au type
+      for (const [desc, count] of articlesParType.entries()) {
+        if (desc.includes(t) || t.includes(desc)) {
+          nbVetements = count;
+          break;
+        }
+      }
+      if (nbVetements === 0) {
+        // Fallback : compte les articles rattachés à cette ligne
+        nbVetements = (detail.articles ?? []).filter(
+          (a) => a.ligne_id === l.id
+        ).length || l.quantite;
+      }
 
       articlesMap.set(t, {
         services: [],
@@ -978,11 +999,19 @@ export function printFacture(
         quantite: number;
         total: number;
       }[];
+      quantiteVetement: number; // nombre de vêtements (pas de services)
       totalVetement: number;
       isExpress: boolean;
       note: string | null;
     }[]
   >();
+
+  // Compte le nombre d'articles physiques par type de vêtement.
+  const articlesParTypeFacture = new Map<string, number>();
+  for (const a of detail.articles ?? []) {
+    const desc = articleDescription(a);
+    articlesParTypeFacture.set(desc, (articlesParTypeFacture.get(desc) ?? 0) + 1);
+  }
 
   for (const l of detail.lignes ?? []) {
     // Détermine la catégorie : nom du catalogue de l'article rattaché,
@@ -1013,6 +1042,20 @@ export function printFacture(
     // État du vêtement (libellé FR)
     const etat = firstArt?.etat ? etatLabelForFacture(firstArt.etat) : null;
 
+    // Compte le nombre d'articles physiques (vêtements) de ce type.
+    let nbVetements = 0;
+    for (const [desc, count] of articlesParTypeFacture.entries()) {
+      if (desc.includes(vetementNom) || vetementNom.includes(desc)) {
+        nbVetements = count;
+        break;
+      }
+    }
+    if (nbVetements === 0) {
+      nbVetements = (detail.articles ?? []).filter(
+        (a) => a.ligne_id === l.id
+      ).length || qte;
+    }
+
     if (!categoriesMap.has(categorie)) {
       categoriesMap.set(categorie, []);
     }
@@ -1026,6 +1069,7 @@ export function printFacture(
         etat,
         couleur: couleurLabel,
         services: [],
+        quantiteVetement: nbVetements,
         totalVetement: 0,
         isExpress,
         note,
@@ -1077,7 +1121,7 @@ export function printFacture(
               </div>
               ${servicesHtml}
               <div class="vetement-subtotal">
-                <span>Sous-total ${escapeHtml(v.vetementNom)} :</span>
+                <span>${escapeHtml(String(v.quantiteVetement))} × ${escapeHtml(v.vetementNom)} — Sous-total :</span>
                 <span class="vetement-subtotal-value">${escapeHtml(formatFCFA(v.totalVetement))}</span>
               </div>
             </div>`;
