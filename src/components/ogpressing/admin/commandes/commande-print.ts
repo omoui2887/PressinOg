@@ -289,9 +289,14 @@ export function printCommandeTicket(detail: CommandeDetail) {
       // Si le type correspond à une description d'article connue, on
       // utilise le compte. Sinon, on fallback sur l.quantite.
       let nbVetements = 0;
-      // Essaye de trouver les articles dont la description correspond au type
+      // Essaye de trouver les articles dont la description correspond au type.
+      // ⚠️ Matching case-insensitive car articleDescription capitalise la
+      // couleur (ex: "Blanc") alors que l.description contient la valeur
+      // brute de l'enum DB en minuscules (ex: "blanc").
+      const tLower = t.toLowerCase();
       for (const [desc, count] of articlesParType.entries()) {
-        if (desc.includes(t) || t.includes(desc)) {
+        const descLower = desc.toLowerCase();
+        if (descLower.includes(tLower) || tLower.includes(descLower)) {
           nbVetements = count;
           break;
         }
@@ -327,17 +332,23 @@ export function printCommandeTicket(detail: CommandeDetail) {
   const lignesHtml = Array.from(articlesMap.entries())
     .map(([articleNom, data]) => {
       const servicesStr = data.services.join(" + ");
+      const pu = data.services.length > 1
+        ? Math.round(data.total / data.quantite)
+        : data.prixUnitaire;
       return `<tr>
         <td style="padding:2px 4px;border-bottom:1px solid #eee;">${escapeHtml(
           articleNom
         )}</td>
-        <td style="padding:2px 4px;border-bottom:1px solid #eee;font-size:10px;">${escapeHtml(
+        <td style="padding:2px 4px;border-bottom:1px solid #eee;font-size:9px;">${escapeHtml(
           servicesStr
         )}</td>
         <td style="padding:2px 4px;border-bottom:1px solid #eee;text-align:right;">${escapeHtml(
           String(data.quantite)
         )}</td>
-        <td style="padding:2px 4px;border-bottom:1px solid #eee;text-align:right;">${escapeHtml(
+        <td style="padding:2px 4px;border-bottom:1px solid #eee;text-align:right;font-size:9px;">${escapeHtml(
+          formatFCFA(pu)
+        )}</td>
+        <td style="padding:2px 4px;border-bottom:1px solid #eee;text-align:right;font-weight:700;">${escapeHtml(
           formatFCFA(data.total)
         )}</td>
       </tr>`;
@@ -412,11 +423,12 @@ export function printCommandeTicket(detail: CommandeDetail) {
         <th>Vêtement</th>
         <th>Services</th>
         <th style="text-align:right;">Qté</th>
+        <th style="text-align:right;">P.U.</th>
         <th style="text-align:right;">Total</th>
       </tr>
     </thead>
     <tbody>
-      ${lignesHtml || '<tr><td colspan="4" style="text-align:center;">—</td></tr>'}
+      ${lignesHtml || '<tr><td colspan="5" style="text-align:center;">—</td></tr>'}
     </tbody>
   </table>
 
@@ -1043,9 +1055,13 @@ export function printFacture(
     const etat = firstArt?.etat ? etatLabelForFacture(firstArt.etat) : null;
 
     // Compte le nombre d'articles physiques (vêtements) de ce type.
+    // ⚠️ Matching case-insensitive (même bug que le ticket : la couleur
+    // est capitalisée dans vetementNom mais en minuscules dans l.description).
     let nbVetements = 0;
+    const vetementNomLower = vetementNom.toLowerCase();
     for (const [desc, count] of articlesParTypeFacture.entries()) {
-      if (desc.includes(vetementNom) || vetementNom.includes(desc)) {
+      const descLower = desc.toLowerCase();
+      if (descLower.includes(vetementNomLower) || vetementNomLower.includes(descLower)) {
         nbVetements = count;
         break;
       }
