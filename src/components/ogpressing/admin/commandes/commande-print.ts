@@ -460,9 +460,10 @@ export function printCommandeTicket(detail: CommandeDetail) {
 }
 
 /**
- * Imprime une feuille d'étiquettes (une par article). Chaque étiquette
- * contient : numéro de ticket, description article (Type Couleur),
- * code-barres CODE128 du champ `code_qr`, texte du code-barres.
+ * Imprime une feuille d'étiquettes (une par TYPE de vêtement).
+ * Chaque étiquette contient : numéro de ticket, description article (Type Couleur),
+ * quantité, services associés, code-barres CODE128 du champ `code_qr`.
+ * Un seul code-barres par type d'article (et non un par article unitaire).
  */
 export function printCommandeLabels(detail: CommandeDetail) {
   const articles = detail.articles ?? [];
@@ -471,20 +472,62 @@ export function printCommandeLabels(detail: CommandeDetail) {
     return;
   }
 
-  const labelsHtml = articles
-    .map((a, idx) => {
-      const desc = articleDescription(a);
-      const etat = etatLabel(a.etat);
-      // Utilise le code_qr court de l'article (ex: "OGOU-ART-001") pour
-      // le code-barres. Ce code est beaucoup plus court que l'UUID complet
-      // (article_id|commande_id) et produit un code-barres compact.
-      // Fallback sur l'UUID si code_qr est absent.
-      const barcodeValue = a.code_qr || `${a.id}|${detail.id}`;
+  // Regroupement des articles par type de vêtement (description + couleur + état).
+  // Un seul code-barres est généré par groupe d'articles identiques.
+  const groupedMap = new Map<
+    string, // clé = description normalisée
+    {
+      desc: string;
+      etat: string;
+      quantite: number;
+      services: string[];
+      code_qr: string | null;
+    }
+  >();
+
+  for (const a of articles) {
+    const desc = articleDescription(a);
+    const etat = etatLabel(a.etat);
+    // Clé de regroupement : description + état (ignore la couleur libre
+    // si "autre" car elle peut varier, mais garde le type principal)
+    const key = `${desc}|${etat}`;
+    // Trouve les services associés via les lignes de commande
+    const ligneId = a.ligne_id;
+    const ligne = (detail.lignes ?? []).find((l) => l.id === ligneId);
+    const serviceName = ligne?.service?.nom ?? "Prestation";
+
+    if (!groupedMap.has(key)) {
+      groupedMap.set(key, {
+        desc,
+        etat,
+        quantite: 0,
+        services: [],
+        code_qr: a.code_qr,
+      });
+    }
+    const group = groupedMap.get(key)!;
+    group.quantite += 1;
+    if (!group.services.includes(serviceName)) {
+      group.services.push(serviceName);
+    }
+  }
+
+  const grouped = Array.from(groupedMap.values());
+  const totalArticles = articles.length;
+
+  const labelsHtml = grouped
+    .map((g, idx) => {
+      // Utilise le code_qr court (ex: "OGOU-ART-001") si disponible,
+      // sinon un code synthétique basé sur le type d'article.
+      const barcodeValue = g.code_qr || `ART-${detail.numero_commande}-${idx + 1}`;
+      const servicesStr = g.services.join(" + ");
       return `<div class="label-sticker">
         <div class="brand">e-pressing</div>
         <div class="ticket-no">${escapeHtml(detail.numero_commande)}</div>
-        <div class="article-info">${escapeHtml(desc)} — ${escapeHtml(etat)}</div>
-        <div class="article-index">Article ${idx + 1} / ${articles.length}</div>
+        <div class="article-info">${escapeHtml(g.desc)} — ${escapeHtml(g.etat)}</div>
+        <div class="article-services">Services : ${escapeHtml(servicesStr)}</div>
+        <div class="article-qty">Quantité : ${escapeHtml(String(g.quantite))}</div>
+        <div class="article-index">Type ${idx + 1} / ${grouped.length}</div>
         <svg class="barcode-svg" id="barcode-${idx}" data-code="${escapeHtml(
           barcodeValue
         )}"></svg>
@@ -515,6 +558,8 @@ export function printCommandeLabels(detail: CommandeDetail) {
     .brand { font-size: 10px; font-weight: 700; letter-spacing: 1px; }
     .ticket-no { font-size: 11px; font-weight: 700; margin: 1px 0; }
     .article-info { font-size: 9px; margin: 1px 0; }
+    .article-services { font-size: 8px; color: #4a90e2; margin: 1px 0; font-weight: 600; }
+    .article-qty { font-size: 9px; color: #111; margin: 1px 0; font-weight: 700; }
     .article-index { font-size: 8px; color: #444; margin-bottom: 2px; }
     .barcode-svg { display: block; margin: 0 auto; }
     .code-text { font-size: 7px; color: #444; margin-top: 1px; word-break: break-all; }
