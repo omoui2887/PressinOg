@@ -242,37 +242,25 @@ ${bodyHtml}
  */
 export function printCommandeTicket(detail: CommandeDetail) {
   // PRD §13.1 : le payload QR contient { commande_id, numero_ticket, pressing_id }.
-  // `numero_ticket` correspond à `commandes.numero_commande` (champ DB, format
-  // CMD-AAAA-NNNNN) — c'est le numéro lisible imprimé sur le ticket. On utilise
-  // le nom de champ `numero_ticket` dans le payload JSON pour se conformer au
-  // contrat PRD (un scanner externe qui s'attend à `numero_ticket` matchera).
   const qrPayload = JSON.stringify({
     commande_id: detail.id,
     numero_ticket: detail.numero_commande,
     pressing_id: detail.pressing_id,
   });
 
-  // Regroupement des lignes par article (type de vêtement).
-  // Au lieu de lister un article par service (répétition), on regroupe :
-  //   Costume Blanc | Lavage + Repassage | 2 | 3000 FCFA
-  // La quantité = nombre de VÊTEMENTS (pas la somme des quantités de service).
+  // Regroupement des lignes par type de vêtement.
+  // Chaque vêtement apparaît UNE SEULE fois, avec tous ses services
+  // concaténés. La quantité = l.quantite de la PREMIÈRE ligne trouvée
+  // pour ce type (c'est le nombre réel de vêtements, pas le nombre
+  // de services ni le nombre d'articles_vetements).
   const articlesMap = new Map<
-    string, // nom de l'article (type + couleur)
+    string, // nom du vêtement (type + couleur)
     {
       services: string[];
-      quantite: number; // nombre de vêtements (pas de services)
-      prixUnitaire: number;
+      quantite: number; // nombre réel de vêtements (l.quantite de la 1ère ligne)
       total: number;
     }
   >();
-
-  // D'abord, on compte le nombre d'articles physiques par type de vêtement.
-  // On parcourt tous les articles et on les regroupe par leur type (description).
-  const articlesParType = new Map<string, number>();
-  for (const a of detail.articles ?? []) {
-    const desc = articleDescription(a);
-    articlesParType.set(desc, (articlesParType.get(desc) ?? 0) + 1);
-  }
 
   for (const l of detail.lignes ?? []) {
     const firstArt = (detail.articles ?? []).find(
@@ -282,36 +270,14 @@ export function printCommandeTicket(detail: CommandeDetail) {
       l.description?.trim() ||
       (firstArt ? typeLabel(firstArt) : "—");
     const svc = l.service?.nom ?? "—";
+    const total = l.montant_ligne ?? l.prix_unitaire * l.quantite;
 
     if (!articlesMap.has(t)) {
-      // Compte le nombre d'articles physiques (vêtements) de ce type.
-      // On cherche par articleDescription (qui donne "Type Couleur").
-      // Si le type correspond à une description d'article connue, on
-      // utilise le compte. Sinon, on fallback sur l.quantite.
-      let nbVetements = 0;
-      // Essaye de trouver les articles dont la description correspond au type.
-      // ⚠️ Matching case-insensitive car articleDescription capitalise la
-      // couleur (ex: "Blanc") alors que l.description contient la valeur
-      // brute de l'enum DB en minuscules (ex: "blanc").
-      const tLower = t.toLowerCase();
-      for (const [desc, count] of articlesParType.entries()) {
-        const descLower = desc.toLowerCase();
-        if (descLower.includes(tLower) || tLower.includes(descLower)) {
-          nbVetements = count;
-          break;
-        }
-      }
-      if (nbVetements === 0) {
-        // Fallback : compte les articles rattachés à cette ligne
-        nbVetements = (detail.articles ?? []).filter(
-          (a) => a.ligne_id === l.id
-        ).length || l.quantite;
-      }
-
+      // Première ligne pour ce type → utilise l.quantite (nombre de
+      // vêtements réels, stocké au niveau de la ligne de service).
       articlesMap.set(t, {
         services: [],
-        quantite: nbVetements,
-        prixUnitaire: l.prix_unitaire,
+        quantite: l.quantite,
         total: 0,
       });
     }
@@ -320,29 +286,22 @@ export function printCommandeTicket(detail: CommandeDetail) {
     if (!art.services.includes(svc)) {
       art.services.push(svc);
     }
-    // Additionne les montants (mais PAS les quantités — la quantité
-    // reste le nombre de vêtements, pas le nombre de services)
-    art.total += l.montant_ligne ?? l.prix_unitaire * l.quantite;
-    // Garde le prix unitaire du premier service (ou moyenne si différents)
-    if (art.services.length > 1) {
-      art.prixUnitaire = Math.round(art.total / art.quantite);
-    }
+    // Additionne les montants (pas les quantités)
+    art.total += total;
   }
 
   const lignesHtml = Array.from(articlesMap.entries())
-    .map(([articleNom, data]) => {
+    .map(([vetementNom, data]) => {
       const servicesStr = data.services.join(" + ");
-      const pu = data.services.length > 1
-        ? Math.round(data.total / data.quantite)
-        : data.prixUnitaire;
+      const pu = Math.round(data.total / data.quantite);
       return `<tr>
         <td style="padding:2px 4px;border-bottom:1px solid #eee;">${escapeHtml(
-          articleNom
+          vetementNom
         )}</td>
         <td style="padding:2px 4px;border-bottom:1px solid #eee;font-size:9px;">${escapeHtml(
           servicesStr
         )}</td>
-        <td style="padding:2px 4px;border-bottom:1px solid #eee;text-align:right;">${escapeHtml(
+        <td style="padding:2px 4px;border-bottom:1px solid #eee;text-align:right;font-weight:700;">${escapeHtml(
           String(data.quantite)
         )}</td>
         <td style="padding:2px 4px;border-bottom:1px solid #eee;text-align:right;font-size:9px;">${escapeHtml(
@@ -409,7 +368,7 @@ export function printCommandeTicket(detail: CommandeDetail) {
     <div><span class="label">Client :</span> <span class="value">${escapeHtml(
       detail.client?.nom_complet ?? "—"
     )}</span></div>
-    <div><span class="label">Vêtements :</span> <span class="value">${escapeHtml(
+    <div><span class="label">Articles :</span> <span class="value">${escapeHtml(
       String(detail.articles?.length ?? 0)
     )}</span></div>
     <div><span class="label">Date de retrait prévue :</span> <span class="value">${escapeHtml(
@@ -457,7 +416,7 @@ export function printCommandeTicket(detail: CommandeDetail) {
   </div>
 
   <div class="footer">
-    Conservez ce ticket. Il sera demandé pour le retrait de vos vêtements.
+    Conservez ce ticket. Il sera demandé pour le retrait de vos articles.
     <br />Scannez le QR Code pour suivre l'état de votre commande.
   </div>
 
@@ -499,10 +458,9 @@ export function printCommandeTicket(detail: CommandeDetail) {
 }
 
 /**
- * Imprime une feuille d'étiquettes (une par TYPE de vêtement).
- * Chaque étiquette contient : numéro de ticket, description article (Type Couleur),
- * quantité, services associés, code-barres CODE128 du champ `code_qr`.
- * Un seul code-barres par type d'article (et non un par article unitaire).
+ * Imprime une feuille d'étiquettes (une par article). Chaque étiquette
+ * contient : numéro de ticket, description article (Type Couleur),
+ * code-barres CODE128 du champ `code_qr`, texte du code-barres.
  */
 export function printCommandeLabels(detail: CommandeDetail) {
   const articles = detail.articles ?? [];
@@ -511,62 +469,20 @@ export function printCommandeLabels(detail: CommandeDetail) {
     return;
   }
 
-  // Regroupement des articles par type de vêtement (description + couleur + état).
-  // Un seul code-barres est généré par groupe d'articles identiques.
-  const groupedMap = new Map<
-    string, // clé = description normalisée
-    {
-      desc: string;
-      etat: string;
-      quantite: number;
-      services: string[];
-      code_qr: string | null;
-    }
-  >();
-
-  for (const a of articles) {
-    const desc = articleDescription(a);
-    const etat = etatLabel(a.etat);
-    // Clé de regroupement : description + état (ignore la couleur libre
-    // si "autre" car elle peut varier, mais garde le type principal)
-    const key = `${desc}|${etat}`;
-    // Trouve les services associés via les lignes de commande
-    const ligneId = a.ligne_id;
-    const ligne = (detail.lignes ?? []).find((l) => l.id === ligneId);
-    const serviceName = ligne?.service?.nom ?? "Prestation";
-
-    if (!groupedMap.has(key)) {
-      groupedMap.set(key, {
-        desc,
-        etat,
-        quantite: 0,
-        services: [],
-        code_qr: a.code_qr,
-      });
-    }
-    const group = groupedMap.get(key)!;
-    group.quantite += 1;
-    if (!group.services.includes(serviceName)) {
-      group.services.push(serviceName);
-    }
-  }
-
-  const grouped = Array.from(groupedMap.values());
-  const totalArticles = articles.length;
-
-  const labelsHtml = grouped
-    .map((g, idx) => {
-      // Utilise le code_qr court (ex: "OGOU-ART-001") si disponible,
-      // sinon un code synthétique basé sur le type d'article.
-      const barcodeValue = g.code_qr || `ART-${detail.numero_commande}-${idx + 1}`;
-      const servicesStr = g.services.join(" + ");
+  const labelsHtml = articles
+    .map((a, idx) => {
+      const desc = articleDescription(a);
+      const etat = etatLabel(a.etat);
+      // PRD §13.2 : code-barres = article_id + commande_id concaténés
+      // (avec séparateur `|` pour faciliter le parsing au scan). On n'utilise
+      // plus `articles_vetements.code_qr` (champ interne court) — un scanner
+      // externe peut désormais reconstruire les FK article + commande.
+      const barcodeValue = `${a.id}|${detail.id}`;
       return `<div class="label-sticker">
         <div class="brand">e-pressing</div>
         <div class="ticket-no">${escapeHtml(detail.numero_commande)}</div>
-        <div class="article-info">${escapeHtml(g.desc)} — ${escapeHtml(g.etat)}</div>
-        <div class="article-services">Services : ${escapeHtml(servicesStr)}</div>
-        <div class="article-qty">Quantité : ${escapeHtml(String(g.quantite))}</div>
-        <div class="article-index">Type ${idx + 1} / ${grouped.length}</div>
+        <div class="article-info">${escapeHtml(desc)} — ${escapeHtml(etat)}</div>
+        <div class="article-index">Article ${idx + 1} / ${articles.length}</div>
         <svg class="barcode-svg" id="barcode-${idx}" data-code="${escapeHtml(
           barcodeValue
         )}"></svg>
@@ -586,22 +502,20 @@ export function printCommandeLabels(detail: CommandeDetail) {
       background: #fff;
     }
     .label-sticker {
-      width: 70mm;
+      width: 100mm;
       max-width: 100%;
-      padding: 3mm;
+      padding: 4mm;
       text-align: center;
       page-break-after: always;
       border-bottom: 1px dashed #ccc;
     }
     .label-sticker:last-child { page-break-after: auto; }
-    .brand { font-size: 10px; font-weight: 700; letter-spacing: 1px; }
-    .ticket-no { font-size: 11px; font-weight: 700; margin: 1px 0; }
-    .article-info { font-size: 9px; margin: 1px 0; }
-    .article-services { font-size: 8px; color: #4a90e2; margin: 1px 0; font-weight: 600; }
-    .article-qty { font-size: 9px; color: #111; margin: 1px 0; font-weight: 700; }
-    .article-index { font-size: 8px; color: #444; margin-bottom: 2px; }
+    .brand { font-size: 12px; font-weight: 700; letter-spacing: 1px; }
+    .ticket-no { font-size: 14px; font-weight: 700; margin: 2px 0; }
+    .article-info { font-size: 10px; margin: 2px 0; }
+    .article-index { font-size: 9px; color: #444; margin-bottom: 4px; }
     .barcode-svg { display: block; margin: 0 auto; }
-    .code-text { font-size: 7px; color: #444; margin-top: 1px; word-break: break-all; }
+    .code-text { font-size: 9px; color: #444; margin-top: 2px; word-break: break-all; }
     @media print {
       .label-sticker { border: none; }
     }
@@ -625,12 +539,11 @@ export function printCommandeLabels(detail: CommandeDetail) {
           try {
             window.JsBarcode(svg, code, {
               format: "CODE128",
-              width: 1,
-              height: 28,
+              width: 2,
+              height: 50,
               displayValue: true,
-              fontSize: 8,
-              margin: 2,
-              textMargin: 1
+              fontSize: 12,
+              margin: 4
             });
           } catch (e) {
             console.warn("JsBarcode error", e);
@@ -990,40 +903,26 @@ export function printFacture(
     formatDateOnly(detail.date_pret_prevue) ||
     "—";
 
-  // Lignes groupées par catégorie, puis par vêtement.
-  // Structure hiérarchique 3 niveaux :
-  //   Catégorie (ex: "Costumes & Vêtements de Cérémonie")
-  //     └─ Vêtement (ex: "Costumes Blanc")
-  //          ├─ Service: Lavage      1000 FCFA   1   1000 FCFA
-  //          └─ Service: Repassage    500 FCFA   1    500 FCFA
-  //
-  // Chaque vêtement n'apparaît qu'UNE SEULE fois, avec tous ses services
-  // regroupés en dessous (au lieu d'avoir l'article répété pour chaque service).
+  // Lignes groupées par catégorie d'article (modèle de facture par cartes)
+  // Chaque catégorie devient une "carte" avec son nom en titre, puis la
+  // liste des services associés pour chaque vêtement. Alternance de fond
+  // blanc / bleu-gris clair.
+  // Chaque article est listé individuellement avec : nom + couleur, service,
+  // état, prix unitaire, quantité, total.
   const categoriesMap = new Map<
     string, // nom de la catégorie (ex: "Costumes & Vêtements de Cérémonie")
     {
-      vetementNom: string;
-      etat: string | null;
-      couleur: string | null;
-      services: {
-        serviceName: string;
-        prixUnitaire: number;
-        quantite: number;
-        total: number;
-      }[];
-      quantiteVetement: number; // nombre de vêtements (pas de services)
-      totalVetement: number;
+      vetementNom: string; // nom complet du vêtement (ex: "Costumes & Vêtements de Cérémonie Blanc")
+      serviceName: string;
+      prixUnitaire: number;
+      quantite: number;
+      total: number;
       isExpress: boolean;
       note: string | null;
+      etat: string | null; // état du vêtement (ex: "Bon", "Correct")
+      couleur: string | null; // couleur du vêtement (ex: "Blanc")
     }[]
   >();
-
-  // Compte le nombre d'articles physiques par type de vêtement.
-  const articlesParTypeFacture = new Map<string, number>();
-  for (const a of detail.articles ?? []) {
-    const desc = articleDescription(a);
-    articlesParTypeFacture.set(desc, (articlesParTypeFacture.get(desc) ?? 0) + 1);
-  }
 
   for (const l of detail.lignes ?? []) {
     // Détermine la catégorie : nom du catalogue de l'article rattaché,
@@ -1054,107 +953,58 @@ export function printFacture(
     // État du vêtement (libellé FR)
     const etat = firstArt?.etat ? etatLabelForFacture(firstArt.etat) : null;
 
-    // Compte le nombre d'articles physiques (vêtements) de ce type.
-    // ⚠️ Matching case-insensitive (même bug que le ticket : la couleur
-    // est capitalisée dans vetementNom mais en minuscules dans l.description).
-    let nbVetements = 0;
-    const vetementNomLower = vetementNom.toLowerCase();
-    for (const [desc, count] of articlesParTypeFacture.entries()) {
-      const descLower = desc.toLowerCase();
-      if (descLower.includes(vetementNomLower) || vetementNomLower.includes(descLower)) {
-        nbVetements = count;
-        break;
-      }
-    }
-    if (nbVetements === 0) {
-      nbVetements = (detail.articles ?? []).filter(
-        (a) => a.ligne_id === l.id
-      ).length || qte;
-    }
-
     if (!categoriesMap.has(categorie)) {
       categoriesMap.set(categorie, []);
     }
-    const vetements = categoriesMap.get(categorie)!;
-
-    // Cherche si ce vêtement existe déjà dans la catégorie
-    let vetement = vetements.find((v) => v.vetementNom === vetementNom);
-    if (!vetement) {
-      vetement = {
-        vetementNom,
-        etat,
-        couleur: couleurLabel,
-        services: [],
-        quantiteVetement: nbVetements,
-        totalVetement: 0,
-        isExpress,
-        note,
-      };
-      vetements.push(vetement);
-    }
-    // Ajoute le service sous ce vêtement
-    vetement.services.push({
+    categoriesMap.get(categorie)!.push({
+      vetementNom,
       serviceName,
       prixUnitaire: pu,
       quantite: qte,
       total,
+      isExpress,
+      note,
+      etat,
+      couleur: couleurLabel,
     });
-    vetement.totalVetement += total;
   }
 
   // Génère le HTML des cartes par catégorie
   const lignesHtml = Array.from(categoriesMap.entries())
-    .map(([categorieName, vetements], idx) => {
+    .map(([categorieName, services], idx) => {
       const isAlt = idx % 2 === 1; // alternance de fond
-      // Génère le HTML pour chaque vêtement (avec ses services regroupés)
-      const vetementsHtml = vetements
+      const servicesHtml = services
         .map(
-          (v) => {
-            // Liste des services sous ce vêtement
-            const servicesHtml = v.services
-              .map(
-                (s) => `
-              <div class="cat-service-row">
-                <div class="cat-service-detail">
-                  <span class="cat-bullet">•</span>
-                  <span class="cat-service-value">${escapeHtml(s.serviceName)}</span>
-                </div>
-                <div class="cat-service-price">${escapeHtml(formatFCFA(s.prixUnitaire))}</div>
-                <div class="cat-service-qte">${escapeHtml(String(s.quantite))}</div>
-                <div class="cat-service-total">${escapeHtml(formatFCFA(s.total))}</div>
-              </div>`
-              )
-              .join("");
-            // Badge état (affiché une seule fois par vêtement)
-            const etatBadge = v.etat
-              ? `<span class="cat-etat-badge">État: ${escapeHtml(v.etat)}</span>`
-              : "";
-            return `
-            <div class="vetement-block">
+          (s, sIdx) => `
+          <div class="cat-service-row">
+            <div class="cat-service-info">
               <div class="cat-vetement-nom">
-                ${escapeHtml(v.vetementNom)}
-                ${etatBadge}
+                ${escapeHtml(s.vetementNom)}
               </div>
-              ${servicesHtml}
-              <div class="vetement-subtotal">
-                <span>${escapeHtml(String(v.quantiteVetement))} × ${escapeHtml(v.vetementNom)} — Sous-total :</span>
-                <span class="vetement-subtotal-value">${escapeHtml(formatFCFA(v.totalVetement))}</span>
+              <div class="cat-service-detail">
+                <span class="cat-bullet">•</span>
+                <span class="cat-service-label">Service :</span>
+                <span class="cat-service-value">${escapeHtml(s.serviceName)}</span>
+                ${s.etat ? `<span class="cat-etat-badge">État: ${escapeHtml(s.etat)}</span>` : ""}
               </div>
-            </div>`;
-          }
+            </div>
+            <div class="cat-service-price">${escapeHtml(formatFCFA(s.prixUnitaire))}</div>
+            <div class="cat-service-qte">${escapeHtml(String(s.quantite))}</div>
+            <div class="cat-service-total">${escapeHtml(formatFCFA(s.total))}</div>
+          </div>`
         )
         .join("");
       // Badges EXPRESS + note (affichés si la commande est express ou si note)
       const badgesHtml =
-        vetements.some((v) => v.isExpress) || vetements.some((v) => v.note)
+        services.some((s) => s.isExpress) || services.some((s) => s.note)
           ? `<div class="cat-badges">
               ${
-                vetements.some((v) => v.isExpress)
+                services.some((s) => s.isExpress)
                   ? `<span class="cat-badge-express">⚡ EXPRESS</span>`
                   : ""
               }
               ${
-                vetements.some((v) => v.note)
+                services.some((s) => s.note)
                   ? `<span class="cat-badge-note">✎ note</span>`
                   : ""
               }
@@ -1164,12 +1014,12 @@ export function printFacture(
         <div class="category-card ${isAlt ? "category-card-alt" : ""}">
           <div class="category-title">${escapeHtml(categorieName)}</div>
           <div class="cat-header-row">
-            <div class="cat-col-service">Vêtement & Services</div>
+            <div class="cat-col-service">Vêtement & Service</div>
             <div class="cat-col-prix">Prix unitaire</div>
             <div class="cat-col-qte">Qté</div>
             <div class="cat-col-total">Total</div>
           </div>
-          ${vetementsHtml}
+          ${servicesHtml}
           ${badgesHtml}
         </div>`;
     })
@@ -1300,44 +1150,39 @@ export function printFacture(
     }
     .cat-col-prix, .cat-col-qte, .cat-col-total {
       text-align: right;
-      min-width: 70px;
+      min-width: 90px;
+    }
+    .cat-col-qte {
+      min-width: 40px;
     }
     .cat-service-row {
       display: grid;
-      grid-template-columns: 1fr auto auto auto;
-      gap: 12px;
+      grid-template-columns: 1fr 90px 40px 90px;
+      gap: 8px;
       align-items: center;
-      padding: 6px 0 6px 16px;
-      font-size: 12px;
+      padding: 8px 0;
+      font-size: 13px;
       color: #4b5563;
       border-bottom: 1px solid #f3f4f6;
     }
     .cat-service-row:last-child {
       border-bottom: none;
     }
-    .vetement-block {
-      margin-bottom: 14px;
-      padding-bottom: 8px;
-      border-bottom: 2px dotted #e5e7eb;
-    }
-    .vetement-block:last-child {
-      border-bottom: none;
-      margin-bottom: 0;
+    .cat-service-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
     }
     .cat-vetement-nom {
       font-weight: 600;
       color: #111827;
-      font-size: 14px;
-      padding: 8px 0 4px 0;
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      font-size: 13px;
     }
     .cat-service-detail {
       display: flex;
       align-items: center;
       gap: 4px;
-      font-size: 12px;
+      font-size: 11px;
       color: #6b7280;
     }
     .cat-service-label {
@@ -1346,22 +1191,6 @@ export function printFacture(
     .cat-service-value {
       font-weight: 500;
       color: #4b5563;
-    }
-    .vetement-subtotal {
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-      padding: 6px 0 0 16px;
-      font-size: 11px;
-      color: #6b7280;
-      font-style: italic;
-    }
-    .vetement-subtotal-value {
-      font-weight: 600;
-      color: #111827;
-      font-style: normal;
-      min-width: 80px;
-      text-align: right;
     }
     .cat-etat-badge {
       margin-left: 8px;
@@ -1383,17 +1212,20 @@ export function printFacture(
       text-align: right;
       font-variant-numeric: tabular-nums;
       color: #1f2937;
+      white-space: nowrap;
     }
     .cat-service-price {
       font-weight: 500;
+      min-width: 90px;
     }
     .cat-service-total {
       font-weight: 600;
       color: #111827;
+      min-width: 90px;
     }
     .cat-service-qte {
       color: #6b7280;
-      min-width: 24px;
+      min-width: 40px;
     }
     .cat-badges {
       display: flex;
