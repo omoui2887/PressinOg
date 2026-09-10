@@ -338,6 +338,10 @@ export function printCommandeTicket(detail: CommandeDetail) {
     .ticket-no { font-size: 16px; font-weight: 700; margin: 6px 0; }
     .label { font-size: 10px; color: #444; text-transform: uppercase; letter-spacing: 0.5px; }
     .value { font-size: 12px; }
+    .pressing-info { font-size: 9px; color: #666; margin: 1px 0; }
+    .section-pressing { padding: 4px 0; }
+    .section-client { padding: 4px 0; }
+    .separator { border-top: 1px dashed #999; margin: 6px 0; }
     table { width: 100%; border-collapse: collapse; font-size: 11px; margin: 6px 0; }
     th { text-align: left; padding: 2px 4px; border-bottom: 1px solid #000; font-size: 10px; }
     .total { font-size: 14px; font-weight: 700; margin-top: 6px; }
@@ -351,28 +355,52 @@ export function printCommandeTicket(detail: CommandeDetail) {
 
   const bodyHtml = `
   <div class="header center">
-    <div class="brand">e-pressing</div>
+    <div class="brand">${escapeHtml(p.nom?.trim() || "e-pressing")}</div>
     <div class="label">Ticket de dépôt</div>
+    ${p.telephone ? `<div class="pressing-info">Tél : ${escapeHtml(p.telephone)}</div>` : ""}
   </div>
 
-  <div class="center">
-    <div class="label">Numéro de ticket</div>
-    <div class="ticket-no">${escapeHtml(detail.numero_commande)}</div>
+  <!-- PARTIE CLIENT -->
+  <div class="section-client">
+    <div class="center">
+      <div class="label">Numéro de ticket</div>
+      <div class="ticket-no">${escapeHtml(detail.numero_commande)}</div>
+    </div>
+
+    <div class="center">
+      <canvas id="qrcode-canvas" width="160" height="160"></canvas>
+    </div>
+
+    <div style="margin-top:6px;">
+      <div><span class="label">Client :</span> <span class="value">${escapeHtml(
+        detail.client?.nom_complet ?? "—"
+      )}</span></div>
+      ${detail.client?.telephone ? `<div><span class="label">Tél. :</span> <span class="value">${escapeHtml(detail.client.telephone)}</span></div>` : ""}
+      ${detail.client?.adresse ? `<div><span class="label">Adresse :</span> <span class="value">${escapeHtml(detail.client.adresse)}</span></div>` : ""}
+      <div><span class="label">Vêtements :</span> <span class="value">${escapeHtml(
+        String(Array.from(articlesMap.values()).reduce((sum, a) => sum + a.quantite, 0))
+      )}</span></div>
+      <div><span class="label">Dépôt :</span> <span class="value">${escapeHtml(
+        formatDateOnly(detail.date_reception) || formatDate(detail.created_at)
+      )}</span></div>
+      <div><span class="label">Retrait :</span> <span class="value">${escapeHtml(
+        formatDateOnly(detail.date_pret_prevue)
+      )}</span></div>
+    </div>
   </div>
 
-  <div class="center">
-    <canvas id="qrcode-canvas" width="160" height="160"></canvas>
-  </div>
+  <!-- SÉPARATEUR -->
+  <div class="separator"></div>
 
-  <div style="margin-top:6px;">
+  <!-- PARTIE PRESSING -->
+  <div class="section-pressing">
+    <div><span class="label">Commande :</span> <span class="value">${escapeHtml(detail.numero_commande)}</span></div>
     <div><span class="label">Client :</span> <span class="value">${escapeHtml(
       detail.client?.nom_complet ?? "—"
     )}</span></div>
-    <div><span class="label">Articles :</span> <span class="value">${escapeHtml(
-      String(detail.articles?.length ?? 0)
-    )}</span></div>
-    <div><span class="label">Date de retrait prévue :</span> <span class="value">${escapeHtml(
-      formatDateOnly(detail.date_pret_prevue)
+    ${detail.client?.telephone ? `<div><span class="label">Téléphone :</span> <span class="value">${escapeHtml(detail.client.telephone)}</span></div>` : ""}
+    <div><span class="label">Vêtements :</span> <span class="value">${escapeHtml(
+      String(Array.from(articlesMap.values()).reduce((sum, a) => sum + a.quantite, 0))
     )}</span></div>
   </div>
 
