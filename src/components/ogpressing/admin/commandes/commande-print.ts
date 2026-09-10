@@ -493,20 +493,56 @@ export function printCommandeLabels(detail: CommandeDetail) {
     return;
   }
 
-  const labelsHtml = articles
-    .map((a, idx) => {
-      const desc = articleDescription(a);
-      const etat = etatLabel(a.etat);
-      // PRD §13.2 : code-barres = article_id + commande_id concaténés
-      // (avec séparateur `|` pour faciliter le parsing au scan). On n'utilise
-      // plus `articles_vetements.code_qr` (champ interne court) — un scanner
-      // externe peut désormais reconstruire les FK article + commande.
-      const barcodeValue = `${a.id}|${detail.id}`;
+  // Regroupement des articles par type de vêtement (un code-barres par type)
+  const groupedMap = new Map<
+    string,
+    {
+      desc: string;
+      etat: string;
+      quantite: number;
+      services: string[];
+      code_qr: string | null;
+    }
+  >();
+
+  for (const a of articles) {
+    const desc = articleDescription(a);
+    const etat = etatLabel(a.etat);
+    const key = `${desc}|${etat}`;
+    const ligne = (detail.lignes ?? []).find((l) => l.id === a.ligne_id);
+    const serviceName = ligne?.service?.nom ?? "Prestation";
+
+    if (!groupedMap.has(key)) {
+      groupedMap.set(key, {
+        desc,
+        etat,
+        quantite: 0,
+        services: [],
+        code_qr: a.code_qr,
+      });
+    }
+    const group = groupedMap.get(key)!;
+    group.quantite += 1;
+    if (!group.services.includes(serviceName)) {
+      group.services.push(serviceName);
+    }
+  }
+
+  const grouped = Array.from(groupedMap.values());
+
+  const labelsHtml = grouped
+    .map((g, idx) => {
+      // Code-barres court : utilise code_qr si disponible, sinon un code
+      // synthétique court basé sur le numéro de commande + index.
+      const barcodeValue = g.code_qr || `${detail.numero_commande}-${idx + 1}`;
+      const servicesStr = g.services.join(" + ");
       return `<div class="label-sticker">
-        <div class="brand">e-pressing</div>
+        <div class="brand">${escapeHtml(detail.pressing?.nom?.trim() || "e-pressing")}</div>
         <div class="ticket-no">${escapeHtml(detail.numero_commande)}</div>
-        <div class="article-info">${escapeHtml(desc)} — ${escapeHtml(etat)}</div>
-        <div class="article-index">Article ${idx + 1} / ${articles.length}</div>
+        <div class="article-info">${escapeHtml(g.desc)} — ${escapeHtml(g.etat)}</div>
+        <div class="article-services">Services : ${escapeHtml(servicesStr)}</div>
+        <div class="article-qty">Quantité : ${escapeHtml(String(g.quantite))}</div>
+        <div class="article-index">Type ${idx + 1} / ${grouped.length}</div>
         <svg class="barcode-svg" id="barcode-${idx}" data-code="${escapeHtml(
           barcodeValue
         )}"></svg>
@@ -526,20 +562,22 @@ export function printCommandeLabels(detail: CommandeDetail) {
       background: #fff;
     }
     .label-sticker {
-      width: 100mm;
+      width: 70mm;
       max-width: 100%;
-      padding: 4mm;
+      padding: 3mm;
       text-align: center;
       page-break-after: always;
       border-bottom: 1px dashed #ccc;
     }
     .label-sticker:last-child { page-break-after: auto; }
-    .brand { font-size: 12px; font-weight: 700; letter-spacing: 1px; }
-    .ticket-no { font-size: 14px; font-weight: 700; margin: 2px 0; }
-    .article-info { font-size: 10px; margin: 2px 0; }
-    .article-index { font-size: 9px; color: #444; margin-bottom: 4px; }
+    .brand { font-size: 10px; font-weight: 700; letter-spacing: 1px; }
+    .ticket-no { font-size: 11px; font-weight: 700; margin: 1px 0; }
+    .article-info { font-size: 9px; margin: 1px 0; }
+    .article-services { font-size: 8px; color: #4a90e2; margin: 1px 0; font-weight: 600; }
+    .article-qty { font-size: 9px; color: #111; margin: 1px 0; font-weight: 700; }
+    .article-index { font-size: 8px; color: #444; margin-bottom: 2px; }
     .barcode-svg { display: block; margin: 0 auto; }
-    .code-text { font-size: 9px; color: #444; margin-top: 2px; word-break: break-all; }
+    .code-text { font-size: 7px; color: #444; margin-top: 1px; word-break: break-all; }
     @media print {
       .label-sticker { border: none; }
     }
@@ -563,11 +601,12 @@ export function printCommandeLabels(detail: CommandeDetail) {
           try {
             window.JsBarcode(svg, code, {
               format: "CODE128",
-              width: 2,
-              height: 50,
+              width: 1,
+              height: 28,
               displayValue: true,
-              fontSize: 12,
-              margin: 4
+              fontSize: 8,
+              margin: 2,
+              textMargin: 1
             });
           } catch (e) {
             console.warn("JsBarcode error", e);
