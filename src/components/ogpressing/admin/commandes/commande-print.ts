@@ -486,7 +486,8 @@ export function printCommandeTicket(detail: CommandeDetail, pressing?: PressingI
  * contient : numéro de ticket, description article (Type Couleur),
  * code-barres CODE128 du champ `code_qr`, texte du code-barres.
  */
-export function printCommandeLabels(detail: CommandeDetail) {
+export function printCommandeLabels(detail: CommandeDetail, pressing?: PressingInfo | null) {
+  const p = pressing ?? ({} as Partial<PressingInfo>);
   const articles = detail.articles ?? [];
   if (articles.length === 0) {
     toast.error("Aucun article à imprimer.");
@@ -537,7 +538,7 @@ export function printCommandeLabels(detail: CommandeDetail) {
       const barcodeValue = g.code_qr || `${detail.numero_commande}-${idx + 1}`;
       const servicesStr = g.services.join(" + ");
       return `<div class="label-sticker">
-        <div class="brand">${escapeHtml(detail.pressing?.nom?.trim() || "e-pressing")}</div>
+        <div class="brand">${escapeHtml(p.nom?.trim() || "e-pressing")}</div>
         <div class="ticket-no">${escapeHtml(detail.numero_commande)}</div>
         <div class="article-info">${escapeHtml(g.desc)} — ${escapeHtml(g.etat)}</div>
         <div class="article-services">Services : ${escapeHtml(servicesStr)}</div>

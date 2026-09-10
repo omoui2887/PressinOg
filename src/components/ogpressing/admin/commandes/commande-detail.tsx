@@ -563,7 +563,7 @@ export function CommandeDetail({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => printCommandeLabels(commande)}
+            onClick={() => printCommandeLabels(commande, pressing)}
           >
             <Printer className="size-4" />
             Étiquettes
