@@ -357,8 +357,8 @@ export function printCommandeTicket(detail: CommandeDetail, pressing?: PressingI
   const bodyHtml = `
   <div class="header center">
     <div class="brand">${escapeHtml(p.nom?.trim() || "e-pressing")}</div>
-    <div class="label">Ticket de dépôt</div>
     ${p.telephone ? `<div class="pressing-info">Tél : ${escapeHtml(p.telephone)}</div>` : ""}
+    <div class="label">Ticket de dépôt</div>
   </div>
 
   <!-- PARTIE CLIENT -->
