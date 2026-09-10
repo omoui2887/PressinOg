@@ -29,7 +29,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { fetchCommandeDetail } from "@/lib/queries/commande-detail";
 import { CommandeDetail } from "@/components/ogpressing/admin/commandes/commande-detail";
-import type { CommandeDetail as CommandeDetailData } from "@/components/ogpressing/admin/commandes/commande-print";
+import type { CommandeDetail as CommandeDetailData, PressingInfo } from "@/components/ogpressing/admin/commandes/commande-print";
 
 export const dynamic = "force-dynamic";
 
@@ -182,5 +182,24 @@ export default async function PersonnelReceptionnisteCommandeDetailPage({
     paiements,
   };
 
-  return <CommandeDetail commande={detail} basePath={BASE_PATH} />;
+  let pressingInfo: PressingInfo | null = null;
+  if (detail.pressing_id) {
+    const { data: pressingRow } = await supabase
+      .from("pressing")
+      .select("nom, telephone, email, adresse, ville, commune, logo_url")
+      .eq("id", detail.pressing_id)
+      .maybeSingle();
+    if (pressingRow) {
+      pressingInfo = {
+        nom: pressingRow.nom,
+        telephone: pressingRow.telephone,
+        email: pressingRow.email,
+        adresse: pressingRow.adresse,
+        ville: pressingRow.ville,
+        commune: pressingRow.commune,
+        logo_url: pressingRow.logo_url,
+      };
+    }
+  }
+  return <CommandeDetail commande={detail} pressing={pressingInfo} basePath={BASE_PATH} />;
 }

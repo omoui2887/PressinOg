@@ -8,7 +8,7 @@
  *    automatiquement via le CLI officiel (nécessite un Personal Access Token) :
  *
  *      supabase login
- *      supabase gen types typescript --project-id yqaitafigfxlrprrouhr \
+ *      supabase gen types typescript --project-id dlpzkdqfqibqazmfimrg \
  *        > src/lib/types/database.types.ts
  *
  *    Ou via l'interface Supabase Dashboard → Settings → API → "TypeScript types".

@@ -93,11 +93,16 @@ export function isEnvConfigured(): boolean {
     if (!value || value.trim().length === 0) return false;
     // Détection des placeholders courants (fichier .env.example non
     // substitué) — on les considère comme "manquants".
+    // Case-insensitive pour détecter les variants YOUR-PROJECT / your-project.
+    const v = value.trim();
     if (
-      value === "REPLACE_WITH_ANON_KEY" ||
-      value === "REPLACE_WITH_SERVICE_ROLE_KEY" ||
-      value === "your-supabase-url" ||
-      value === "https://your-project.supabase.co"
+      v === "REPLACE_WITH_ANON_KEY" ||
+      v === "REPLACE_WITH_SERVICE_ROLE_KEY" ||
+      v.toLowerCase() === "your-supabase-url" ||
+      v.toLowerCase() === "https://your-project.supabase.co" ||
+      v.includes("YOUR_ANON_KEY") ||
+      v.includes("YOUR_SERVICE_ROLE_KEY") ||
+      v.includes("YOUR-PROJECT")
     ) {
       return false;
     }

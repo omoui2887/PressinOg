@@ -43,7 +43,7 @@
  * Pour GitHub Actions / curl manuel :
  *   curl -X POST \
  *     -H "Authorization: Bearer $CRON_SECRET" \
- *     https://yqaitafigfxlrprrouhr.supabase.co/api/cron/sync-abonnements
+ *     https://dlpzkdqfqibqazmfimrg.supabase.co/api/cron/sync-abonnements
  *     (remplacer par l'URL du site en prod)
  */
 import { NextResponse, type NextRequest } from "next/server";
