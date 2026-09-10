@@ -555,7 +555,7 @@ export function CommandeDetail({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => printCommandeTicket(commande)}
+            onClick={() => printCommandeTicket(commande, pressing)}
           >
             <Printer className="size-4" />
             Ticket

@@ -240,7 +240,8 @@ ${bodyHtml}
  * QR Code (rendu via CDN `qrcode` sur `<canvas>`), récap articles, total,
  * statut paiement, date de retrait prévue.
  */
-export function printCommandeTicket(detail: CommandeDetail) {
+export function printCommandeTicket(detail: CommandeDetail, pressing?: PressingInfo | null) {
+  const p = pressing ?? ({} as Partial<PressingInfo>);
   // PRD §13.1 : le payload QR contient { commande_id, numero_ticket, pressing_id }.
   const qrPayload = JSON.stringify({
     commande_id: detail.id,
