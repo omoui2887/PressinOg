@@ -1037,53 +1037,104 @@ export function printFacture(
   const lignesHtml = Array.from(categoriesMap.entries())
     .map(([categorieName, services], idx) => {
       const isAlt = idx % 2 === 1; // alternance de fond
-      const servicesHtml = services
-        .map(
-          (s, sIdx) => `
-          <div class="cat-service-row">
-            <div class="cat-service-info">
-              <div class="cat-vetement-nom">
-                ${escapeHtml(s.vetementNom)}
-              </div>
-              <div class="cat-service-detail">
-                <span class="cat-bullet">•</span>
-                <span class="cat-service-label">Service :</span>
-                <span class="cat-service-value">${escapeHtml(s.serviceName)}</span>
-                ${s.etat ? `<span class="cat-etat-badge">État: ${escapeHtml(s.etat)}</span>` : ""}
-              </div>
+
+      // Regroupe les services par vêtement (évite de répéter le nom)
+      const vetementsMap = new Map<
+        string,
+        {
+          etat: string | null;
+          services: { serviceName: string; prixUnitaire: number; total: number }[];
+          quantiteVetement: number;
+          sommePrixUnitaires: number;
+          isExpress: boolean;
+          note: string | null;
+        }
+      >();
+
+      for (const s of services) {
+        if (!vetementsMap.has(s.vetementNom)) {
+          vetementsMap.set(s.vetementNom, {
+            etat: s.etat,
+            services: [],
+            quantiteVetement: s.quantite,
+            sommePrixUnitaires: 0,
+            isExpress: s.isExpress,
+            note: s.note,
+          });
+        }
+        const v = vetementsMap.get(s.vetementNom)!;
+        v.services.push({
+          serviceName: s.serviceName,
+          prixUnitaire: s.prixUnitaire,
+          total: s.total,
+        });
+        v.sommePrixUnitaires += s.prixUnitaire;
+      }
+
+      // Calcule le total de chaque vêtement
+      for (const v of vetementsMap.values()) {
+        v.sommePrixUnitaires = v.quantiteVetement * v.sommePrixUnitaires;
+      }
+
+      // Génère le HTML pour chaque vêtement
+      const vetementsHtml = Array.from(vetementsMap.entries())
+        .map(([vetementNom, v]) => {
+          const etatBadge = v.etat
+            ? `<span class="cat-etat-badge">État: ${escapeHtml(v.etat)}</span>`
+            : "";
+          // Lignes de services en dessous du vêtement
+          // Quantité affichée une seule fois (première ligne)
+          const servicesLignesHtml = v.services
+            .map((s, sIdx) => {
+              const totalLigne = s.prixUnitaire * v.quantiteVetement;
+              const qteCell = sIdx === 0
+                ? `<div class="cat-service-qte cat-service-qte-vetement">${escapeHtml(String(v.quantiteVetement))}</div>`
+                : `<div class="cat-service-qte"></div>`;
+              return `
+              <div class="cat-service-row">
+                <div class="cat-service-detail">
+                  <span class="cat-bullet">•</span>
+                  <span class="cat-service-value">${escapeHtml(s.serviceName)}</span>
+                </div>
+                <div class="cat-service-price">${escapeHtml(formatFCFA(s.prixUnitaire))}</div>
+                ${qteCell}
+                <div class="cat-service-total">${escapeHtml(formatFCFA(totalLigne))}</div>
+              </div>`;
+            })
+            .join("");
+          // Sous-total du vêtement
+          return `
+          <div class="vetement-block">
+            <div class="cat-vetement-nom">
+              ${escapeHtml(vetementNom)}
+              ${etatBadge}
             </div>
-            <div class="cat-service-price">${escapeHtml(formatFCFA(s.prixUnitaire))}</div>
-            <div class="cat-service-qte">${escapeHtml(String(s.quantite))}</div>
-            <div class="cat-service-total">${escapeHtml(formatFCFA(s.total))}</div>
-          </div>`
-        )
+            ${servicesLignesHtml}
+            <div class="vetement-subtotal">
+              <span>${escapeHtml(String(v.quantiteVetement))} × ${escapeHtml(vetementNom)} — Sous-total :</span>
+              <span class="vetement-subtotal-value">${escapeHtml(formatFCFA(v.sommePrixUnitaires))}</span>
+            </div>
+          </div>`;
+        })
         .join("");
-      // Badges EXPRESS + note (affichés si la commande est express ou si note)
+
       const badgesHtml =
         services.some((s) => s.isExpress) || services.some((s) => s.note)
           ? `<div class="cat-badges">
-              ${
-                services.some((s) => s.isExpress)
-                  ? `<span class="cat-badge-express">⚡ EXPRESS</span>`
-                  : ""
-              }
-              ${
-                services.some((s) => s.note)
-                  ? `<span class="cat-badge-note">✎ note</span>`
-                  : ""
-              }
+              ${services.some((s) => s.isExpress) ? `<span class="cat-badge-express">⚡ EXPRESS</span>` : ""}
+              ${services.some((s) => s.note) ? `<span class="cat-badge-note">✎ note</span>` : ""}
             </div>`
           : "";
       return `
         <div class="category-card ${isAlt ? "category-card-alt" : ""}">
           <div class="category-title">${escapeHtml(categorieName)}</div>
           <div class="cat-header-row">
-            <div class="cat-col-service">Vêtement & Service</div>
+            <div class="cat-col-service">Vêtement & Services</div>
             <div class="cat-col-prix">Prix unitaire</div>
             <div class="cat-col-qte">Qté</div>
             <div class="cat-col-total">Total</div>
           </div>
-          ${servicesHtml}
+          ${vetementsHtml}
           ${badgesHtml}
         </div>`;
     })
