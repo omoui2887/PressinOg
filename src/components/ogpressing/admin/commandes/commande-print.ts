@@ -424,6 +424,11 @@ export function printCommandeTicket(detail: CommandeDetail, pressing?: PressingI
     )}
   </div>
 
+  <div class="footer">
+    Conservez ce ticket. Il sera demandé pour le retrait de vos vêtements.
+    <br />Scannez le QR Code pour suivre l'état de votre commande.
+  </div>
+
   <!-- SÉPARATEUR -->
   <div class="separator"></div>
 
@@ -437,11 +442,6 @@ export function printCommandeTicket(detail: CommandeDetail, pressing?: PressingI
     <div><span class="label">Vêtements :</span> <span class="value">${escapeHtml(
       String(Array.from(articlesMap.values()).reduce((sum, a) => sum + a.quantite, 0))
     )}</span></div>
-  </div>
-
-  <div class="footer">
-    Conservez ce ticket. Il sera demandé pour le retrait de vos articles.
-    <br />Scannez le QR Code pour suivre l'état de votre commande.
   </div>
 
   <script>
