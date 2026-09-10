@@ -390,21 +390,6 @@ export function printCommandeTicket(detail: CommandeDetail, pressing?: PressingI
     </div>
   </div>
 
-  <!-- SÉPARATEUR -->
-  <div class="separator"></div>
-
-  <!-- PARTIE PRESSING -->
-  <div class="section-pressing">
-    <div><span class="label">Commande :</span> <span class="value">${escapeHtml(detail.numero_commande)}</span></div>
-    <div><span class="label">Client :</span> <span class="value">${escapeHtml(
-      detail.client?.nom_complet ?? "—"
-    )}</span></div>
-    ${detail.client?.telephone ? `<div><span class="label">Téléphone :</span> <span class="value">${escapeHtml(detail.client.telephone)}</span></div>` : ""}
-    <div><span class="label">Vêtements :</span> <span class="value">${escapeHtml(
-      String(Array.from(articlesMap.values()).reduce((sum, a) => sum + a.quantite, 0))
-    )}</span></div>
-  </div>
-
   <table>
     <thead>
       <tr>
@@ -438,10 +423,20 @@ export function printCommandeTicket(detail: CommandeDetail, pressing?: PressingI
       formatFCFA(detail.montant_total - detail.montant_paye)
     )}
   </div>
-  <div style="font-size:11px;text-align:right;margin-top:4px;">
-    Statut paiement : <strong>${escapeHtml(
-      STATUT_PAIEMENT_LABELS[detail.statut_paiement] ?? detail.statut_paiement
-    )}</strong>
+
+  <!-- SÉPARATEUR -->
+  <div class="separator"></div>
+
+  <!-- PARTIE PRESSING -->
+  <div class="section-pressing">
+    <div><span class="label">Commande :</span> <span class="value">${escapeHtml(detail.numero_commande)}</span></div>
+    <div><span class="label">Client :</span> <span class="value">${escapeHtml(
+      detail.client?.nom_complet ?? "—"
+    )}</span></div>
+    ${detail.client?.telephone ? `<div><span class="label">Téléphone :</span> <span class="value">${escapeHtml(detail.client.telephone)}</span></div>` : ""}
+    <div><span class="label">Vêtements :</span> <span class="value">${escapeHtml(
+      String(Array.from(articlesMap.values()).reduce((sum, a) => sum + a.quantite, 0))
+    )}</span></div>
   </div>
 
   <div class="footer">
