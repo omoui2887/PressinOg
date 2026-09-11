@@ -258,8 +258,9 @@ export function printCommandeTicket(detail: CommandeDetail, pressing?: PressingI
     string, // nom du vêtement (type + couleur)
     {
       services: string[];
-      quantite: number; // nombre réel de vêtements (l.quantite de la 1ère ligne)
+      quantite: number;
       total: number;
+      note: string | null;
     }
   >();
 
@@ -267,19 +268,21 @@ export function printCommandeTicket(detail: CommandeDetail, pressing?: PressingI
     const firstArt = (detail.articles ?? []).find(
       (a) => a.ligne_id === l.id
     );
-    const t =
-      l.description?.trim() ||
-      (firstArt ? typeLabel(firstArt) : "—");
+    // Utilise articleDescription (type + couleur seulement, sans état)
+    // au lieu de l.description qui contient "type couleur — état".
+    const t = firstArt ? articleDescription(firstArt) : (l.description?.trim() || "—");
     const svc = l.service?.nom ?? "—";
     const total = l.montant_ligne ?? l.prix_unitaire * l.quantite;
+    // La note vient du champ description_etat de l'article ou de la description
+    // de la ligne si elle contient une note libre
+    const note = firstArt?.description_etat?.trim() || null;
 
     if (!articlesMap.has(t)) {
-      // Première ligne pour ce type → utilise l.quantite (nombre de
-      // vêtements réels, stocké au niveau de la ligne de service).
       articlesMap.set(t, {
         services: [],
         quantite: l.quantite,
         total: 0,
+        note,
       });
     }
     const art = articlesMap.get(t)!;
@@ -295,10 +298,11 @@ export function printCommandeTicket(detail: CommandeDetail, pressing?: PressingI
     .map(([vetementNom, data]) => {
       const servicesStr = data.services.join(" + ");
       const pu = Math.round(data.total / data.quantite);
+      const noteHtml = data.note ? `<div style="font-size:8px;color:#888;font-style:italic;">${escapeHtml(data.note)}</div>` : "";
       return `<tr>
         <td style="padding:2px 4px;border-bottom:1px solid #eee;">${escapeHtml(
           vetementNom
-        )}</td>
+        )}${noteHtml}</td>
         <td style="padding:2px 4px;border-bottom:1px solid #eee;font-size:9px;">${escapeHtml(
           servicesStr
         )}</td>
@@ -503,6 +507,7 @@ export function printCommandeLabels(detail: CommandeDetail, pressing?: PressingI
       quantite: number;
       services: string[];
       code_qr: string | null;
+      note: string | null;
     }
   >();
 
@@ -512,6 +517,7 @@ export function printCommandeLabels(detail: CommandeDetail, pressing?: PressingI
     const key = `${desc}|${etat}`;
     const ligne = (detail.lignes ?? []).find((l) => l.id === a.ligne_id);
     const serviceName = ligne?.service?.nom ?? "Prestation";
+    const note = a.description_etat?.trim() || null;
 
     if (!groupedMap.has(key)) {
       groupedMap.set(key, {
@@ -520,6 +526,7 @@ export function printCommandeLabels(detail: CommandeDetail, pressing?: PressingI
         quantite: 0,
         services: [],
         code_qr: a.code_qr,
+        note,
       });
     }
     const group = groupedMap.get(key)!;
@@ -540,7 +547,8 @@ export function printCommandeLabels(detail: CommandeDetail, pressing?: PressingI
       return `<div class="label-sticker">
         <div class="brand">${escapeHtml(p.nom?.trim() || "e-pressing")}</div>
         <div class="ticket-no">${escapeHtml(detail.numero_commande)}</div>
-        <div class="article-info">${escapeHtml(g.desc)} — ${escapeHtml(g.etat)}</div>
+        <div class="article-info">${escapeHtml(g.desc)}</div>
+        ${g.note ? `<div class="article-info" style="font-style:italic;color:#888;">Note : ${escapeHtml(g.note)}</div>` : ""}
         <div class="article-services">Services : ${escapeHtml(servicesStr)}</div>
         <div class="article-qty">Quantité : ${escapeHtml(String(g.quantite))}</div>
         <div class="article-index">Type ${idx + 1} / ${grouped.length}</div>
@@ -1003,7 +1011,9 @@ export function printFacture(
     const qte = l.quantite;
     const total = l.montant_ligne ?? pu * qte;
     const isExpress = detail.priorite === "express";
-    const note = l.description?.trim() || null;
+    // Note : utilise description_etat de l'article (note libre utilisateur),
+    // PAS l.description qui contient "Type Couleur — État".
+    const note = firstArt?.description_etat?.trim() || null;
 
     // Nom complet du vêtement : nom du catalogue + couleur si présente
     const catalogueNom = firstArt?.catalogue_article?.nom || l.description?.trim() || "Vêtement";
@@ -1079,8 +1089,9 @@ export function printFacture(
       // Génère le HTML pour chaque vêtement
       const vetementsHtml = Array.from(vetementsMap.entries())
         .map(([vetementNom, v]) => {
-          const etatBadge = v.etat
-            ? `<span class="cat-etat-badge">État: ${escapeHtml(v.etat)}</span>`
+          // Note à la place de l'état (réservé aux notes utilisateur)
+          const noteBadge = v.note
+            ? `<span class="cat-note-text">${escapeHtml(v.note)}</span>`
             : "";
           // Lignes de services en dessous du vêtement
           // Quantité affichée une seule fois (première ligne)
@@ -1107,7 +1118,7 @@ export function printFacture(
           <div class="vetement-block">
             <div class="cat-vetement-nom">
               ${escapeHtml(vetementNom)}
-              ${etatBadge}
+              ${noteBadge}
             </div>
             ${servicesLignesHtml}
             <div class="vetement-subtotal">
@@ -1317,6 +1328,12 @@ export function printFacture(
       border-radius: 9999px;
       font-size: 10px;
       font-weight: 600;
+    }
+    .cat-note-text {
+      margin-left: 8px;
+      font-size: 10px;
+      color: #6b7280;
+      font-style: italic;
     }
     .cat-bullet {
       color: #4a90e2; /* bleu moyen comme dans l'image de référence */
