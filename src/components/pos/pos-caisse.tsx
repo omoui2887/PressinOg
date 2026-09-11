@@ -924,11 +924,11 @@ function ConfirmationScreen({
 
         <div className="mt-4 grid grid-cols-1 gap-2">
           <Button
-            onClick={() => window.print()}
+            onClick={() => window.open(`${commandesPath}/${commande.id}`, "_blank")}
             className="pos-btn-validate h-10"
           >
             <Printer className="mr-2 h-4 w-4" />
-            Imprimer les étiquettes
+            Imprimer Ticket
           </Button>
           <Button onClick={onNouvelle} variant="outline" className="h-10">
             <Plus className="mr-2 h-4 w-4" />
