@@ -19,9 +19,19 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Tag } from "lucide-react";
+import { Plus, Tag, Shirt } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ViewToggle } from "@/components/shared";
 import { useViewMode } from "@/hooks/use-view-mode";
 import { ServicesList } from "./services-list";
@@ -39,6 +49,45 @@ export function ServicesPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [editService, setEditService] = useState<ServiceItem | null>(null);
   const [deleteService, setDeleteService] = useState<ServiceItem | null>(null);
+
+  // Dialog ajout vêtement au catalogue
+  const [vetementOpen, setVetementOpen] = useState(false);
+  const [vetementNom, setVetementNom] = useState("");
+  const [vetementCategorie, setVetementCategorie] = useState("");
+  const [vetementLoading, setVetementLoading] = useState(false);
+
+  async function handleAddVetement() {
+    if (!vetementNom.trim() || !vetementCategorie.trim()) {
+      toast.error("Le nom et la catégorie sont obligatoires");
+      return;
+    }
+    setVetementLoading(true);
+    try {
+      const res = await fetch("/api/admin/catalogue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nom: vetementNom.trim(),
+          categorie: vetementCategorie.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success("Vêtement ajouté au catalogue", {
+          description: vetementNom.trim(),
+        });
+        setVetementNom("");
+        setVetementCategorie("");
+        setVetementOpen(false);
+      } else {
+        toast.error(data.error || "Erreur lors de l'ajout");
+      }
+    } catch {
+      toast.error("Erreur réseau");
+    } finally {
+      setVetementLoading(false);
+    }
+  }
 
   const fetchServices = useCallback(async () => {
     setLoading(true);
@@ -119,7 +168,11 @@ export function ServicesPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <ViewToggle value={viewMode} onChange={setViewMode} />
-          <Button onClick={() => setAddOpen(true)} className="h-11">
+          <Button onClick={() => setVetementOpen(true)} variant="default" className="h-11">
+            <Shirt className="mr-2 size-4" />
+            Ajouter un vêtement
+          </Button>
+          <Button onClick={() => setAddOpen(true)} variant="outline" className="h-11">
             <Plus className="mr-2 size-4" />
             Ajouter un service
           </Button>
@@ -155,6 +208,57 @@ export function ServicesPage() {
         onOpenChange={(o) => !o && setDeleteService(null)}
         onDeleted={fetchServices}
       />
+
+      {/* Dialog : Ajouter un vêtement au catalogue */}
+      <Dialog open={vetementOpen} onOpenChange={setVetementOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shirt className="size-5 text-primary" />
+              Ajouter un vêtement au catalogue
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="vet-nom">Nom du vêtement *</Label>
+              <Input
+                id="vet-nom"
+                value={vetementNom}
+                onChange={(e) => setVetementNom(e.target.value)}
+                placeholder="ex: Boubou traditionnel"
+                disabled={vetementLoading}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="vet-cat">Catégorie *</Label>
+              <Input
+                id="vet-cat"
+                value={vetementCategorie}
+                onChange={(e) => setVetementCategorie(e.target.value)}
+                placeholder="ex: Vêtements traditionnels"
+                disabled={vetementLoading}
+              />
+              <p className="text-xs text-muted-foreground">
+                Le slug est généré automatiquement à partir du nom.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <DialogClose asChild>
+              <Button type="button" variant="outline" disabled={vetementLoading}>
+                Annuler
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              onClick={handleAddVetement}
+              disabled={vetementLoading || !vetementNom.trim() || !vetementCategorie.trim()}
+            >
+              {vetementLoading ? "Ajout…" : "Ajouter au catalogue"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
