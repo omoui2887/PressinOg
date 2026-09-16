@@ -1033,7 +1033,7 @@ export function printFacture(
       isExpress,
       note,
       etat,
-      couleur: couleurLabel,
+      couleur: null,
     });
   }
 
