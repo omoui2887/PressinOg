@@ -80,6 +80,7 @@ import { CustomerPanel } from "./customer-panel";
 import { DatePanel } from "./date-panel";
 import { PaymentSummary } from "./payment-summary";
 import { ActionButtons } from "./action-buttons";
+import { printCommandeTicket } from "@/components/ogpressing/admin/commandes/commande-print";
 
 interface PosCaisseProps {
   /** Chemin de base pour les liens de retour (ex: /personnel/receptionniste). */
@@ -882,6 +883,26 @@ function ConfirmationScreen({
   onNouvelle,
 }: ConfirmationScreenProps) {
   const commandesPath = basePath ? `${basePath}/commandes` : "/admin/commandes";
+
+  async function handleImprimerTicket() {
+    try {
+      // Récupère le détail complet de la commande via l'API
+      const res = await fetch(`/api/admin/commandes/${commande.id}`, {
+        cache: "no-store",
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        printCommandeTicket(data.data);
+      } else {
+        // Fallback : ouvre la page de détail
+        window.open(`${commandesPath}/${commande.id}`, "_blank");
+      }
+    } catch {
+      // Fallback : ouvre la page de détail
+      window.open(`${commandesPath}/${commande.id}`, "_blank");
+    }
+  }
+
   return (
     <div className="pos-root flex min-h-screen flex-col items-center justify-center bg-[var(--pos-bg)] p-4">
       <div className="pos-panel w-full max-w-md p-6 text-center">
@@ -924,7 +945,7 @@ function ConfirmationScreen({
 
         <div className="mt-4 grid grid-cols-1 gap-2">
           <Button
-            onClick={() => window.open(`${commandesPath}/${commande.id}`, "_blank")}
+            onClick={handleImprimerTicket}
             className="pos-btn-validate h-10"
           >
             <Printer className="mr-2 h-4 w-4" />
