@@ -346,23 +346,18 @@ export function printCommandeTicket(detail: CommandeDetail, pressing?: PressingI
     .section-pressing { padding: 4px 0; }
     .section-client { padding: 4px 0; }
     .separator {
+      display: flex;
+      align-items: center;
+      gap: 4px;
       margin: 8px 0;
-      text-align: center;
-      font-size: 14px;
-      letter-spacing: 6px;
-      color: #000;
-      line-height: 1;
     }
     .separator-line {
+      flex: 1;
       border-top: 2px dashed #000;
-      margin: 0;
-      padding: 0;
     }
     .separator-scissors {
-      display: inline-block;
-      position: relative;
-      top: 2px;
-      margin: 0 4px;
+      font-size: 14px;
+      color: #000;
     }
     table { width: 100%; border-collapse: collapse; font-size: 11px; margin: 6px 0; }
     th { text-align: left; padding: 2px 4px; border-bottom: 1px solid #000; font-size: 10px; }
@@ -453,7 +448,7 @@ export function printCommandeTicket(detail: CommandeDetail, pressing?: PressingI
   <!-- SÉPARATEUR AVEC CISEAUX -->
   <div class="separator">
     <span class="separator-scissors">✂</span>
-    <span class="separator-line">- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -</span>
+    <span class="separator-line"></span>
     <span class="separator-scissors">✂</span>
   </div>
 
