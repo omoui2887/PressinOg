@@ -445,6 +445,9 @@ export function printCommandeTicket(detail: CommandeDetail, pressing?: PressingI
     <div><span class="label">Vêtements :</span> <span class="value">${escapeHtml(
       String(Array.from(articlesMap.values()).reduce((sum, a) => sum + a.quantite, 0))
     )}</span></div>
+    <div><span class="label">Retrait :</span> <span class="value">${escapeHtml(
+      formatDateOnly(detail.date_pret_prevue)
+    )}</span></div>
   </div>
 
   <script>
