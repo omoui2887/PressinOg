@@ -385,7 +385,7 @@ export function printCommandeTicket(detail: CommandeDetail, pressing?: PressingI
     </div>
 
     <div class="center">
-      <canvas id="qrcode-canvas" width="160" height="160"></canvas>
+      <canvas id="qrcode-canvas" width="100" height="100"></canvas>
     </div>
 
     <div style="margin-top:6px;">
@@ -480,7 +480,7 @@ export function printCommandeTicket(detail: CommandeDetail, pressing?: PressingI
         QRCode.toCanvas(
           document.getElementById("qrcode-canvas"),
           ${JSON.stringify(qrPayload)},
-          { width: 160, margin: 1, color: { dark: "#000000", light: "#ffffff" } },
+          { width: 100, margin: 1, color: { dark: "#000000", light: "#ffffff" } },
           function (err) {
             if (err) console.error(err);
           }
