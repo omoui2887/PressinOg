@@ -345,7 +345,25 @@ export function printCommandeTicket(detail: CommandeDetail, pressing?: PressingI
     .pressing-info { font-size: 9px; color: #666; margin: 1px 0; }
     .section-pressing { padding: 4px 0; }
     .section-client { padding: 4px 0; }
-    .separator { border-top: 3px solid #000; margin: 6px 0; }
+    .separator {
+      margin: 8px 0;
+      text-align: center;
+      font-size: 14px;
+      letter-spacing: 6px;
+      color: #000;
+      line-height: 1;
+    }
+    .separator-line {
+      border-top: 2px dashed #000;
+      margin: 0;
+      padding: 0;
+    }
+    .separator-scissors {
+      display: inline-block;
+      position: relative;
+      top: 2px;
+      margin: 0 4px;
+    }
     table { width: 100%; border-collapse: collapse; font-size: 11px; margin: 6px 0; }
     th { text-align: left; padding: 2px 4px; border-bottom: 1px solid #000; font-size: 10px; }
     .total { font-size: 14px; font-weight: 700; margin-top: 6px; }
@@ -432,8 +450,12 @@ export function printCommandeTicket(detail: CommandeDetail, pressing?: PressingI
     <br />Scannez le QR Code pour suivre l'état de votre commande.
   </div>
 
-  <!-- SÉPARATEUR -->
-  <div class="separator"></div>
+  <!-- SÉPARATEUR AVEC CISEAUX -->
+  <div class="separator">
+    <span class="separator-scissors">✂</span>
+    <span class="separator-line">- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -</span>
+    <span class="separator-scissors">✂</span>
+  </div>
 
   <!-- PARTIE PRESSING -->
   <div class="section-pressing">
