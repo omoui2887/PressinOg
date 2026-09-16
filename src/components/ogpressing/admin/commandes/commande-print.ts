@@ -345,7 +345,7 @@ export function printCommandeTicket(detail: CommandeDetail, pressing?: PressingI
     .pressing-info { font-size: 9px; color: #666; margin: 1px 0; }
     .section-pressing { padding: 4px 0; }
     .section-client { padding: 4px 0; }
-    .separator { border-top: 1px dashed #999; margin: 6px 0; }
+    .separator { border-top: 3px solid #000; margin: 6px 0; }
     table { width: 100%; border-collapse: collapse; font-size: 11px; margin: 6px 0; }
     th { text-align: left; padding: 2px 4px; border-bottom: 1px solid #000; font-size: 10px; }
     .total { font-size: 14px; font-weight: 700; margin-top: 6px; }
