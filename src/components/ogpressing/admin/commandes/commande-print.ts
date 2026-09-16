@@ -182,11 +182,10 @@ function etatLabel(e: string | null): string {
   return ETAT_LABELS[e as keyof typeof ETAT_LABELS] ?? e;
 }
 
-/** Description courte « Type Couleur » pour un article. */
+/** Description courte : uniquement le type de l'article (sans couleur ni état).
+ *  La couleur et les détails sont affichés séparément via le champ Note. */
 export function articleDescription(a: CommandeDetailArticle): string {
-  const t = typeLabel(a);
-  const c = couleurLabel(a.couleur, a.couleur_libre);
-  return c ? `${t} ${c}` : t;
+  return typeLabel(a);
 }
 
 // ============================================================
@@ -1015,14 +1014,9 @@ export function printFacture(
     // PAS l.description qui contient "Type Couleur — État".
     const note = firstArt?.description_etat?.trim() || null;
 
-    // Nom complet du vêtement : nom du catalogue + couleur si présente
-    const catalogueNom = firstArt?.catalogue_article?.nom || l.description?.trim() || "Vêtement";
-    const couleurLabel = firstArt?.couleur
-      ? couleurLabelForFacture(firstArt.couleur, firstArt.couleur_libre)
-      : null;
-    const vetementNom = couleurLabel
-      ? `${catalogueNom} ${couleurLabel}`
-      : catalogueNom;
+    // Nom du vêtement : uniquement le nom du catalogue (sans couleur)
+    // La couleur et les détails sont affichés via le champ Note.
+    const vetementNom = firstArt?.catalogue_article?.nom || l.description?.trim() || "Vêtement";
 
     // État du vêtement (libellé FR)
     const etat = firstArt?.etat ? etatLabelForFacture(firstArt.etat) : null;
