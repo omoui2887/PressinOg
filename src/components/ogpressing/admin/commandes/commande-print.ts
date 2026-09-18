@@ -1095,9 +1095,11 @@ export function printFacture(
         v.sommePrixUnitaires += s.prixUnitaire;
       }
 
-      // Calcule le total de chaque vêtement
+      // Calcule le prix unitaire du vêtement = somme des prix unitaires des services
+      // (un seul montant affiché, pas un prix par service)
       for (const v of vetementsMap.values()) {
-        v.sommePrixUnitaires = v.quantiteVetement * v.sommePrixUnitaires;
+        // sommePrixUnitaires = somme des prix unitaires des services (sans × quantité)
+        // Le total = prixUnitaire × quantité
       }
 
       // Génère le HTML pour chaque vêtement
@@ -1107,37 +1109,31 @@ export function printFacture(
           const noteBadge = v.note
             ? `<span class="cat-note-text">${escapeHtml(v.note)}</span>`
             : "";
-          // Lignes de services en dessous du vêtement
-          // Quantité affichée une seule fois (première ligne)
-          const servicesLignesHtml = v.services
-            .map((s, sIdx) => {
-              const totalLigne = s.prixUnitaire * v.quantiteVetement;
-              const qteCell = sIdx === 0
-                ? `<div class="cat-service-qte cat-service-qte-vetement">${escapeHtml(String(v.quantiteVetement))}</div>`
-                : `<div class="cat-service-qte"></div>`;
-              return `
-              <div class="cat-service-row">
-                <div class="cat-service-detail">
-                  <span class="cat-bullet">•</span>
-                  <span class="cat-service-value">${escapeHtml(s.serviceName)}</span>
-                </div>
-                <div class="cat-service-price">${escapeHtml(formatFCFA(s.prixUnitaire))}</div>
-                ${qteCell}
-                <div class="cat-service-total">${escapeHtml(formatFCFA(totalLigne))}</div>
-              </div>`;
-            })
-            .join("");
-          // Sous-total du vêtement
+
+          // Prix unitaire = somme des prix des services (un seul montant)
+          const prixUnitaireVetement = v.services.reduce((sum, s) => sum + s.prixUnitaire, 0);
+          const totalVetement = prixUnitaireVetement * v.quantiteVetement;
+
+          // Liste des services en puces (sans prix individuels)
+          const servicesListHtml = v.services
+            .map((s) => `<span class="cat-bullet">•</span> <span class="cat-service-value">${escapeHtml(s.serviceName)}</span>`)
+            .join("<br>");
+
           return `
           <div class="vetement-block">
-            <div class="cat-vetement-nom">
-              ${escapeHtml(vetementNom)}
-              ${noteBadge}
-            </div>
-            ${servicesLignesHtml}
-            <div class="vetement-subtotal">
-              <span>${escapeHtml(String(v.quantiteVetement))} × ${escapeHtml(vetementNom)} — Sous-total :</span>
-              <span class="vetement-subtotal-value">${escapeHtml(formatFCFA(v.sommePrixUnitaires))}</span>
+            <div class="cat-vetement-row">
+              <div class="cat-vetement-info">
+                <div class="cat-vetement-nom">
+                  ${escapeHtml(vetementNom)}
+                  ${noteBadge}
+                </div>
+                <div class="cat-service-list">
+                  ${servicesListHtml}
+                </div>
+              </div>
+              <div class="cat-service-price">${escapeHtml(formatFCFA(prixUnitaireVetement))}</div>
+              <div class="cat-service-qte cat-service-qte-vetement">${escapeHtml(String(v.quantiteVetement))}</div>
+              <div class="cat-service-total">${escapeHtml(formatFCFA(totalVetement))}</div>
             </div>
           </div>`;
         })
@@ -1316,7 +1312,25 @@ export function printFacture(
     .cat-vetement-nom {
       font-weight: 600;
       color: #111827;
-      font-size: 13px;
+      font-size: 14px;
+      margin-bottom: 2px;
+    }
+    .cat-vetement-row {
+      display: grid;
+      grid-template-columns: 1fr 90px 40px 90px;
+      gap: 8px;
+      align-items: flex-start;
+      padding: 10px 0;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .cat-vetement-info {
+      display: flex;
+      flex-direction: column;
+    }
+    .cat-service-list {
+      font-size: 11px;
+      color: #6b7280;
+      line-height: 1.6;
     }
     .cat-service-detail {
       display: flex;
