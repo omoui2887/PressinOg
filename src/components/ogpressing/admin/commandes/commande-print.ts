@@ -1172,16 +1172,36 @@ export function printFacture(
     })
     .join("");
 
-  // Calculs totaux
-  const sousTotal =
-    detail.montant_total_avant_remise ??
-    (detail.lignes ?? []).reduce(
-      (sum, l) => sum + l.prix_unitaire * l.quantite,
-      0
-    );
-  const remiseMontant = detail.montant_remise ?? Math.max(0, sousTotal - detail.montant_total);
+  // Calculs totaux — le montant total est la somme cumulée des totaux
+  // affichés dans le tableau (prix unitaire × quantité pour chaque vêtement)
+  let montantTotalCalcule = 0;
+  for (const services of categoriesMap.values()) {
+    // Regroupe par vêtement pour calculer le total par vêtement
+    const vetementsCalcule = new Map<string, { services: { prixUnitaire: number }[]; quantite: number }>();
+    for (const s of services) {
+      if (!vetementsCalcule.has(s.vetementNom)) {
+        // Compte les articles physiques
+        let nbArticles = 0;
+        for (const [desc, count] of articlesParTypeFacture.entries()) {
+          if (desc.toLowerCase().includes(s.vetementNom.toLowerCase()) || s.vetementNom.toLowerCase().includes(desc.toLowerCase())) {
+            nbArticles = count;
+            break;
+          }
+        }
+        vetementsCalcule.set(s.vetementNom, { services: [], quantite: nbArticles || s.quantite });
+      }
+      vetementsCalcule.get(s.vetementNom)!.services.push({ prixUnitaire: s.prixUnitaire });
+    }
+    for (const v of vetementsCalcule.values()) {
+      const prixUnitaire = v.services.reduce((sum, s) => sum + s.prixUnitaire, 0);
+      montantTotalCalcule += prixUnitaire * v.quantite;
+    }
+  }
+
+  const sousTotal = montantTotalCalcule;
+  const remiseMontant = Math.max(0, sousTotal - detail.montant_total);
   const fraisLivraison = detail.livraison ? (detail.frais_livraison ?? 0) : 0;
-  const resteAPayer = Math.max(0, detail.montant_total - detail.montant_paye);
+  const resteAPayer = Math.max(0, montantTotalCalcule - detail.montant_paye);
 
   // Bloc logo (si logo_url fournie)
   const logoHtml = p.logo_url
@@ -1563,7 +1583,7 @@ export function printFacture(
         }
         <div class="trow grand">
           <span class="l">Montant total</span>
-          <span class="v">${escapeHtml(formatFCFA(detail.montant_total))}</span>
+          <span class="v">${escapeHtml(formatFCFA(montantTotalCalcule))}</span>
         </div>
         <div class="trow">
           <span class="l">Payé</span>
