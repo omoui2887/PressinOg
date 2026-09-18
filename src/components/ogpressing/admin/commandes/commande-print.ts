@@ -1127,7 +1127,8 @@ export function printFacture(
             ? `<span class="cat-note-text">${escapeHtml(v.note)}</span>`
             : "";
 
-          // Prix unitaire = somme des prix des services (un seul montant)
+          // Prix unitaire = somme des prix des services × quantité
+          // Le prix unitaire affiché est TOUJOURS égal au prix total
           const prixUnitaireVetement = v.services.reduce((sum, s) => sum + s.prixUnitaire, 0);
           const totalVetement = prixUnitaireVetement * v.quantiteVetement;
 
@@ -1148,7 +1149,7 @@ export function printFacture(
                   ${servicesListHtml}
                 </div>
               </div>
-              <div class="cat-service-price">${escapeHtml(formatFCFA(prixUnitaireVetement))}</div>
+              <div class="cat-service-price">${escapeHtml(formatFCFA(totalVetement))}</div>
               <div class="cat-service-qte cat-service-qte-vetement">${escapeHtml(String(v.quantiteVetement))}</div>
               <div class="cat-service-total">${escapeHtml(formatFCFA(totalVetement))}</div>
             </div>
