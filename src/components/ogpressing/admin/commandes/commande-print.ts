@@ -1057,6 +1057,13 @@ export function printFacture(
     });
   }
 
+  // Compte le nombre d'articles physiques par type de vêtement
+  const articlesParTypeFacture = new Map<string, number>();
+  for (const a of detail.articles ?? []) {
+    const desc = articleDescription(a);
+    articlesParTypeFacture.set(desc, (articlesParTypeFacture.get(desc) ?? 0) + 1);
+  }
+
   // Génère le HTML des cartes par catégorie
   const lignesHtml = Array.from(categoriesMap.entries())
     .map(([categorieName, services], idx) => {
@@ -1076,11 +1083,21 @@ export function printFacture(
       >();
 
       for (const s of services) {
+        // Compte le nombre d'articles physiques de ce type
+        let nbArticles = 0;
+        for (const [desc, count] of articlesParTypeFacture.entries()) {
+          const descLower = desc.toLowerCase();
+          const nomLower = s.vetementNom.toLowerCase();
+          if (descLower.includes(nomLower) || nomLower.includes(descLower)) {
+            nbArticles = count;
+            break;
+          }
+        }
         if (!vetementsMap.has(s.vetementNom)) {
           vetementsMap.set(s.vetementNom, {
             etat: s.etat,
             services: [],
-            quantiteVetement: s.quantite,
+            quantiteVetement: nbArticles || s.quantite,
             sommePrixUnitaires: 0,
             isExpress: s.isExpress,
             note: s.note,
